@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>School ERP Portal — Interactive System Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            background: #0a0a14;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #e2e8f0;
+            overflow: hidden;
+            height: 100vh
+        }
+
+        /* ── Topbar ── */
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 48px;
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            z-index: 100;
+            border-bottom: 1px solid #4c1d95;
+            box-shadow: 0 2px 20px rgba(124, 58, 237, .3)
+        }
+
+        .topbar-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #c4b5fd;
+            letter-spacing: .3px
+        }
+
+        .topbar-title span {
+            color: #fff
+        }
+
+        .topbar-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center
+        }
+
+        .btn {
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            transition: all .2s;
+            letter-spacing: .2px
+        }
+
+        .btn-z {
+            background: #4c1d95;
+            color: #c4b5fd
+        }
+
+        .btn-z:hover {
+            background: #5b21b6;
+            color: #fff
+        }
+
+        .btn-r {
+            background: #1e3a8a;
+            color: #93c5fd
+        }
+
+        .btn-r:hover {
+            background: #1e40af;
+            color: #fff
+        }
+
+        .btn-p {
+            background: #065f46;
+            color: #6ee7b7
+        }
+
+        .btn-p:hover {
+            background: #047857;
+            color: #fff
+        }
+
+        .btn-e {
+            background: #92400e;
+            color: #fde68a
+        }
+
+        .btn-e:hover {
+            background: #b45309;
+            color: #fff
+        }
+
+        .zoom-lbl {
+            font-size: 11px;
+            color: #94a3b8;
+            min-width: 36px;
+            text-align: center
+        }
+
+        /* ── Breadcrumb ── */
+        .breadcrumb {
+            position: fixed;
+            top: 48px;
+            left: 0;
+            right: 0;
+            height: 28px;
+            background: #111827;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 4px;
+            font-size: 10px;
+            color: #64748b;
+            z-index: 99;
+            border-bottom: 1px solid #1f2937;
+            overflow-x: auto;
+            white-space: nowrap
+        }
+
+        .breadcrumb::-webkit-scrollbar {
+            height: 0
+        }
+
+        .bread-item {
+            color: #94a3b8;
+            cursor: pointer;
+            transition: color .2s
+        }
+
+        .bread-item:hover {
+            color: #c4b5fd
+        }
+
+        .bread-sep {
+            color: #374151;
+            margin: 0 1px
+        }
+
+        .bread-active {
+            color: #c4b5fd;
+            font-weight: 600
+        }
+
+        /* ── Search ── */
+        .search-wrap {
+            position: fixed;
+            top: 48px;
+            right: 16px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            z-index: 100
+        }
+
+        .search-input {
+            width: 170px;
+            padding: 3px 10px;
+            border-radius: 5px;
+            border: 1px solid #374151;
+            background: #1f2937;
+            color: #e2e8f0;
+            font-size: 10px;
+            outline: none;
+            transition: border-color .2s
+        }
+
+        .search-input:focus {
+            border-color: #6d28d9;
+            box-shadow: 0 0 8px rgba(109, 40, 217, .3)
+        }
+
+        .search-input::placeholder {
+            color: #4b5563
+        }
+
+        /* ── Stats ── */
+        .stats {
+            position: fixed;
+            top: 51px;
+            right: 200px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            color: #475569;
+            z-index: 99
+        }
+
+        .stats span {
+            color: #94a3b8;
+            font-weight: 600
+        }
+
+        /* ── Canvas ── */
+        #canvas {
+            position: fixed;
+            top: 76px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+            background: #0a0a14;
+            background-image: radial-gradient(circle at 1px 1px, #1e1b4b22 1px, transparent 0);
+            background-size: 40px 40px
+        }
+
+        #tree-container {
+            position: relative;
+            min-width: 100%;
+            min-height: 100%;
+            transform-origin: top left
+        }
+
+        /* ── Nodes ── */
+        .node {
+            position: absolute;
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: transform .2s, box-shadow .2s, opacity .2s;
+            border: 1.5px solid;
+            min-width: 180px;
+            max-width: 240px;
+            user-select: none;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, .4);
+            z-index: 1
+        }
+
+        .node:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, .6);
+            z-index: 2
+        }
+
+        .node-title {
+            font-size: 11px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            line-height: 1.3
+        }
+
+        .node-icon {
+            font-size: 13px;
+            flex-shrink: 0
+        }
+
+        .node-desc {
+            font-size: 9px;
+            opacity: .65;
+            line-height: 1.3;
+            margin-top: 2px
+        }
+
+        .node-children-badge {
+            display: inline-flex;
+            background: rgba(255, 255, 255, .12);
+            border-radius: 8px;
+            padding: 0 6px;
+            font-size: 8px;
+            font-weight: 700;
+            margin-left: auto;
+            flex-shrink: 0
+        }
+
+        .node-expand-icon {
+            margin-left: 4px;
+            font-size: 9px;
+            transition: transform .3s;
+            flex-shrink: 0;
+            opacity: .7
+        }
+
+        .node.expanded .node-expand-icon {
+            transform: rotate(0deg)
+        }
+
+        .node-edge {
+            font-size: 8px;
+            color: #fca5a5;
+            margin-top: 3px;
+            display: flex;
+            align-items: flex-start;
+            gap: 2px;
+            line-height: 1.3
+        }
+
+        /* ── Legend ── */
+        .legend {
+            position: fixed;
+            left: 8px;
+            bottom: 8px;
+            background: rgba(10, 10, 20, .92);
+            border: 1px solid #312e81;
+            border-radius: 8px;
+            padding: 8px 10px;
+            z-index: 99;
+            backdrop-filter: blur(8px);
+            font-size: 9px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto
+        }
+
+        .legend h4 {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #475569;
+            margin-bottom: 5px
+        }
+
+        .leg-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 3px;
+            color: #94a3b8
+        }
+
+        .leg-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            flex-shrink: 0
+        }
+
+        /* ── Hint ── */
+        .hint {
+            position: fixed;
+            bottom: 8px;
+            right: 180px;
+            background: rgba(76, 29, 149, .85);
+            border: 1px solid #6d28d9;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 9px;
+            color: #c4b5fd;
+            z-index: 99;
+            backdrop-filter: blur(6px)
+        }
+
+        /* ── Print ── */
+        @media print {
+
+            .topbar,
+            .breadcrumb,
+            .legend,
+            .hint,
+            .search-wrap,
+            .stats,
+            #minimap,
+            #tooltip {
+                display: none !important
+            }
+
+            body {
+                background: #fff;
+                overflow: visible
+            }
+
+            #canvas {
+                position: static;
+                overflow: visible;
+                background: #fff
+            }
+
+            #tree-container {
+                transform: none !important
+            }
+
+            .node {
+                box-shadow: none;
+                border-width: 2px;
+                page-break-inside: avoid
+            }
+
+            .connector path {
+                stroke: #333 !important;
+                opacity: .6 !important
+            }
+        }
+
+        /* ── Scrollbar ── */
+        #canvas::-webkit-scrollbar {
+            width: 8px;
+            height: 8px
+        }
+
+        #canvas::-webkit-scrollbar-track {
+            background: #0f0f1a
+        }
+
+        #canvas::-webkit-scrollbar-thumb {
+            background: #4c1d95;
+            border-radius: 4px
+        }
+
+        #canvas::-webkit-scrollbar-thumb:hover {
+            background: #6d28d9
+        }
+
+        #canvas::-webkit-scrollbar-corner {
+            background: #0f0f1a
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="topbar">
+        <div class="topbar-title"><span>School ERP Portal</span> — Interactive System Architecture (<span id="nodeCountTitle">0</span> Nodes)
+        </div>
+        <div class="topbar-controls">
+            <button class="btn btn-e" onclick="expandAll()" title="Expand all nodes">⊞ All</button>
+            <button class="btn btn-e" onclick="collapseAll()" title="Collapse all nodes">⊟ All</button>
+            <button class="btn btn-z" onclick="zoomOut()" title="Zoom out (-)">−</button>
+            <span class="zoom-lbl" id="zl">100%</span>
+            <button class="btn btn-z" onclick="zoomIn()" title="Zoom in (+)">+</button>
+            <button class="btn btn-r" onclick="resetZoom()" title="Reset zoom (0)">⟳</button>
+            <button class="btn btn-p" onclick="window.print()" title="Save as PDF">🖨️</button>
+        </div>
+    </div>
+
+    <div class="breadcrumb" id="breadcrumb"><span class="bread-active">🌐 ERP Portal</span></div>
+    <div class="search-wrap"><input class="search-input" id="searchBox" placeholder="🔍 Search nodes..."
+            oninput="searchNodes(this.value)" /></div>
+    <div class="stats" id="stats"></div>
+
+    <div id="canvas">
+        <div id="tree-container"></div>
+    </div>
+
+    <div class="legend">
+        <h4>Color Legend</h4>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#7c3aed"></div>Master Admin
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#2563eb"></div>Super Admin (Principal)
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#059669"></div>Teacher
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#0891b2"></div>Student
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#d97706"></div>Parent
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#78716c"></div>Driver / Conductor
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#dc2626"></div>Accountant
+        </div>
+        <div class="leg-item">
+            <div class="leg-dot" style="background:#991b1b;border:1px dashed #fca5a5"></div>⚠ Edge Case
+        </div>
+    </div>
+
+    <div class="hint">🖱️ Click → Expand • Scroll → Navigate • Ctrl+Wheel → Zoom • Ctrl+F → Search</div>
+
+    <script src="diagram_data.js"></script>
+    <script src="diagram_engine.js"></script>
+    <script>
+        // Update title node count
+        document.getElementById("nodeCountTitle").textContent = 
+            (function count(n) { let c = 1; if (n.children) n.children.forEach(ch => c += count(ch)); return c; })(TREE_DATA);
+    </script>
+</body>
+
+</html>
