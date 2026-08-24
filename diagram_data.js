@@ -575,6 +575,325 @@ const TREE_DATA = {
     },
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🔌 API LAYER (1 Unified Layer)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {
+      name: "API LAYER (1 Unified)",
+      desc: "tRPC + Next.js API Routes • 9 Domain Routers + 1 Webhook Endpoint",
+      icon: "🔌",
+      color: "general",
+      children: [
+        {
+          name: "tRPC Router Layer",
+          desc: "src/server/routers/*.ts • End-to-end type-safe API",
+          icon: "⚡",
+          color: "general",
+          children: [
+            {
+              name: "school.ts (Master Admin Only)",
+              desc: "School CRUD operations for multi-tenant management",
+              icon: "🏫",
+              color: "master",
+              children: [
+                { name: "school.create", desc: "Mutation: { name, address, contact, subscriptionPlan } → School row with UUID", icon: "➕", color: "master" },
+                { name: "school.getAll", desc: "Query: { page, limit, search? } → { schools[], total } — Paginated list", icon: "📋", color: "master" },
+                { name: "school.getById", desc: "Query: { id } → Full school details with settings JSON", icon: "🔍", color: "master" },
+                { name: "school.update", desc: "Mutation: { id, name?, logo?, settings? } → Updated School", icon: "✏️", color: "master" },
+                { name: "school.suspend", desc: "Mutation: { id } → { success: boolean } — Blocks all school users", icon: "⛔", color: "master" }
+              ]
+            },
+            {
+              name: "user.ts (Super Admin + Master Admin)",
+              desc: "User management across all 7 roles",
+              icon: "👤",
+              color: "super_admin",
+              children: [
+                { name: "user.create", desc: "Mutation: { email, phone, role, schoolId, classId? } → User + Profile row", icon: "➕", color: "super_admin" },
+                { name: "user.getBySchool", desc: "Query: { schoolId, role?, page, limit } → { users[], total }", icon: "📋", color: "super_admin" },
+                { name: "user.update", desc: "Mutation: { id, phone?, isActive? } → Updated User", icon: "✏️", color: "super_admin" },
+                { name: "user.deactivate", desc: "Mutation: { id } → Soft delete (isActive=false, login blocked)", icon: "🚫", color: "super_admin" },
+                { name: "user.bulkImport", desc: "Mutation: { csvData: StudentRow[] } → { imported: number, errors: Error[] }", icon: "📤", color: "super_admin" }
+              ]
+            },
+            {
+              name: "class.ts",
+              desc: "Class CRUD + Teacher-Subject-Class mapping",
+              icon: "🏛️",
+              color: "super_admin",
+              children: [
+                { name: "class.create", desc: "Mutation: { name, section, academicYear } → Class row", icon: "➕", color: "super_admin" },
+                { name: "class.getAll", desc: "Query: { schoolId } → Class[] with student counts", icon: "📋", color: "super_admin" },
+                { name: "class.assignTeacher", desc: "Mutation: { teacherId, classId, subjectId, isClassTeacher } → ClassTeacher mapping", icon: "🔗", color: "super_admin" }
+              ]
+            },
+            {
+              name: "attendance.ts",
+              desc: "Attendance marking + offline sync support",
+              icon: "✅",
+              color: "teacher",
+              children: [
+                { name: "attendance.markBulk", desc: "Mutation: { classId, date, records: [{studentId, status, timestamp}] } → { syncedCount, conflicts }", icon: "📋", color: "teacher" },
+                { name: "attendance.getForClassDate", desc: "Query: { classId, date } → Attendance[] for all students", icon: "📅", color: "teacher" },
+                { name: "attendance.getStudentStats", desc: "Query: { studentId, month, year } → { present, absent, late, percentage }", icon: "📊", color: "teacher" },
+                { name: "attendance.getStudentCalendar", desc: "Query: { studentId, month, year } → AttendanceCalendarDay[] for calendar UI", icon: "📆", color: "teacher" },
+                { name: "Offline Conflict: Prisma upsert", desc: "@@unique([studentId, date]) + syncedAt timestamp → Last-write-wins resolution", icon: "⚠️", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "result.ts",
+              desc: "Exam CRUD + Marks upload + AI narrative reports",
+              icon: "📊",
+              color: "teacher",
+              children: [
+                { name: "result.createExam", desc: "Mutation: { name, classId, subjectId, date, totalMarks, passingMarks, type } → Exam row", icon: "➕", color: "teacher" },
+                { name: "result.uploadMarks", desc: "Mutation: { examId, marks: [{studentId, marksObtained, remarks?}] } → { uploaded }", icon: "📤", color: "teacher" },
+                { name: "result.getStudentResults", desc: "Query: { studentId } → ResultWithExam[] (all exams with marks)", icon: "📋", color: "teacher" },
+                { name: "result.generateAiReport", desc: "Mutation: { studentId } → { narrative: string } — Gemini behavioral narrative", icon: "🤖", color: "teacher" },
+                { name: "Marks > Total Marks", desc: "Zod validation: marksObtained must be ≤ Exam.totalMarks", icon: "⚠️", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "fee.ts",
+              desc: "Fee structures + Razorpay payments + receipt download",
+              icon: "💰",
+              color: "accountant",
+              children: [
+                { name: "fee.createStructure", desc: "Mutation: { classId, feeType, amount, dueDate, frequency, lateFee } → FeeStructure", icon: "➕", color: "accountant" },
+                { name: "fee.getStudentDues", desc: "Query: { studentId } → FeePayment[] with detailed breakdowns", icon: "📋", color: "accountant" },
+                { name: "fee.initiatePayment", desc: "Mutation: { paymentIds[] } → { razorpayOrderId, amount, key } for checkout", icon: "💳", color: "accountant" },
+                { name: "fee.recordOffline", desc: "Mutation: { studentId, feeStructureId, amount, method } → FeePayment + receipt", icon: "💵", color: "accountant" },
+                { name: "fee.downloadReceipt", desc: "Query: { paymentId } → { url: string } — R2 signed URL for PDF download", icon: "📥", color: "accountant" }
+              ]
+            },
+            {
+              name: "transport.ts",
+              desc: "Vehicles + Routes + Driver assignment",
+              icon: "🚌",
+              color: "driver",
+              children: [
+                { name: "transport.createVehicle", desc: "Mutation: { busNumber, capacity } → Vehicle row", icon: "➕", color: "driver" },
+                { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, driverId } → Route row", icon: "🗺️", color: "driver" },
+                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndDriver (full transport info)", icon: "📋", color: "driver" },
+                { name: "transport.getDriverRoute", desc: "Query: { driverId } → RouteWithStops (driver's assigned route)", icon: "🧑‍✈️", color: "driver" }
+              ]
+            },
+            {
+              name: "notice.ts",
+              desc: "Notice CRUD + AI auto-drafting + multi-language",
+              icon: "📢",
+              color: "super_admin",
+              children: [
+                { name: "notice.create", desc: "Mutation: { title, content, targetRoles?, targetClasses?, publishDate? } → Notice", icon: "➕", color: "super_admin" },
+                { name: "notice.getForUser", desc: "Query: { userId, role, classId? } → Notice[] filtered by role/class targeting", icon: "📋", color: "super_admin" },
+                { name: "notice.aiDraft", desc: "Mutation: { topic } → { titleEn, contentEn, contentHi } — Gemini auto-draft + translate", icon: "🤖", color: "super_admin" }
+              ]
+            },
+            {
+              name: "leave.ts",
+              desc: "Leave applications + AI substitute suggestion",
+              icon: "🏖️",
+              color: "teacher",
+              children: [
+                { name: "leave.apply", desc: "Mutation: { leaveType, fromDate, toDate, reason } → LeaveApplication (status: PENDING)", icon: "📝", color: "teacher" },
+                { name: "leave.approve", desc: "Mutation: { id } → LeaveApplication (status: APPROVED)", icon: "✅", color: "teacher" },
+                { name: "leave.reject", desc: "Mutation: { id, reason } → LeaveApplication (status: REJECTED)", icon: "❌", color: "teacher" },
+                { name: "leave.getSubstituteSuggestion", desc: "Query: { teacherId, date } → { suggestions: TeacherSuggestion[] } — AI ranked", icon: "🤖", color: "teacher" }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Webhook Endpoints",
+          desc: "src/app/api/webhooks/ • External service callbacks",
+          icon: "🪝",
+          color: "general",
+          children: [
+            {
+              name: "Razorpay SmartCollect Webhook",
+              desc: "POST /api/webhooks/razorpay/route.ts",
+              icon: "💳",
+              color: "general",
+              children: [
+                { name: "Webhook Receiver", desc: "Razorpay POSTs payment event to /api/webhooks/razorpay", icon: "📥", color: "general" },
+                { name: "Signature Verification", desc: "Verify x-razorpay-signature header with HMAC SHA256 using RAZORPAY_WEBHOOK_SECRET", icon: "🔐", color: "general" },
+                { name: "Auto-Reconciliation", desc: "Lookup student by virtualAccountId → Update FeePayment.status = 'PAID'", icon: "✅", color: "general" },
+                { name: "SMS Trigger", desc: "On success → MSG91 sends payment confirmation SMS to parent", icon: "💬", color: "general" },
+                { name: "Invalid Signature", desc: "Return 401 Unauthorized. Log attempt for security audit", icon: "⚠️", color: "edge", edge: true },
+                { name: "Duplicate Webhook", desc: "Idempotency check: skip if transactionId already processed", icon: "⚠️", color: "edge", edge: true }
+              ]
+            }
+          ]
+        },
+        {
+          name: "tRPC Configuration",
+          desc: "src/server/trpc.ts • Router initialization + context",
+          icon: "⚙️",
+          color: "general",
+          children: [
+            { name: "createTRPCContext()", desc: "Extract session from NextAuth → Inject into every procedure", icon: "🔧", color: "general" },
+            { name: "publicProcedure", desc: "No auth required. Used for health checks, public data", icon: "🌐", color: "general" },
+            { name: "protectedProcedure", desc: "Requires valid JWT session. Enforced via middleware chain", icon: "🔒", color: "general" },
+            { name: "adminProcedure", desc: "Requires role = SUPER_ADMIN or MASTER_ADMIN", icon: "👑", color: "general" },
+            { name: "masterProcedure", desc: "Requires role = MASTER_ADMIN only", icon: "🛡️", color: "general" }
+          ]
+        }
+      ]
+    },
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🛡️ MIDDLEWARE LAYER (3 Middlewares)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {
+      name: "MIDDLEWARE LAYER (3 Middlewares)",
+      desc: "Auth → Tenant Isolation → Rate Limiting • Every request passes through all 3",
+      icon: "🛡️",
+      color: "general",
+      children: [
+        {
+          name: "MW-1: Edge Route Protection",
+          desc: "middleware.ts • Vercel Edge Runtime • First layer of defense",
+          icon: "🔐",
+          color: "general",
+          children: [
+            {
+              name: "JWT Token Validation",
+              desc: "Extract & verify JWT from request cookies/headers",
+              icon: "🔑",
+              color: "general",
+              children: [
+                { name: "Token Present Check", desc: "If no JWT token → Redirect to /login immediately", icon: "❌", color: "general" },
+                { name: "Token Expiry Check", desc: "If JWT expired → Clear session, redirect to /login", icon: "⏰", color: "general" },
+                { name: "Token Decode", desc: "Extract ERPJwtPayload: { sub, email, role, schoolId, isActive }", icon: "📋", color: "general" },
+                { name: "isActive Check", desc: "If user.isActive = false → Return 403 Forbidden (suspended account)", icon: "🚫", color: "general" }
+              ]
+            },
+            {
+              name: "Route-Role Mapping Enforcement",
+              desc: "routePermissions: Record<string, Role[]>",
+              icon: "🗺️",
+              color: "general",
+              children: [
+                { name: "/master/* → [MASTER_ADMIN]", desc: "Only platform owner can access master panel routes", icon: "👑", color: "master" },
+                { name: "/admin/* → [SUPER_ADMIN]", desc: "Only school principal can access admin panel routes", icon: "🎓", color: "super_admin" },
+                { name: "/teacher/* → [TEACHER]", desc: "Only teachers can access teacher panel routes", icon: "👨‍🏫", color: "teacher" },
+                { name: "/student/* → [STUDENT]", desc: "Only students can access student portal routes", icon: "👨‍🎓", color: "student" },
+                { name: "/parent/* → [PARENT]", desc: "Only parents can access parent portal routes", icon: "👨‍👩‍👦", color: "parent" },
+                { name: "/driver/* → [DRIVER]", desc: "Only drivers can access driver panel routes", icon: "🚌", color: "driver" },
+                { name: "/accountant/* → [ACCOUNTANT]", desc: "Only accountants can access account office routes", icon: "💼", color: "accountant" },
+                { name: "Role Mismatch → 403 or /login", desc: "If user role doesn't match route requirement → Forbidden page", icon: "⚠️", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "Public Routes (No Auth)",
+              desc: "Routes that bypass authentication",
+              icon: "🌐",
+              color: "general",
+              children: [
+                { name: "/login", desc: "Login page — always accessible", icon: "🔑", color: "general" },
+                { name: "/register", desc: "Registration page — always accessible", icon: "📝", color: "general" },
+                { name: "/api/webhooks/*", desc: "Webhook endpoints use their own signature verification", icon: "🪝", color: "general" },
+                { name: "/ (Landing Page)", desc: "Marketing landing page — public", icon: "🏠", color: "general" }
+              ]
+            }
+          ]
+        },
+        {
+          name: "MW-2: Multi-Tenant Data Isolation",
+          desc: "withTenant() wrapper • src/lib/db.ts • Prisma query filter",
+          icon: "🧱",
+          color: "general",
+          children: [
+            {
+              name: "withTenant() Function",
+              desc: "Automatically injects schoolId into every Prisma WHERE clause",
+              icon: "🔧",
+              color: "general",
+              children: [
+                { name: "Session → schoolId Extraction", desc: "session.user.schoolId from JWT payload → injected into query", icon: "🔑", color: "general" },
+                { name: "Prisma WHERE Injection", desc: "{ ...query, where: { ...query.where, schoolId: session.user.schoolId } }", icon: "🔷", color: "general" },
+                { name: "Every Query Wrapped", desc: "ALL tRPC procedures use withTenant() — no exceptions", icon: "✅", color: "general" },
+                { name: "MASTER_ADMIN Exception", desc: "Master Admin can query across schools (no schoolId filter)", icon: "👑", color: "general" }
+              ]
+            },
+            {
+              name: "PostgreSQL Row-Level Security (RLS)",
+              desc: "Database-level enforcement as second safety net",
+              icon: "🐘",
+              color: "general",
+              children: [
+                { name: "RLS Policies per Table", desc: "Every table with schoolId has RLS policy: SELECT WHERE schoolId = current_tenant", icon: "🔒", color: "general" },
+                { name: "Defense in Depth", desc: "Even if withTenant() bypassed, RLS prevents cross-tenant data leaks", icon: "🛡️", color: "general" }
+              ]
+            },
+            {
+              name: "Cascade Delete Isolation",
+              desc: "Deleting school removes ALL child data",
+              icon: "🗑️",
+              color: "general",
+              children: [
+                { name: "onDelete: Cascade", desc: "School deletion cascades to Users, Classes, Fees, Attendance, etc.", icon: "⬇️", color: "general" },
+                { name: "No Orphan Records", desc: "Prisma relation constraints prevent orphaned data after tenant removal", icon: "✅", color: "general" }
+              ]
+            },
+            {
+              name: "Cross-Tenant Access Attempt",
+              desc: "Security audit test: School B data with School A token → MUST fail",
+              icon: "⚠️",
+              color: "edge",
+              edge: true,
+              children: [
+                { name: "Automated Security Test", desc: "Playwright E2E: Login as School A admin → Try fetching School B student → Assert 403", icon: "🧪", color: "edge", edge: true },
+                { name: "Audit Log", desc: "Log any cross-tenant query attempts for security review", icon: "📋", color: "edge", edge: true }
+              ]
+            }
+          ]
+        },
+        {
+          name: "MW-3: AI Rate Limiter",
+          desc: "Upstash Redis • Per-school per-endpoint rate limiting",
+          icon: "⏱️",
+          color: "general",
+          children: [
+            {
+              name: "Rate Limit Rules",
+              desc: "Different limits for different AI endpoints",
+              icon: "📋",
+              color: "general",
+              children: [
+                { name: "Timetable Generation: 5 req / school / 24h", desc: "timetable-generator.ts — Expensive AI call, strict limit", icon: "📅", color: "general" },
+                { name: "Notice Drafting: 20 req / school / 24h", desc: "notice-writer.ts — Moderate limit, common operation", icon: "📢", color: "general" },
+                { name: "Report Generation: 1 batch / school / week", desc: "Behavioral narrative batch — Runs once per week max", icon: "📊", color: "general" },
+                { name: "Leave Suggestion: 50 req / school / 24h", desc: "leave-suggester.ts — Lightweight, higher limit", icon: "🔄", color: "general" }
+              ]
+            },
+            {
+              name: "Redis Implementation",
+              desc: "Upstash Redis REST API • Sliding window counter",
+              icon: "⚡",
+              color: "general",
+              children: [
+                { name: "Key Format", desc: "ratelimit:{schoolId}:{endpoint}:{window} → e.g., ratelimit:school_123:timetable:2026-08-24", icon: "🔑", color: "general" },
+                { name: "INCR + EXPIRE", desc: "Increment counter on each request. Set TTL to window duration (24h or 7d)", icon: "📈", color: "general" },
+                { name: "Limit Exceeded → 429", desc: "Return HTTP 429 Too Many Requests with Retry-After header", icon: "🚫", color: "general" }
+              ]
+            },
+            {
+              name: "Gemini API Fallback",
+              desc: "Handle external AI API failures gracefully",
+              icon: "🤖",
+              color: "general",
+              children: [
+                { name: "Timeout: 30 seconds", desc: "If Gemini API doesn't respond in 30s → Return timeout error", icon: "⏰", color: "general" },
+                { name: "Retry with Backoff", desc: "On 500/503: retry up to 3 times with 2s, 4s, 8s delays", icon: "🔄", color: "general" },
+                { name: "Graceful Degradation", desc: "If AI fully down → Show manual mode option (e.g., manual timetable)", icon: "⚠️", color: "edge", edge: true }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 👑 MASTER ADMIN
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
