@@ -305,15 +305,30 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 - Recent Admissions list (last 10)
 - Quick Action: "New Admission" (huge CTA button)
 
-**Admission Form UI (Multi-Step Wizard):**
-- **Step 1 — Student Details:** Name, DOB, Gender, Previous School, Photo upload
-- **Step 2 — Parent Details:** Name, Phone, Email, Address
-  - ☑️ **"Has Sibling in School?"** Checkbox
-  - If checked → Search bar appears → Type student name or parent phone → Auto-fill parent details from existing record
-- **Step 3 — Class Assignment:** Select Class, Section, Roll Number (auto-increment suggestion)
-- **Step 4 — Document Upload:** Birth Certificate, Aadhaar, Transfer Certificate (drag-drop to R2)
-- **Step 5 — Review & Confirm:** Summary card → "Confirm Admission" button
-  - On confirm → Auto-generate credentials → Show credentials card → "Print Welcome Letter" + "Send SMS" buttons
+**Omni-Channel Admission UI (3 Modes):**
+
+**1. High-Speed Data Entry Form (For Staff Manual Entry):**
+*Designed for extreme speed. Staff can enter a full admission in <30 seconds.*
+- **Single Page Layout:** No wizard. All fields are on one clean, scroll-free view.
+- **Keyboard-Only Navigation:** Fully optimized for `Tab` index. Dropdowns support auto-complete typing. No mouse required.
+- **Smart Defaults:** Admission Date defaults to today. Academic Year defaults to current. State/City pre-filled.
+- **Instant Sibling Auto-Fill:** Typing a 10-digit number in the Parent Phone field instantly auto-fills Father Name, Mother Name, and Address if the parent already exists (no search button needed).
+- **Optional Documents:** Document upload (Birth Cert, Aadhaar) is moved to an optional step at the end. Staff can skip and upload later.
+- **Instant Admission Fee:** End of form has "Fee Amount", "Paid Amount", and "Method" (Cash/Cheque/UPI). If Paid < Total, balance goes to "Pending Dues". Includes "Discount Amount" and "Reason" fields for waivers.
+- **Submit & Auto-Reset:** Pressing `Enter` at the end submits the form, shows a 3-second success toast ("Admitted! ID: STD101"), generates receipt, and instantly clears the form for the next entry without a page reload.
+
+**2. QR Code "Pending Enquiries" Queue (For Parent Self-Serve):**
+- Real-time updating list of parents who scanned the QR at reception.
+- Click "Review" → Opens the High-Speed form pre-filled with the parent's data. Staff just selects Class, takes fee, and clicks Approve.
+
+**3. Bulk Import UI (Legacy Registers):**
+- Huge "Download Template (.xlsx)" button.
+- Drag & Drop zone for the filled `.xlsx` file.
+- Shows preview table of parsed students with errors highlighted in red (e.g., missing phone number).
+- "Import & Send SMS" final button.
+
+**Missing Documents Widget:**
+- A small dashboard card showing: "12 Students have missing documents". Click to view list and upload missing TC/Aadhaar.
 
 **Sibling Management View:**
 - Table: Student Name | Class | Linked Parent | Siblings Count

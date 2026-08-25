@@ -96,23 +96,27 @@ Source: Implementation Plan Lines 366-394
 - [ ] Link parent to student via `parentId` FK in StudentProfile
 - [ ] Support multiple children per parent (1-to-many relationship)
 
-**Task 10.5: Admission Panel (ADMIN_STAFF Front Office)**
-- [ ] Build tRPC router: `admission.ts` (createEnquiry, getAll, updateStatus, uploadDocuments, confirmAdmission, searchSibling, unlinkSibling, generateWelcomeLetter)
-- [ ] Build UI: Multi-step `<AdmissionWizard />` form:
-  - Step 1: Student Details (name, DOB, gender, previous school)
-  - Step 2: Parent Details (name, phone, email) + "Has Sibling?" checkbox
-  - Step 3: Class Assignment (class, section, roll number)
-  - Step 4: Document Upload (Birth Cert, Aadhaar, TC to R2)
-  - Step 5: Review & Confirm → Auto-generate credentials
-- [ ] Create `AdmissionEnquiry` Prisma model with status workflow: ENQUIRY → APPLIED → ADMITTED
-- [ ] Sibling search: Query StudentProfile by parent phone or student name
-- [ ] On confirm: Auto-create User (STUDENT) + StudentProfile + link/create ParentProfile
-- [ ] Auto-generate credentials: Student username (STD{rollNo}@school), default password (DOB: DDMMYYYY)
-- [ ] Welcome Letter PDF generation + upload to R2
-- [ ] SMS dispatch: Send credentials to parent phone via MSG91
-- [ ] Sibling Management view: Table with Link/Unlink actions
-- [ ] Edge case: Unlink Sibling → Create fresh parent account
-- [ ] Edge case: Divorce/separated → Support 2 guardian accounts
+**Task 10.5: Omni-Channel Admission Panel (ADMIN_STAFF)**
+- [ ] Build tRPC router: `admission.ts` (createEnquiry, createQrEnquiry, bulkImport, getAll, updateStatus, uploadDocuments, confirmAdmission, searchSibling, unlinkSibling, collectFee)
+- [ ] Create `AdmissionEnquiry` Prisma model with `AdmissionSource` and `AdmissionFeeStatus` enums
+- [ ] **Pillar 1: High-Speed Data Entry Mode**
+  - Build single-page, scrollable `<HighSpeedAdmissionForm />`
+  - Keyboard-only `Tab` navigation & smart defaults (date/session)
+  - Instant sibling auto-fill based on parent phone (no search button)
+  - Optional document upload (`documentsPending = true`)
+  - Instant fee collection component (Full/Partial/Waiver)
+  - Auto-submit and form reset on `Enter`
+- [ ] **Pillar 2: QR Code Self-Serve**
+  - Build public route `/apply?schoolId=xxx` for mobile QR scanning
+  - Build "Pending Enquiries" real-time dashboard widget for Staff using Pusher
+- [ ] **Pillar 3: Bulk CSV Import**
+  - Build `downloadTemplate` endpoint for `.xlsx`
+  - Build `<BulkImportDropzone />` with Papaparse CSV validation
+  - Auto-create all Users/Profiles + sibling phone matching logic
+- [ ] **Missing Documents & Edge Cases**
+  - Build "Missing Documents" dashboard widget
+  - Divorce/separated edge case: Support 2 guardian accounts
+  - Sibling Unlink: Create fresh parent account logic
 
 **Task 11: Notice Board**
 - [ ] Build tRPC router: `notice.ts` (create, getForUser)

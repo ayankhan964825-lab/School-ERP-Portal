@@ -442,8 +442,8 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 ---
 
-### 3.9 Admission & Onboarding Module
-**Database Tables Used:** `AdmissionEnquiry`, `StudentProfile`, `ParentProfile`, `User`
+### 3.9 Admission & Onboarding Module (Omni-Channel)
+**Database Tables Used:** `AdmissionEnquiry`, `StudentProfile`, `ParentProfile`, `User`, `FeePayment`
 
 **AdmissionEnquiry Table Fields:**
 - `id` — UUID primary key
@@ -452,21 +452,56 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 - `parent_name`, `parent_phone`, `parent_email`
 - `previous_school`, `previous_class`
 - `applied_for_class` — Which class admission is for
+- `source` — Enum: MANUAL | QR_CODE | BULK_IMPORT (tracks how admission was created)
 - `status` — Enum: ENQUIRY | APPLIED | ADMITTED | REJECTED
-- `documents` — JSON array of uploaded document URLs (Birth Certificate, Aadhaar, TC)
+- `documents` — JSON array of uploaded document URLs (Birth Certificate, Aadhaar, TC) — **OPTIONAL at admission time**
+- `documents_pending` — Boolean (true if docs were skipped during fast entry)
+- `admission_fee_status` — Enum: PAID | PARTIAL | PENDING | WAIVED
+- `admission_fee_amount` — Float (total admission fee for this class)
+- `admission_fee_paid` — Float (amount actually collected)
+- `admission_fee_discount` — Float (Principal's waiver/discount amount)
+- `admission_fee_discount_reason` — String? (e.g., "Sibling Discount", "Staff Ward")
 - `notes` — Admin staff remarks
 - `created_at`, `updated_at`
 
-**Admission Workflow:**
-1. Parent visits school → Admin Staff creates AdmissionEnquiry (status: ENQUIRY)
-2. Parent submits documents → Admin Staff uploads to R2 (status: APPLIED)
-3. Principal reviews (optional) → Admin Staff confirms admission (status: ADMITTED)
-4. On ADMITTED:
-   - System auto-creates `User` row with role=STUDENT + auto-generated credentials
-   - System auto-creates `StudentProfile` linked to Class
-   - If sibling exists: Reuse existing `ParentProfile` (no new parent account)
-   - If no sibling: Auto-create `User` (role=PARENT) + `ParentProfile` with new credentials
-5. Welcome Letter PDF generated with credentials → Print or SMS to parent
+**3 Pillars of Admission (Omni-Channel):**
+
+**Pillar 1 — High-Speed Data Entry Mode (Staff Manual Entry):**
+> Designed for extreme speed. Staff can enter a full admission in <30 seconds.
+1. **Single Page Layout:** No wizard/steps. All fields visible on one clean, scrollable form.
+2. **Keyboard-Only Navigation:** Fully optimized for `Tab` index. Dropdowns support type-to-search. `Enter` at end submits. No mouse needed.
+3. **Smart Defaults:** Admission Date = today, Academic Year = current, State/City = pre-filled from school config.
+4. **Instant Sibling Auto-Fill:** Typing 10-digit number in Parent Phone field instantly auto-fills Father Name, Mother Name, Address if parent exists in system. No search button needed.
+5. **Skip Documents:** Birth Cert, Aadhaar, TC uploads are 100% optional. Staff can skip and upload later. `documents_pending = true` flag tracks this.
+6. **Instant Fee Collection:** Form ends with Admission Fee section — Staff can log Cash/Cheque/UPI payment immediately.
+7. **Submit & Auto-Reset:** On submit → Auto-generates credentials + Roll Number + fires SMS → Shows 3-second success toast → Form clears instantly for next entry. No page reload.
+
+**Pillar 2 — QR Code Self-Serve (Parent Driven):**
+> Designed to offload data entry to parents while waiting at reception.
+1. School reception has QR code poster. Parent scans with phone camera.
+2. Opens simple, mobile-friendly 3-field form: Student Name, Parent Phone, Class Applied For.
+3. Parent submits → Appears instantly in Staff's "Pending Enquiries" list (real-time via Pusher).
+4. Staff calls parent to desk, collects physical documents, uploads them optionally.
+5. Staff selects Class, Section, Roll Number → Clicks "Approve" → Same automation triggers (credentials + SMS).
+
+**Pillar 3 — Bulk CSV Import (Legacy Data Migration):**
+> Designed for onboarding hundreds of existing students from old paper registers.
+1. Staff clicks "Download Excel Template" → Gets `.xlsx` with predefined columns (Name, Father Name, Phone, Class, Section, DOB).
+2. Excel has built-in validation: 10-digit phone numbers, valid date formats, class names matching system.
+3. Staff fills register data into Excel → Uploads via "Bulk Import" button.
+4. System auto-creates all Student + Parent accounts in batch, links siblings by matching phone numbers.
+5. Mass SMS broadcast: All parents receive credentials simultaneously.
+
+**Admission Fee Edge Cases:**
+1. **Full Payment:** Parent pays ₹10,000 admission fee in cash/UPI → `admission_fee_status = PAID`
+2. **Partial Payment:** Parent has only ₹5,000 → Staff enters ₹5,000 → Remaining ₹5,000 auto-moves to "Pending Dues" → `admission_fee_status = PARTIAL`
+3. **Promise to Pay Later (Grace Period):** Parent says "sham ko UPI karunga" → Admission approved → `admission_fee_status = PENDING` → System sends payment reminder SMS next day
+4. **Principal's Discount (Waiver):** Principal approves ₹2,000 off (sibling discount / staff ward) → Staff fills `admission_fee_discount = 2000` + `discount_reason = "Sibling Discount"` → Books stay balanced
+
+**Missing Documents Dashboard:**
+- Staff dashboard widget: "Missing Documents (12 students)" 
+- Lists students whose `documents_pending = true`
+- Staff can follow up and upload documents anytime later without affecting admission status
 
 **Sibling Mapping Feature:**
 - **"Has Sibling?" Checkbox:** Admin Staff ticks → Searches existing students by name/phone

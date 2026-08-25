@@ -1912,30 +1912,50 @@ const TREE_DATA = {
               ]
             },
             {
-              name: "Admission Wizard (5-Step Form)",
-              desc: "Multi-step UI: Student → Parent → Class → Docs → Confirm",
-              icon: "🧙",
+              name: "Pillar 1: High-Speed Data Entry",
+              desc: "Staff Manual Entry • Keyboard-only navigation for extreme speed",
+              icon: "⌨️",
               color: "general",
               children: [
-                { name: "Step 1: Student Details", desc: "Name, DOB, Gender, Previous School, Photo upload", icon: "1️⃣", color: "general" },
-                { name: "Step 2: Parent Details", desc: "Name, Phone, Email + 'Has Sibling?' checkbox", icon: "2️⃣", color: "general" },
-                { name: "Step 3: Class Assignment", desc: "Select Class, Section, Roll Number (auto-increment suggested)", icon: "3️⃣", color: "general" },
-                { name: "Step 4: Document Upload", desc: "Drag-drop Birth Cert, Aadhaar, TC → Cloudflare R2", icon: "4️⃣", color: "general" },
-                { name: "Step 5: Review & Confirm", desc: "Summary card → 'Confirm Admission' button → Auto-generate credentials", icon: "5️⃣", color: "general" }
+                { name: "Single Page Layout", desc: "No wizard, all fields on one scrollable view. Tab-indexed.", icon: "📜", color: "general" },
+                { name: "Smart Defaults", desc: "Admission Date = Today, Session = Current, State/City pre-filled", icon: "✨", color: "general" },
+                { name: "Instant Sibling Auto-Fill", desc: "Type 10-digit Parent Phone → Automatically fetches Father/Mother/Address", icon: "⚡", color: "general" },
+                { name: "Skip Documents", desc: "Documents are optional. Mark as 'documentsPending = true'", icon: "⏭️", color: "general" },
+                { name: "Submit & Auto-Reset", desc: "Press 'Enter' to submit → Shows Toast → Auto-clears for next entry without reload", icon: "🔄", color: "general" }
               ]
             },
             {
-              name: "Confirm Admission (Auto-Generation)",
-              desc: "admission.confirmAdmission → Creates accounts + credentials",
-              icon: "✅",
+              name: "Pillar 2: QR Code Self-Serve",
+              desc: "Parent scans QR at reception → Fills 3-field mobile form",
+              icon: "📱",
               color: "general",
               children: [
-                { name: "Auto-Create Student User", desc: "INSERT User (role: STUDENT) → INSERT StudentProfile (classId, rollNumber)", icon: "👨‍🎓", color: "general" },
-                { name: "Auto-Create/Reuse Parent User", desc: "If sibling: Reuse existing ParentProfile. If new: INSERT User (role: PARENT) + ParentProfile", icon: "👨‍👩‍👦", color: "general" },
-                { name: "Credential Generation", desc: "Student: STD{rollNo}@{schoolCode} | Password: DOB (DDMMYYYY)", icon: "🔑", color: "general" },
-                { name: "Parent Credentials", desc: "Parent: parentPhone@{schoolCode} | Password: Student DOB or OTP-based", icon: "🔑", color: "general" },
-                { name: "Welcome Letter PDF", desc: "Auto-generate PDF with credentials, class info, school rules → Upload to R2", icon: "📃", color: "general" },
-                { name: "SMS Dispatch", desc: "MSG91 sends credentials to parent phone: 'Welcome! Student: STD1001, Password: 25082015'", icon: "💬", color: "general" }
+                { name: "Scan & Fill", desc: "Parent enters Student Name, Phone, Class Applied", icon: "🤳", color: "general" },
+                { name: "Pending Queue (Real-time)", desc: "Lands in Staff dashboard instantly via Pusher", icon: "🔔", color: "general" },
+                { name: "Staff Approval", desc: "Staff calls parent, takes fee, assigns roll no → Clicks Approve", icon: "✅", color: "general" }
+              ]
+            },
+            {
+              name: "Pillar 3: Bulk CSV Import",
+              desc: "Migrate legacy data from physical registers",
+              icon: "📊",
+              color: "general",
+              children: [
+                { name: "Download Template", desc: "Provides .xlsx with strict column validation", icon: "📥", color: "general" },
+                { name: "1-Click Upload", desc: "Creates Student/Parent users & links siblings by phone number", icon: "📤", color: "general" },
+                { name: "Mass SMS Broadcast", desc: "Sends welcome credentials to all imported parents", icon: "💬", color: "general" }
+              ]
+            },
+            {
+              name: "Admission Fee Engine",
+              desc: "Instant fee collection during admission",
+              icon: "💰",
+              color: "general",
+              children: [
+                { name: "Full Payment", desc: "Status: PAID → Generates Instant Receipt", icon: "💵", color: "general" },
+                { name: "Partial Payment", desc: "Status: PARTIAL → Remaining amount moves to Pending Dues", icon: "⚖️", color: "edge", edge: true },
+                { name: "Grace Period", desc: "Status: PENDING → Promise to pay via UPI later", icon: "⏳", color: "edge", edge: true },
+                { name: "Principal's Discount", desc: "Record Waiver Amount + Reason (e.g., Sibling Discount)", icon: "🏷️", color: "edge", edge: true }
               ]
             }
           ]

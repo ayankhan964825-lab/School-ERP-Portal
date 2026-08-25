@@ -211,7 +211,85 @@ sequenceDiagram
     API-->>Student: "Leave approved."
 ```
 
-### 2.7 New Student Admission with Sibling Mapping
+### 2.7 High-Speed Data Entry Admission (Staff Manual)
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Staff as Admin Staff
+    participant Web as Staff Dashboard (Single Page Form)
+    participant API as Next.js API
+    participant DB as PostgreSQL
+    participant SMS as MSG91 (DLT)
+
+    Staff->>Web: Opens New Admission (Single Page, Keyboard-Only)
+    Staff->>Web: Tab → Student Name, Tab → DOB (auto-format), Tab → Class (autocomplete)
+    Staff->>Web: Tab → Parent Phone (10 digits)
+    
+    Note over Web, API: Instant Sibling Auto-Fill
+    Web->>API: GET /trpc/admission.searchSibling(parentPhone)
+    alt Parent Exists (Sibling Found)
+        API-->>Web: Auto-fill Father Name, Mother Name, Address
+        Note over Web: Staff skips parent fields — already filled!
+    else New Parent
+        Staff->>Web: Tab → Father Name, Tab → Mother Name
+    end
+
+    Note over Staff, Web: Documents = OPTIONAL (Skip for speed)
+    Staff->>Web: Tab → Skip documents (upload later)
+
+    Note over Staff, Web: Admission Fee Collection
+    Staff->>Web: Tab → Fee Amount (₹10,000 pre-filled from class config)
+    alt Full Payment
+        Staff->>Web: Tab → Amount Paid: ₹10,000, Method: Cash
+    else Partial Payment
+        Staff->>Web: Tab → Amount Paid: ₹5,000 → Remaining auto-moves to Pending Dues
+    else Principal Discount
+        Staff->>Web: Tab → Discount: ₹2,000, Reason: "Sibling Discount"
+    end
+
+    Staff->>Web: Press ENTER to Submit
+    Web->>API: POST /trpc/admission.confirmAdmission
+    API->>DB: INSERT User(STUDENT) + StudentProfile + FeePayment
+    API->>DB: INSERT/REUSE User(PARENT) + ParentProfile
+    API->>API: Generate Roll Number + Credentials
+    API->>SMS: Send credentials to parent phone
+    API-->>Web: Success! Form auto-resets for next entry
+    Web-->>Staff: Toast: "Admitted! STD101 — SMS Sent" (3 sec) → Form Cleared
+```
+
+### 2.8 QR Code Self-Serve Admission (Parent Driven)
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Parent
+    actor Staff as Admin Staff
+    participant QR as QR Code (Reception)
+    participant Mobile as Parent's Phone (Browser)
+    participant API as Next.js API
+    participant DB as PostgreSQL
+    participant Pusher as Pusher (Realtime)
+    participant SMS as MSG91
+
+    Parent->>QR: Scans QR code at school reception
+    QR-->>Mobile: Opens simple 3-field mobile form
+    Parent->>Mobile: Fills: Student Name, Phone, Class
+    Mobile->>API: POST /trpc/admission.createQrEnquiry
+    API->>DB: INSERT AdmissionEnquiry (source: QR_CODE, status: ENQUIRY)
+    API->>Pusher: Push notification to Staff dashboard
+    Pusher-->>Staff: 🔔 "New QR Enquiry: Priya Sharma (Class 5)"
+
+    Note over Staff, Parent: Staff calls parent to desk
+    Staff->>API: Open enquiry → Complete remaining fields
+    Staff->>API: Upload documents (optional)
+    Staff->>API: Select Section, Roll Number
+    Staff->>API: Collect admission fee (Cash/UPI)
+    Staff->>API: POST /trpc/admission.confirmAdmission
+    API->>DB: Create Student + Parent accounts
+    API->>SMS: Send credentials to parent
+    API-->>Staff: "Admission Complete"
+```
+
+### 2.9 Bulk CSV Import (Legacy Data Migration)
 ```mermaid
 sequenceDiagram
     autonumber
@@ -219,46 +297,35 @@ sequenceDiagram
     participant Web as Staff Dashboard
     participant API as Next.js API
     participant DB as PostgreSQL
-    participant R2 as Cloudflare R2
-    participant SMS as MSG91 (DLT)
+    participant SMS as MSG91
 
-    Staff->>Web: Opens New Admission Form
-    Staff->>Web: Fills student details (name, DOB, class)
-    Staff->>Web: Fills parent details (name, phone)
-    Web->>API: POST /trpc/admission.createEnquiry
-    API->>DB: INSERT AdmissionEnquiry (status: ENQUIRY)
-    DB-->>API: Enquiry created
+    Staff->>Web: Clicks "Download Excel Template"
+    Web->>API: GET /trpc/admission.downloadTemplate
+    API-->>Web: Returns .xlsx with columns: Name, Father, Phone, Class, DOB
 
-    Note over Staff, R2: Document Upload Phase
-    Staff->>Web: Uploads Birth Certificate, Aadhaar
-    Web->>R2: Upload files via pre-signed URL
-    Web->>API: POST /trpc/admission.uploadDocuments
-    API->>DB: UPDATE documents JSON array
+    Note over Staff: Staff fills 200 students from old register into Excel
+    Staff->>Web: Clicks "Bulk Import" → Uploads filled Excel
+    Web->>API: POST /trpc/admission.bulkImport
 
-    Note over Staff, Web: Sibling Check
-    Staff->>Web: Checks "Has Sibling in School?"
-    Web->>API: GET /trpc/admission.searchSibling(parentPhone)
-    API->>DB: SELECT StudentProfile WHERE parent.phone = ?
-    DB-->>API: Found: Rahul Kumar (Class 10-A)
-    API-->>Web: Show existing sibling + parent details
-
-    Note over Staff, SMS: Confirm Admission
-    Staff->>Web: Clicks "Confirm Admission"
-    Web->>API: POST /trpc/admission.confirmAdmission
-    API->>DB: INSERT User (role: STUDENT) + StudentProfile
+    API->>API: Parse CSV rows, validate phone numbers & dates
     
-    alt Has Sibling (Reuse Parent)
-        API->>DB: Link new student to existing ParentProfile
-        Note over API: No new parent account created
-    else No Sibling (New Parent)
-        API->>DB: INSERT User (role: PARENT) + ParentProfile
+    loop For each row
+        API->>DB: Check if parentPhone exists (sibling detection)
+        alt Sibling Found
+            API->>DB: Reuse existing ParentProfile
+        else New Family
+            API->>DB: CREATE User(PARENT) + ParentProfile
+        end
+        API->>DB: CREATE User(STUDENT) + StudentProfile
     end
-    
-    API->>API: Generate Welcome Letter PDF
-    API->>R2: Upload PDF
-    API->>SMS: Send credentials to parent phone
-    API-->>Web: { studentUsername, parentUsername, pdfUrl }
-    Web-->>Staff: "Admission Complete. Credentials sent via SMS."
+
+    API-->>Web: { imported: 200, siblingsLinked: 15, errors: 3 }
+    Web-->>Staff: "200 students imported. 15 siblings auto-linked. 3 rows had errors."
+
+    Staff->>Web: Clicks "Send Mass SMS"
+    Web->>API: Batch SMS trigger
+    API->>SMS: Send credentials to all 200 parents
+    SMS-->>API: Delivered: 197, Failed: 3
 ```
 
 ---

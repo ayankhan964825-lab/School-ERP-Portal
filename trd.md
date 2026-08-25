@@ -552,30 +552,51 @@ enum AdmissionStatus {
   REJECTED
 }
 
+enum AdmissionSource {
+  MANUAL       // Staff Data Entry Mode
+  QR_CODE      // Parent scanned QR at reception
+  BULK_IMPORT  // CSV/Excel batch upload
+}
+
+enum AdmissionFeeStatus {
+  PAID
+  PARTIAL
+  PENDING
+  WAIVED
+}
+
 model AdmissionEnquiry {
-  id              String           @id @default(uuid())
-  schoolId        String
-  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  studentName     String
-  dob             DateTime         @db.Date
-  gender          String           // MALE | FEMALE | OTHER
-  parentName      String
-  parentPhone     String
-  parentEmail     String?
-  previousSchool  String?
-  previousClass   String?
-  appliedForClass String           // Target class for admission
-  status          AdmissionStatus  @default(ENQUIRY)
-  documents       Json?            // JSON array of R2 URLs (Birth Cert, Aadhaar, TC)
-  notes           String?          // Admin staff remarks
-  siblingStudentId String?         // FK to existing StudentProfile if sibling exists
-  createdStudentId String?         // FK to StudentProfile created on ADMITTED
-  createdParentId  String?         // FK to ParentProfile created/reused on ADMITTED
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                       String              @id @default(uuid())
+  schoolId                 String
+  school                   School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentName              String
+  dob                      DateTime            @db.Date
+  gender                   String              // MALE | FEMALE | OTHER
+  parentName               String
+  parentPhone              String
+  parentEmail              String?
+  previousSchool           String?
+  previousClass            String?
+  appliedForClass          String              // Target class for admission
+  source                   AdmissionSource     @default(MANUAL)
+  status                   AdmissionStatus     @default(ENQUIRY)
+  documents                Json?               // JSON array of R2 URLs (OPTIONAL at admission)
+  documentsPending         Boolean             @default(true)  // true = docs skipped during fast entry
+  admissionFeeStatus       AdmissionFeeStatus  @default(PENDING)
+  admissionFeeAmount       Float               @default(0)  // Total admission fee for this class
+  admissionFeePaid         Float               @default(0)  // Amount actually collected
+  admissionFeeDiscount     Float               @default(0)  // Principal's waiver amount
+  admissionFeeDiscountReason String?           // e.g., "Sibling Discount", "Staff Ward"
+  notes                    String?             // Admin staff remarks
+  siblingStudentId         String?             // FK to existing StudentProfile if sibling exists
+  createdStudentId         String?             // FK to StudentProfile created on ADMITTED
+  createdParentId          String?             // FK to ParentProfile created/reused on ADMITTED
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
   @@index([schoolId, status])
   @@index([schoolId, parentPhone])
+  @@index([schoolId, source])  // Filter by admission channel
 }
 ```
 
@@ -857,14 +878,20 @@ erp-portal/
 ### 6.10 Router: `admission.ts` (Admin Staff + Super Admin)
 | Procedure | Type | Input | Output |
 |---|---|---|---|
-| `createEnquiry` | Mutation | `{ studentName, dob, gender, parentName, parentPhone, appliedForClass }` | `AdmissionEnquiry` |
-| `getAll` | Query | `{ schoolId, status?, page, limit }` | `{ enquiries: AdmissionEnquiry[], total }` |
+| `createEnquiry` | Mutation | `{ studentName, dob, gender, parentName, parentPhone, appliedForClass, source: MANUAL }` | `AdmissionEnquiry` |
+| `createQrEnquiry` | Mutation | `{ studentName, parentPhone, appliedForClass }` (minimal 3-field form from QR) | `AdmissionEnquiry (source: QR_CODE, status: ENQUIRY)` |
+| `getAll` | Query | `{ schoolId, status?, source?, page, limit }` | `{ enquiries: AdmissionEnquiry[], total }` |
+| `getPendingDocuments` | Query | `{ schoolId }` | `AdmissionEnquiry[] WHERE documentsPending = true` |
 | `updateStatus` | Mutation | `{ id, status }` | `AdmissionEnquiry` |
-| `uploadDocuments` | Mutation | `{ id, documents: string[] }` | `AdmissionEnquiry` |
-| `confirmAdmission` | Mutation | `{ id, classId, section, rollNumber, siblingStudentId? }` | `{ student: User, parent: User, credentials: { studentUsername, parentUsername, defaultPassword } }` |
+| `uploadDocuments` | Mutation | `{ id, documents: string[] }` | `AdmissionEnquiry (documentsPending = false)` |
+| `collectFee` | Mutation | `{ id, amountPaid, method, discountAmount?, discountReason? }` | `AdmissionEnquiry (feeStatus updated)` |
+| `confirmAdmission` | Mutation | `{ id, classId, section, rollNumber, siblingStudentId?, feeAmount, feePaid, feeMethod }` | `{ student: User, parent: User, credentials, feeReceipt? }` |
 | `searchSibling` | Query | `{ schoolId, searchTerm }` | `StudentProfile[]` (match by name/parent phone) |
 | `unlinkSibling` | Mutation | `{ studentId }` | `{ newParentUser: User, success: boolean }` |
 | `generateWelcomeLetter` | Query | `{ admissionId }` | `{ pdfUrl: string }` |
+| `bulkImport` | Mutation | `{ csvData: AdmissionRow[] }` | `{ imported: number, siblingsLinked: number, errors: Error[] }` |
+| `downloadTemplate` | Query | `{}` | `{ templateUrl: string }` (pre-built Excel template) |
+| `getQrCode` | Query | `{ schoolId }` | `{ qrCodeUrl: string, formUrl: string }` |
 
 ---
 
