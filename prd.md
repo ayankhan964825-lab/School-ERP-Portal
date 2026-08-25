@@ -23,7 +23,7 @@ Ek **production-ready, multi-tenant School ERP SaaS Platform** banana hai jo AI-
 
 ## 2. Target Users & Role-Based Access Control (RBAC)
 
-System mein **7 distinct user roles** hain. Har role ka apna isolated dashboard hai. Ek role doosre role ka data access nahi kar sakta.
+System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard hai. Ek role doosre role ka data access nahi kar sakta.
 
 ### 2.1 MASTER_ADMIN (Developer — Platform Owner)
 
@@ -185,6 +185,30 @@ System mein **7 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 ---
 
+### 2.8 ADMIN_STAFF (Front Office / Admission Clerk)
+
+**Profile:** School front office staff. Handles new student admissions, credential generation, class assignment, and sibling management.
+
+**Exact Permissions:**
+1. New student admission entry (complete admission form)
+2. Auto-generate student & parent login credentials (username + default password)
+3. Assign student to class & section
+4. Link sibling accounts (connect multiple children to one parent login)
+5. Unlink sibling (in case of error or parent separation)
+6. Print/SMS admission welcome letter with credentials
+7. View admission records (read-only after submission)
+8. Cannot access academic results, fees, or modify teacher data
+
+**Dashboard Features:**
+- New Admission Form (student details, parent details, class assignment)
+- "Has Sibling in School?" checkbox → Search existing student → Auto-fill parent details
+- Today's admissions count
+- Pending admissions (incomplete forms)
+- Admission register (searchable list of all admitted students)
+- Quick actions: "Generate Credentials", "Print Welcome Letter", "Send SMS"
+
+---
+
 ## 3. Core Modules — Feature-by-Feature Deep Dive
 
 ### 3.1 Multi-Tenant Foundation Module
@@ -207,7 +231,7 @@ System mein **7 distinct user roles** hain. Har role ka apna isolated dashboard 
 - `email` — Unique login identifier
 - `phone` — Contact number
 - `password_hash` — bcrypt hashed password
-- `role` — Enum: MASTER_ADMIN | SUPER_ADMIN | TEACHER | STUDENT | PARENT | DRIVER | ACCOUNTANT
+- `role` — Enum: MASTER_ADMIN | SUPER_ADMIN | ADMIN_STAFF | TEACHER | STUDENT | PARENT | DRIVER | ACCOUNTANT
 - `profile_image` — Avatar URL
 - `is_active` — Boolean (for suspending users without deleting)
 - `created_at`, `updated_at` — Timestamps
@@ -415,6 +439,46 @@ System mein **7 distinct user roles** hain. Har role ka apna isolated dashboard 
 3. Multi-step approval: Student applies → Parent approves → School approves
 4. **AI Substitute Suggester:** When teacher applies leave, AI finds which teacher is free during that period and teaches the same/similar subject
 5. Leave status tracking (PENDING → APPROVED/REJECTED)
+
+---
+
+### 3.9 Admission & Onboarding Module
+**Database Tables Used:** `AdmissionEnquiry`, `StudentProfile`, `ParentProfile`, `User`
+
+**AdmissionEnquiry Table Fields:**
+- `id` — UUID primary key
+- `school_id` — FK to School
+- `student_name`, `dob`, `gender`
+- `parent_name`, `parent_phone`, `parent_email`
+- `previous_school`, `previous_class`
+- `applied_for_class` — Which class admission is for
+- `status` — Enum: ENQUIRY | APPLIED | ADMITTED | REJECTED
+- `documents` — JSON array of uploaded document URLs (Birth Certificate, Aadhaar, TC)
+- `notes` — Admin staff remarks
+- `created_at`, `updated_at`
+
+**Admission Workflow:**
+1. Parent visits school → Admin Staff creates AdmissionEnquiry (status: ENQUIRY)
+2. Parent submits documents → Admin Staff uploads to R2 (status: APPLIED)
+3. Principal reviews (optional) → Admin Staff confirms admission (status: ADMITTED)
+4. On ADMITTED:
+   - System auto-creates `User` row with role=STUDENT + auto-generated credentials
+   - System auto-creates `StudentProfile` linked to Class
+   - If sibling exists: Reuse existing `ParentProfile` (no new parent account)
+   - If no sibling: Auto-create `User` (role=PARENT) + `ParentProfile` with new credentials
+5. Welcome Letter PDF generated with credentials → Print or SMS to parent
+
+**Sibling Mapping Feature:**
+- **"Has Sibling?" Checkbox:** Admin Staff ticks → Searches existing students by name/phone
+- **Auto-Fill:** System fetches existing parent's User + ParentProfile → Links new student to same parent
+- **Parent Dashboard:** Parent sees "Profile Switcher" dropdown to toggle between children
+- **Fee Isolation:** Each child has own `virtualAccountId` (Razorpay) — fees never mix
+
+**Sibling Edge Cases:**
+1. **Wrong Link:** "Unlink Sibling" button → Creates fresh parent account for the student
+2. **Divorce/Separated Parents:** Option to assign 2 guardians with separate logins
+3. **One Child Leaves (ALUMNI):** Parent retains access to remaining child. Alumni child's data becomes read-only
+4. **Fee Data Integrity:** FeePayment is linked to `studentId`, NOT `parentId` — no cross-child contamination
 
 ---
 

@@ -103,11 +103,13 @@ model School {
   routes              Route[]
   academicSchedules   AcademicSchedule[]
   expenses            Expense[]
+  admissionEnquiries  AdmissionEnquiry[]
 }
 
 enum Role {
   MASTER_ADMIN
   SUPER_ADMIN
+  ADMIN_STAFF
   TEACHER
   STUDENT
   PARENT
@@ -538,6 +540,43 @@ model LeaveApplication {
   aiSubstituteSuggestion  Json?
   createdAt               DateTime    @default(now())
 }
+
+// ==========================================
+// SECTION I: ADMISSION & ONBOARDING (1 Table)
+// ==========================================
+
+enum AdmissionStatus {
+  ENQUIRY
+  APPLIED
+  ADMITTED
+  REJECTED
+}
+
+model AdmissionEnquiry {
+  id              String           @id @default(uuid())
+  schoolId        String
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentName     String
+  dob             DateTime         @db.Date
+  gender          String           // MALE | FEMALE | OTHER
+  parentName      String
+  parentPhone     String
+  parentEmail     String?
+  previousSchool  String?
+  previousClass   String?
+  appliedForClass String           // Target class for admission
+  status          AdmissionStatus  @default(ENQUIRY)
+  documents       Json?            // JSON array of R2 URLs (Birth Cert, Aadhaar, TC)
+  notes           String?          // Admin staff remarks
+  siblingStudentId String?         // FK to existing StudentProfile if sibling exists
+  createdStudentId String?         // FK to StudentProfile created on ADMITTED
+  createdParentId  String?         // FK to ParentProfile created/reused on ADMITTED
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, parentPhone])
+}
 ```
 
 ---
@@ -680,6 +719,12 @@ erp-portal/
 │   │   │       ├── expenses/     # Expense management
 │   │   │       ├── reconcile/    # SmartCollect dashboard
 │   │   │       └── reports/      # Financial reports
+│   │   │   └── staff/            # ADMIN_STAFF (Front Office) Panel
+│   │   │       ├── page.tsx      # Admission dashboard
+│   │   │       ├── admissions/   # New admission form + register
+│   │   │       ├── enquiries/    # Pre-admission enquiry tracking
+│   │   │       ├── credentials/  # Generate & print login credentials
+│   │   │       └── siblings/     # Sibling linking management
 │   │   ├── api/                  # API Routes
 │   │   │   ├── trpc/            # tRPC handler
 │   │   │   │   └── [trpc]/
@@ -717,7 +762,8 @@ erp-portal/
 │   │       ├── fee.ts            # Fee structures + payments
 │   │       ├── transport.ts      # Vehicles + Routes
 │   │       ├── notice.ts         # Notice CRUD + AI drafting
-│   │       └── leave.ts          # Leave applications + AI substitute
+│   │       ├── leave.ts          # Leave applications + AI substitute
+│   │       └── admission.ts      # Admission CRUD + sibling linking + credential gen
 │   ├── hooks/                    # Custom React hooks
 │   ├── types/                    # TypeScript types/interfaces
 │   └── styles/
@@ -808,6 +854,18 @@ erp-portal/
 | `reject` | Mutation | `{ id, reason }` | `LeaveApplication` |
 | `getSubstituteSuggestion` | Query | `{ teacherId, date }` | `{ suggestions: TeacherSuggestion[] }` |
 
+### 6.10 Router: `admission.ts` (Admin Staff + Super Admin)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `createEnquiry` | Mutation | `{ studentName, dob, gender, parentName, parentPhone, appliedForClass }` | `AdmissionEnquiry` |
+| `getAll` | Query | `{ schoolId, status?, page, limit }` | `{ enquiries: AdmissionEnquiry[], total }` |
+| `updateStatus` | Mutation | `{ id, status }` | `AdmissionEnquiry` |
+| `uploadDocuments` | Mutation | `{ id, documents: string[] }` | `AdmissionEnquiry` |
+| `confirmAdmission` | Mutation | `{ id, classId, section, rollNumber, siblingStudentId? }` | `{ student: User, parent: User, credentials: { studentUsername, parentUsername, defaultPassword } }` |
+| `searchSibling` | Query | `{ schoolId, searchTerm }` | `StudentProfile[]` (match by name/parent phone) |
+| `unlinkSibling` | Mutation | `{ studentId }` | `{ newParentUser: User, success: boolean }` |
+| `generateWelcomeLetter` | Query | `{ admissionId }` | `{ pdfUrl: string }` |
+
 ---
 
 ## 7. Authentication & RBAC Middleware Implementation
@@ -829,6 +887,7 @@ interface ERPJwtPayload {
 const routePermissions: Record<string, Role[]> = {
   '/master':     ['MASTER_ADMIN'],
   '/admin':      ['SUPER_ADMIN'],
+  '/staff':      ['ADMIN_STAFF'],
   '/teacher':    ['TEACHER'],
   '/student':    ['STUDENT'],
   '/parent':     ['PARENT'],

@@ -13,10 +13,11 @@ The system is divided into 3 strict layers. No layer can bypass another.
 - **Next.js 14 (Web)** — Available for ALL 7 roles
 - **React Native Expo (Mobile)** — Available for ALL 7 roles
 - **7 Isolated Panel UIs:** Master Admin, Super Admin, Teacher, Student, Parent, Driver, Accountant
+- **8th Panel:** Admin Staff (Front Office / Admission)
 - Each panel is a separate route group under `(dashboard)/`
 
 ### Layer 2: API Layer
-- **tRPC + Next.js API Routes** — 9 domain routers (school, user, class, attendance, result, fee, transport, notice, leave)
+- **tRPC + Next.js API Routes** — 10 domain routers (school, user, class, attendance, result, fee, transport, notice, leave, admission)
 - **Auth/RBAC Middleware** — JWT verification at Edge. Role-based route protection.
 - **AI Engine Service** — Centralized Gemini API calls (`src/lib/ai/`)
 - **Payment Gateway** — Razorpay SDK + SmartCollect webhook handler
@@ -210,6 +211,56 @@ sequenceDiagram
     API-->>Student: "Leave approved."
 ```
 
+### 2.7 New Student Admission with Sibling Mapping
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Staff as Admin Staff
+    participant Web as Staff Dashboard
+    participant API as Next.js API
+    participant DB as PostgreSQL
+    participant R2 as Cloudflare R2
+    participant SMS as MSG91 (DLT)
+
+    Staff->>Web: Opens New Admission Form
+    Staff->>Web: Fills student details (name, DOB, class)
+    Staff->>Web: Fills parent details (name, phone)
+    Web->>API: POST /trpc/admission.createEnquiry
+    API->>DB: INSERT AdmissionEnquiry (status: ENQUIRY)
+    DB-->>API: Enquiry created
+
+    Note over Staff, R2: Document Upload Phase
+    Staff->>Web: Uploads Birth Certificate, Aadhaar
+    Web->>R2: Upload files via pre-signed URL
+    Web->>API: POST /trpc/admission.uploadDocuments
+    API->>DB: UPDATE documents JSON array
+
+    Note over Staff, Web: Sibling Check
+    Staff->>Web: Checks "Has Sibling in School?"
+    Web->>API: GET /trpc/admission.searchSibling(parentPhone)
+    API->>DB: SELECT StudentProfile WHERE parent.phone = ?
+    DB-->>API: Found: Rahul Kumar (Class 10-A)
+    API-->>Web: Show existing sibling + parent details
+
+    Note over Staff, SMS: Confirm Admission
+    Staff->>Web: Clicks "Confirm Admission"
+    Web->>API: POST /trpc/admission.confirmAdmission
+    API->>DB: INSERT User (role: STUDENT) + StudentProfile
+    
+    alt Has Sibling (Reuse Parent)
+        API->>DB: Link new student to existing ParentProfile
+        Note over API: No new parent account created
+    else No Sibling (New Parent)
+        API->>DB: INSERT User (role: PARENT) + ParentProfile
+    end
+    
+    API->>API: Generate Welcome Letter PDF
+    API->>R2: Upload PDF
+    API->>SMS: Send credentials to parent phone
+    API-->>Web: { studentUsername, parentUsername, pdfUrl }
+    Web-->>Staff: "Admission Complete. Credentials sent via SMS."
+```
+
 ---
 
 ## 3. Data Isolation & Multi-Tenancy
@@ -291,8 +342,14 @@ school-erp-documents/
 │   │       ├── report-cards/
 │   │       ├── certificates/
 │   │       └── medical/
-│   └── expenses/            # Vendor receipt scans
-│       └── {expenseId}/{filename}
+│   ├── expenses/            # Vendor receipt scans
+│   │   └── {expenseId}/{filename}
+│   └── admissions/          # Admission documents
+│       └── {enquiryId}/
+│           ├── birth-certificate.pdf
+│           ├── aadhaar.pdf
+│           ├── transfer-certificate.pdf
+│           └── welcome-letter.pdf
 ```
 
 ### 6.2 Upload Strategy: Pre-signed URLs

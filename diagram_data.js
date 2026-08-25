@@ -4,8 +4,8 @@
  *   - implementation_plan.md (513 lines)
  *   - trd.md (922 lines) 
  *   - prd.md, system_design.md, design.md, phase.md
- * Total Nodes: 650+
- * Roles: Master Admin, Super Admin, Teacher, Student, Parent, Driver, Accountant
+ * Total Nodes: 750+
+ * Roles: Master Admin, Super Admin, Admin Staff, Teacher, Student, Parent, Driver, Accountant
  */
 
 const TREE_DATA = {
@@ -1870,6 +1870,159 @@ const TREE_DATA = {
             { name: "Monthly Statement", desc: "Detailed month-wise financial statement with line items", icon: "📋", color: "accountant" },
             { name: "Tax-ready Export", desc: "Export data formatted for tax filing (Excel/CSV with GST columns)", icon: "📤", color: "accountant" },
             { name: "Audit Trail Log", desc: "Immutable log of ALL financial transactions. Cannot be deleted/modified", icon: "🔒", color: "accountant" }
+          ]
+        }
+      ]
+    },
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 📝 ADMIN STAFF (Front Office / Admission)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {
+      name: "ADMIN STAFF",
+      desc: "Front Office / Admission Clerk • role=ADMIN_STAFF • /staff/*",
+      icon: "📝",
+      color: "general",
+      children: [
+        {
+          name: "Admission Panel",
+          desc: "New student onboarding • Multi-step wizard • tRPC: admission.ts",
+          icon: "🎓",
+          color: "general",
+          children: [
+            {
+              name: "Enquiry Management",
+              desc: "Pre-admission tracking • AdmissionEnquiry model",
+              icon: "🔍",
+              color: "general",
+              children: [
+                { name: "admission.createEnquiry", desc: "Mutation: { studentName, dob, gender, parentName, parentPhone, appliedForClass } → AdmissionEnquiry (status: ENQUIRY)", icon: "➕", color: "general" },
+                { name: "admission.getAll", desc: "Query: { schoolId, status?, page, limit } → { enquiries[], total }", icon: "📋", color: "general" },
+                { name: "admission.updateStatus", desc: "Mutation: { id, status } → ENQUIRY → APPLIED → ADMITTED/REJECTED", icon: "🔄", color: "general" }
+              ]
+            },
+            {
+              name: "Document Upload",
+              desc: "Birth Certificate, Aadhaar, Transfer Certificate → R2",
+              icon: "📄",
+              color: "general",
+              children: [
+                { name: "admission.uploadDocuments", desc: "Mutation: { id, documents: string[] } → Pre-signed R2 URLs saved to AdmissionEnquiry.documents JSON", icon: "📤", color: "general" },
+                { name: "R2 Path", desc: "{schoolId}/admissions/{enquiryId}/ — birth-certificate.pdf, aadhaar.pdf, tc.pdf", icon: "☁️", color: "general" }
+              ]
+            },
+            {
+              name: "Admission Wizard (5-Step Form)",
+              desc: "Multi-step UI: Student → Parent → Class → Docs → Confirm",
+              icon: "🧙",
+              color: "general",
+              children: [
+                { name: "Step 1: Student Details", desc: "Name, DOB, Gender, Previous School, Photo upload", icon: "1️⃣", color: "general" },
+                { name: "Step 2: Parent Details", desc: "Name, Phone, Email + 'Has Sibling?' checkbox", icon: "2️⃣", color: "general" },
+                { name: "Step 3: Class Assignment", desc: "Select Class, Section, Roll Number (auto-increment suggested)", icon: "3️⃣", color: "general" },
+                { name: "Step 4: Document Upload", desc: "Drag-drop Birth Cert, Aadhaar, TC → Cloudflare R2", icon: "4️⃣", color: "general" },
+                { name: "Step 5: Review & Confirm", desc: "Summary card → 'Confirm Admission' button → Auto-generate credentials", icon: "5️⃣", color: "general" }
+              ]
+            },
+            {
+              name: "Confirm Admission (Auto-Generation)",
+              desc: "admission.confirmAdmission → Creates accounts + credentials",
+              icon: "✅",
+              color: "general",
+              children: [
+                { name: "Auto-Create Student User", desc: "INSERT User (role: STUDENT) → INSERT StudentProfile (classId, rollNumber)", icon: "👨‍🎓", color: "general" },
+                { name: "Auto-Create/Reuse Parent User", desc: "If sibling: Reuse existing ParentProfile. If new: INSERT User (role: PARENT) + ParentProfile", icon: "👨‍👩‍👦", color: "general" },
+                { name: "Credential Generation", desc: "Student: STD{rollNo}@{schoolCode} | Password: DOB (DDMMYYYY)", icon: "🔑", color: "general" },
+                { name: "Parent Credentials", desc: "Parent: parentPhone@{schoolCode} | Password: Student DOB or OTP-based", icon: "🔑", color: "general" },
+                { name: "Welcome Letter PDF", desc: "Auto-generate PDF with credentials, class info, school rules → Upload to R2", icon: "📃", color: "general" },
+                { name: "SMS Dispatch", desc: "MSG91 sends credentials to parent phone: 'Welcome! Student: STD1001, Password: 25082015'", icon: "💬", color: "general" }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Sibling Mapping",
+          desc: "Link/Unlink multiple children to one parent account",
+          icon: "🔗",
+          color: "general",
+          children: [
+            {
+              name: "Search Sibling",
+              desc: "admission.searchSibling → Find existing students by name/phone",
+              icon: "🔍",
+              color: "general",
+              children: [
+                { name: "Search by Parent Phone", desc: "Query: StudentProfile JOIN ParentProfile WHERE parentPhone = ?", icon: "📱", color: "general" },
+                { name: "Search by Student Name", desc: "Query: StudentProfile WHERE studentName ILIKE '%searchTerm%'", icon: "🔤", color: "general" },
+                { name: "Result Display", desc: "Show: Rahul Kumar | Class 10-A | Parent: Mrs. Kumar (9876543210)", icon: "📋", color: "general" }
+              ]
+            },
+            {
+              name: "Link Sibling",
+              desc: "Connect new student to existing parent account",
+              icon: "🔗",
+              color: "general",
+              children: [
+                { name: "Auto-Fill Parent Data", desc: "Fetch existing parent's name, phone, email, address → Pre-fill admission form", icon: "📋", color: "general" },
+                { name: "Reuse ParentProfile", desc: "New StudentProfile.parentId = existing ParentProfile.id (no new parent User created)", icon: "🔄", color: "general" },
+                { name: "Parent Dashboard", desc: "Parent sees 'Profile Switcher' dropdown: 👦 Rahul | 👧 Priya → Toggle between children", icon: "🔀", color: "general" }
+              ]
+            },
+            {
+              name: "Unlink Sibling",
+              desc: "admission.unlinkSibling → Separate child from parent account",
+              icon: "✂️",
+              color: "general",
+              children: [
+                { name: "Create Fresh Parent Account", desc: "New User (role: PARENT) + new ParentProfile → Student's parentId updated", icon: "👤", color: "general" },
+                { name: "Confirmation Dialog", desc: "Warning: 'This will create a new parent account. Old parent will lose access to this child.'", icon: "⚠️", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "Sibling Edge Cases",
+              desc: "Data integrity protection for linked families",
+              icon: "⚠️",
+              color: "edge",
+              edge: true,
+              children: [
+                { name: "Fee Data Isolation", desc: "FeePayment linked to studentId NOT parentId → Fees never cross-contaminate between siblings", icon: "💰", color: "edge", edge: true },
+                { name: "Razorpay Virtual Account per Student", desc: "Each child has own virtualAccountId → Parent pays to specific child's account", icon: "💳", color: "edge", edge: true },
+                { name: "Divorce / Separated Parents", desc: "Option: Assign 2 guardian Users to 1 student (dual parent login)", icon: "👥", color: "edge", edge: true },
+                { name: "Child Leaves (ALUMNI)", desc: "Parent retains access to remaining children. Alumni child = read-only", icon: "🎓", color: "edge", edge: true },
+                { name: "Wrong Sibling Link", desc: "'Unlink' button → Creates fresh parent account → Restores independence", icon: "🔧", color: "edge", edge: true }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Admission Register",
+          desc: "Searchable list of all admitted students",
+          icon: "📋",
+          color: "general",
+          children: [
+            { name: "Filter by Status", desc: "ENQUIRY | APPLIED | ADMITTED | REJECTED — Dropdown filter", icon: "🔽", color: "general" },
+            { name: "Filter by Class", desc: "Show admissions for specific class/section", icon: "🏛️", color: "general" },
+            { name: "Search", desc: "Search by student name, parent phone, or application ID", icon: "🔍", color: "general" },
+            { name: "Export to Excel", desc: "Download admission register as .xlsx with all details", icon: "📤", color: "general" }
+          ]
+        },
+        {
+          name: "Database: AdmissionEnquiry",
+          desc: "Prisma Model • 15 fields • 2 indexes",
+          icon: "🔷",
+          color: "general",
+          children: [
+            { name: "id: String @id @default(uuid())", desc: "Primary key", icon: "🔑", color: "general" },
+            { name: "schoolId: String", desc: "FK → School (multi-tenant isolation)", icon: "🏫", color: "general" },
+            { name: "studentName, dob, gender", desc: "Basic student demographics", icon: "👤", color: "general" },
+            { name: "parentName, parentPhone, parentEmail", desc: "Guardian contact details", icon: "📱", color: "general" },
+            { name: "appliedForClass: String", desc: "Target class for admission", icon: "🏛️", color: "general" },
+            { name: "status: AdmissionStatus", desc: "ENQUIRY | APPLIED | ADMITTED | REJECTED", icon: "🔄", color: "general" },
+            { name: "documents: Json?", desc: "Array of R2 URLs: [birth-cert.pdf, aadhaar.pdf, tc.pdf]", icon: "📄", color: "general" },
+            { name: "siblingStudentId: String?", desc: "FK to existing StudentProfile if sibling linked", icon: "🔗", color: "general" },
+            { name: "createdStudentId, createdParentId", desc: "FKs to created User/Profile on ADMITTED status", icon: "✅", color: "general" },
+            { name: "@@index([schoolId, status])", desc: "Fast filter: all enquiries by status per school", icon: "⚡", color: "general" },
+            { name: "@@index([schoolId, parentPhone])", desc: "Fast sibling search by parent phone number", icon: "⚡", color: "general" }
           ]
         }
       ]

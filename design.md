@@ -118,7 +118,7 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 
 ---
 
-## 3. Role-Specific Dashboard Layouts — All 7 Panels
+## 3. Role-Specific Dashboard Layouts — All 8 Panels
 
 ### 3.1 MASTER_ADMIN Dashboard (Desktop Only)
 **Layout:** Full-width sidebar navigation (persistent left)
@@ -286,6 +286,39 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 - Matched Payments (auto-reconciled by Razorpay webhook)
 - Unmatched/Pending (needs manual resolution)
 - Edge case: Wrong Virtual Account → Flag for admin
+
+---
+
+### 3.8 ADMIN_STAFF (Front Office / Admission) Dashboard
+**Layout:** Desktop sidebar + Clean form-focused layout
+
+**Navigation Items:**
+- 📝 New Admission (Multi-step form)
+- 📋 Admission Register (Searchable list)
+- 🔍 Enquiries (Pre-admission tracking)
+- 🔗 Sibling Management (Link/Unlink)
+- 🖨️ Credentials (Generate & Print)
+
+**Dashboard Widgets:**
+- Today's Admissions Count (completed today)
+- Pending Enquiries (status: ENQUIRY or APPLIED)
+- Recent Admissions list (last 10)
+- Quick Action: "New Admission" (huge CTA button)
+
+**Admission Form UI (Multi-Step Wizard):**
+- **Step 1 — Student Details:** Name, DOB, Gender, Previous School, Photo upload
+- **Step 2 — Parent Details:** Name, Phone, Email, Address
+  - ☑️ **"Has Sibling in School?"** Checkbox
+  - If checked → Search bar appears → Type student name or parent phone → Auto-fill parent details from existing record
+- **Step 3 — Class Assignment:** Select Class, Section, Roll Number (auto-increment suggestion)
+- **Step 4 — Document Upload:** Birth Certificate, Aadhaar, Transfer Certificate (drag-drop to R2)
+- **Step 5 — Review & Confirm:** Summary card → "Confirm Admission" button
+  - On confirm → Auto-generate credentials → Show credentials card → "Print Welcome Letter" + "Send SMS" buttons
+
+**Sibling Management View:**
+- Table: Student Name | Class | Linked Parent | Siblings Count
+- Actions: "Link Sibling" (search + connect) | "Unlink" (with confirmation dialog)
+- Edge case: "Unlink" triggers creation of fresh parent account for that student
 
 ---
 

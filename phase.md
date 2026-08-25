@@ -52,13 +52,14 @@ Source: Implementation Plan Lines 366-394
 - [ ] Define route-role mapping:
   - `/master/*` → MASTER_ADMIN only
   - `/admin/*` → SUPER_ADMIN only
+  - `/staff/*` → ADMIN_STAFF only
   - `/teacher/*` → TEACHER only
   - `/student/*` → STUDENT only
   - `/parent/*` → PARENT only
   - `/driver/*` → DRIVER only
   - `/accountant/*` → ACCOUNTANT only
 - [ ] Unauthorized access → Redirect to `/login` or show 403
-- [ ] Scaffold all 7 dashboard route groups under `(dashboard)/`
+- [ ] Scaffold all 8 dashboard route groups under `(dashboard)/`
 
 ---
 
@@ -94,6 +95,24 @@ Source: Implementation Plan Lines 366-394
 - [ ] Build UI to create parent accounts
 - [ ] Link parent to student via `parentId` FK in StudentProfile
 - [ ] Support multiple children per parent (1-to-many relationship)
+
+**Task 10.5: Admission Panel (ADMIN_STAFF Front Office)**
+- [ ] Build tRPC router: `admission.ts` (createEnquiry, getAll, updateStatus, uploadDocuments, confirmAdmission, searchSibling, unlinkSibling, generateWelcomeLetter)
+- [ ] Build UI: Multi-step `<AdmissionWizard />` form:
+  - Step 1: Student Details (name, DOB, gender, previous school)
+  - Step 2: Parent Details (name, phone, email) + "Has Sibling?" checkbox
+  - Step 3: Class Assignment (class, section, roll number)
+  - Step 4: Document Upload (Birth Cert, Aadhaar, TC to R2)
+  - Step 5: Review & Confirm → Auto-generate credentials
+- [ ] Create `AdmissionEnquiry` Prisma model with status workflow: ENQUIRY → APPLIED → ADMITTED
+- [ ] Sibling search: Query StudentProfile by parent phone or student name
+- [ ] On confirm: Auto-create User (STUDENT) + StudentProfile + link/create ParentProfile
+- [ ] Auto-generate credentials: Student username (STD{rollNo}@school), default password (DOB: DDMMYYYY)
+- [ ] Welcome Letter PDF generation + upload to R2
+- [ ] SMS dispatch: Send credentials to parent phone via MSG91
+- [ ] Sibling Management view: Table with Link/Unlink actions
+- [ ] Edge case: Unlink Sibling → Create fresh parent account
+- [ ] Edge case: Divorce/separated → Support 2 guardian accounts
 
 **Task 11: Notice Board**
 - [ ] Build tRPC router: `notice.ts` (create, getForUser)
@@ -404,7 +423,7 @@ Source: Implementation Plan Lines 496-508
 - [ ] `npm run build` compilation check (TypeScript strict)
 
 ### Manual Verification
-- [ ] Login as each of the 7 roles → Verify all features accessible
+- [ ] Login as each of the 8 roles → Verify all features accessible
 - [ ] Payment gateway sandbox testing (Razorpay test mode)
 - [ ] AI feature accuracy testing (Gemini output quality review)
 - [ ] Mobile responsiveness check (Chrome DevTools + real devices)
