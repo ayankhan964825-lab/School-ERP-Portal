@@ -1370,6 +1370,17 @@ const TREE_DATA = {
               ]
             }
           ]
+        },
+        {
+          name: "Report Card Designer",
+          desc: "Create and bulk-generate Board specific report cards",
+          icon: "🖨️",
+          color: "super_admin",
+          children: [
+            { name: "Grading Configuration", desc: "Set CBSE/State Board scales (e.g. 91-100 = A1)", icon: "⚙️", color: "super_admin" },
+            { name: "Layout Builder", desc: "Drag-drop UI for placing Logo, Principal Sign, and Remarks", icon: "🎨", color: "super_admin" },
+            { name: "Bulk PDF Engine", desc: "Generate 500+ report cards as a single print-ready PDF", icon: "📄", color: "super_admin" }
+          ]
         }
       ]
     },
@@ -1871,6 +1882,18 @@ const TREE_DATA = {
             { name: "Tax-ready Export", desc: "Export data formatted for tax filing (Excel/CSV with GST columns)", icon: "📤", color: "accountant" },
             { name: "Audit Trail Log", desc: "Immutable log of ALL financial transactions. Cannot be deleted/modified", icon: "🔒", color: "accountant" }
           ]
+        },
+        {
+          name: "HR & Payroll Management",
+          desc: "Calculate staff salaries & process payouts • /accountant/payroll",
+          icon: "💵",
+          color: "accountant",
+          children: [
+            { name: "Attendance Sync", desc: "Auto-fetch TeacherAttendance & LeaveApplications for the month", icon: "📅", color: "accountant" },
+            { name: "Salary Calculation", desc: "Gross = Base * (PayableDays / TotalDays). Deduct PF/TDS/Advances", icon: "🧮", color: "accountant" },
+            { name: "Digital Payslips", desc: "Generate bulk PDF payslips for all staff members", icon: "📄", color: "accountant" },
+            { name: "Bank NACH Export", desc: "Export CSV format ready for bulk corporate banking upload", icon: "🏦", color: "accountant" }
+          ]
         }
       ]
     },
@@ -2044,6 +2067,63 @@ const TREE_DATA = {
             { name: "@@index([schoolId, status])", desc: "Fast filter: all enquiries by status per school", icon: "⚡", color: "general" },
             { name: "@@index([schoolId, parentPhone])", desc: "Fast sibling search by parent phone number", icon: "⚡", color: "general" }
           ]
+        }
+      ]
+    },
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 📚 LIBRARIAN
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {
+      name: "LIBRARIAN",
+      desc: "Library Management System • role=LIBRARIAN",
+      icon: "📚",
+      color: "teacher",
+      children: [
+        {
+          name: "5-Second Issue/Return",
+          desc: "Barcode queue flow for rapid book circulation",
+          icon: "🔄",
+          color: "teacher",
+          children: [
+            { name: "Scan ID & Book", desc: "Instantly link BookCopy to StudentProfile", icon: "🤳", color: "teacher" },
+            { name: "Auto Fine Calculation", desc: "If overdue, calculates ₹/day fine automatically", icon: "💰", color: "edge", edge: true },
+            { name: "Add to Fee Dues", desc: "Push unpaid fines to student's main fee challan", icon: "🧾", color: "teacher" }
+          ]
+        },
+        {
+          name: "Book Cataloging",
+          desc: "Add/edit books and copies",
+          icon: "📖",
+          color: "teacher"
+        }
+      ]
+    },
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 📦 STORE MANAGER
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {
+      name: "STORE MANAGER",
+      desc: "Inventory & POS Billing • role=STORE_MANAGER",
+      icon: "📦",
+      color: "driver",
+      children: [
+        {
+          name: "POS Counter Billing",
+          desc: "Fast checkout for uniforms and books",
+          icon: "🛒",
+          color: "driver",
+          children: [
+            { name: "Dynamic Razorpay QR", desc: "Instant UPI collection on screen", icon: "📱", color: "driver" },
+            { name: "Thermal Receipt", desc: "ESC/POS 80mm GST receipt auto-print", icon: "🖨️", color: "driver" }
+          ]
+        },
+        {
+          name: "Inventory Stock",
+          desc: "Track variants (sizes) and low-stock alerts",
+          icon: "📉",
+          color: "driver"
         }
       ]
     },

@@ -209,6 +209,40 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 ---
 
+### 2.9 LIBRARIAN
+
+**Profile:** Library manager responsible for book circulation and cataloging.
+
+**Exact Permissions:**
+1. Manage Book Catalog (Add/Edit/Delete Books, Variants, Barcodes).
+2. Issue and Return Books via barcode scanning.
+3. Manage Due Dates and calculate/levy Late Fines.
+4. Cannot access academic results, fees, or modify student/teacher data.
+
+**Dashboard Features:**
+- 5-Second Barcode Issue/Return queue interface.
+- Low-stock / Unavailable Book tracking.
+- Overdue Books list and fine collection.
+
+---
+
+### 2.10 STORE_MANAGER
+
+**Profile:** Inventory and stock operations manager for uniforms, books, and stationery.
+
+**Exact Permissions:**
+1. Manage Inventory Items and Variants (Sizes).
+2. Track and update stock levels.
+3. Execute POS Billing for counter sales.
+4. Cannot access academic results, library, or core school fees.
+
+**Dashboard Features:**
+- Thermal POS billing interface (Cash/QR payment checkout).
+- Low Stock alerts dashboard.
+- Vendor and Purchase Order ledger.
+
+---
+
 ## 3. Core Modules — Feature-by-Feature Deep Dive
 
 ### 3.1 Multi-Tenant Foundation Module
@@ -514,6 +548,46 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 2. **Divorce/Separated Parents:** Option to assign 2 guardians with separate logins
 3. **One Child Leaves (ALUMNI):** Parent retains access to remaining child. Alumni child's data becomes read-only
 4. **Fee Data Integrity:** FeePayment is linked to `studentId`, NOT `parentId` — no cross-child contamination
+
+---
+
+### 3.10 Library Management System (Digital LMS)
+*Automating the school's physical library operations.*
+- **Barcode Engine:** USB Barcode scanner support for books and student ID cards.
+- **5-Second Issue/Return:** Lightning-fast issue flow without keyboard typing.
+- **Fine Calculation Engine:** Auto-calculates overdue fines based on rules (e.g., ₹5/day).
+- **Fee Integration:** Outstanding fines can be instantly added to the student's next "Fee Dues" challan.
+- **Parent Portal:** Real-time visibility into issued books and upcoming due dates via SMS/Push reminders.
+
+### 3.11 Inventory & Store Management (POS Billing)
+*Managing school uniform, books, and stationery sales.*
+- **Item Master with Variants:** Grouping items (e.g., Winter Blazer) with size variants (28, 30, 32) and separate stock counters.
+- **POS Billing Screen:** Cashier-optimized counter interface for quick checkout.
+- **Thermal Receipt:** ESC/POS 80mm thermal printer support for instant GST/bill printing.
+- **Stock Depletion & Alerts:** Auto-decrements stock on sale; triggers low-stock dashboard alerts.
+
+### 3.12 HR & Payroll Management (Staff Salaries)
+*End-to-end employee salary and deduction management.*
+- **Salary Setup:** Basic + HRA + Allowances - PF - ESI - TDS configurations.
+- **Attendance Sync:** Pulls teacher attendance and approved leaves directly into the payroll calculation.
+- **1-Click Payroll Run:** Computes net salary for all staff at month-end based on payable days.
+- **Bank Transfer Export:** Generates bulk bank transfer NACH files (Excel/CSV) for instant payout.
+- **Digital Payslips:** Staff can download automated PDF salary slips directly from their dashboard.
+
+### 3.13 1-Click Certificate Generator
+*Instant generation of TC, Bonafide, and Character Certificates.*
+- **Dues Verification Block:** The system blocks Transfer Certificate (TC) generation if library fines or school fees are pending.
+- **Auto-Fill Data:** Replaces manual typing by mapping DB fields (Name, Admission Date, DOB in words, Category) directly onto standard certificate templates.
+- **Anti-Fraud QR Code:** Each generated certificate prints a verifiable QR code. Scanning it checks our database to confirm authenticity.
+- **Lifecycle Update:** Issuing a TC automatically transitions the student status to `ALUMNI`.
+
+### 3.14 Standardized Report Card Designer
+*Complex board-specific grading and printable report generation.*
+- **Custom Grading Bounds:** Configurable rules for CBSE (e.g., 91-100 = A1) or State Boards.
+- **Term Weightage:** Auto-calculates final scores based on weights (e.g., 20% PT + 80% Final).
+- **Co-Scholastic Tracking:** A/B/C grading for discipline, art, and health.
+- **AI Remarks:** Gemini API generates a 2-line personalized remark per student based on strong/weak subjects.
+- **Bulk PDF Export:** Generates the entire class's report cards as a single, print-ready, high-resolution PDF with Principal signatures.
 
 ---
 

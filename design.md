@@ -164,6 +164,11 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 - AI At-Risk Alerts (students flagged by AI)
 - Syllabus Progress Summary (behind/on-track/ahead)
 
+**Report Card Designer UI:**
+- Drag & Drop layout builder (Header, Logo, Grading Scale, Remarks).
+- Preview mode (switch between CBSE 8-point / State Board scales).
+- 1-Click "Bulk Generate Class PDF" button.
+
 ---
 
 ### 3.3 TEACHER Dashboard (Mobile-First)
@@ -287,6 +292,11 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 - Unmatched/Pending (needs manual resolution)
 - Edge case: Wrong Virtual Account → Flag for admin
 
+**Payroll Management UI:**
+- "Run Monthly Payroll" CTA (bulk calculation based on attendance).
+- Salary Sheet table (Base, HRA, PF Deductions, Net Payable).
+- "Export Bank NACH File" button (downloads CSV/Excel).
+
 ---
 
 ### 3.8 ADMIN_STAFF (Front Office / Admission) Dashboard
@@ -334,6 +344,43 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 - Table: Student Name | Class | Linked Parent | Siblings Count
 - Actions: "Link Sibling" (search + connect) | "Unlink" (with confirmation dialog)
 - Edge case: "Unlink" triggers creation of fresh parent account for that student
+
+**1-Click Certificate Generator UI:**
+- Standard dropdowns for Certificate Type (TC, Bonafide, Character).
+- Real-time PDF preview pane.
+- Hard block/red alert if library/fee dues exist before printing TC.
+
+---
+
+### 3.9 LIBRARIAN Dashboard
+**Layout:** Full-width focused workspace
+
+**Navigation Items:**
+- 📚 Book Catalog (Inventory)
+- 🔄 Issue / Return (Fast action queue)
+- ⚠️ Overdue Fines
+- 📊 Library Reports
+
+**5-Second Issue/Return UI:**
+- Giant centered input field focused by default (ready for barcode scanner).
+- Scanned items appear in a "Queue" stack.
+- Auto-calculates late fine on return if overdue > 0 days.
+
+---
+
+### 3.10 STORE_MANAGER Dashboard
+**Layout:** Tablet-optimized POS Grid
+
+**Navigation Items:**
+- 📦 Inventory Stock
+- 🛒 Point of Sale (POS Billing)
+- 📝 Purchase Orders
+
+**POS Billing UI:**
+- Left panel: Search items / variants (e.g., Blazer Size 34).
+- Right panel: Billing receipt layout (Subtotal, Tax, Total).
+- Payment Action buttons: [Cash] [Generate Dynamic QR] [Card].
+- Auto-triggers 80mm thermal print job on success.
 
 ---
 

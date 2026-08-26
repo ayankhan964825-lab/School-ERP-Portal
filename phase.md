@@ -414,6 +414,43 @@ Source: Implementation Plan Lines 434-443
 
 ---
 
+## Phase 2: Enterprise Modules (Weeks 9-11)
+
+### Week 9: Library & Inventory
+**Task 53: Library Management System**
+- [ ] Build `library.ts` router (issue, return, collect fines).
+- [ ] Build `<LibrarianDashboard />` with fast Barcode Issue/Return queue.
+- [ ] Implement overdue fine calculation cron/logic.
+- [ ] Link unpaid library fines to student fee dues.
+
+**Task 54: Inventory & POS Billing**
+- [ ] Build `inventory.ts` router (item variants, stock decrements, checkout).
+- [ ] Build `<StoreManagerDashboard />` POS counter UI.
+- [ ] Integrate Razorpay Dynamic QR + Cash flow for checkout.
+- [ ] Build 80mm ESC/POS Thermal Receipt print layout.
+
+### Week 10: HR & Payroll
+**Task 55: Payroll Execution Engine**
+- [ ] Build `payroll.ts` router.
+- [ ] Sync `TeacherAttendance` & `LeaveApplications` into payable days calculation.
+- [ ] Build `<AccountantPayrollView />` for bulk 1-Click calculation.
+- [ ] Generate individual PDF Payslips and NACH bank export CSV.
+
+### Week 11: Documents & Report Cards
+**Task 56: 1-Click Certificate Generator**
+- [ ] Build `certificate.ts` (TC, Bonafide generation).
+- [ ] Create PDF templates mapping DB fields (Name, Admission No, DOB).
+- [ ] Add Dues Check (block TC if fees/library pending).
+- [ ] Add secure QR Hash verification logic.
+
+**Task 57: Report Card Designer**
+- [ ] Build `reportCard.ts` for grading logic.
+- [ ] Create Drag & Drop Report Card layout builder for Super Admin.
+- [ ] Integrate Gemini API for personalized 2-line student remarks.
+- [ ] Build bulk PDF generation engine for full class printing.
+
+---
+
 ## Verification & Testing Plan
 
 Source: Implementation Plan Lines 496-508

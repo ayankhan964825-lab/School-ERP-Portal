@@ -328,6 +328,104 @@ sequenceDiagram
     SMS-->>API: Delivered: 197, Failed: 3
 ```
 
+### 2.10 Library Book Issue/Return (Barcode Flow)
+```mermaid
+sequenceDiagram
+    actor L as Librarian
+    participant Web as Browser
+    participant API as tRPC API
+    participant DB as Database
+
+    Note over L,DB: Book Issue (5 Seconds)
+    L->>Web: Scans Student Barcode
+    Web->>API: GET /trpc/library.searchStudent (barcode)
+    API-->>Web: Returns Student Details
+    
+    L->>Web: Scans Book Barcode
+    Web->>API: POST /trpc/library.issueBook
+    API->>DB: INSERT BookIssue (dueDate = today + 14)
+    API->>DB: UPDATE BookCopy (status = ISSUED)
+    API-->>Web: Success (Green Check)
+
+    Note over L,DB: Book Return & Fine
+    L->>Web: Scans Book Barcode
+    Web->>API: POST /trpc/library.returnBook
+    API->>DB: Check if today > dueDate
+    alt Overdue
+        API->>DB: Calculate fine (e.g. ₹20)
+        API-->>Web: Shows fine collection prompt
+        L->>Web: Clicks "Add Fine to School Fees"
+        Web->>API: POST /trpc/library.addFineToFees
+        API->>DB: CREATE FeePayment (type: LIBRARY_FINE)
+    end
+    API->>DB: UPDATE BookCopy (status = AVAILABLE)
+    API-->>Web: Return Successful
+```
+
+### 2.11 Inventory POS Billing (Cash/QR Checkout)
+```mermaid
+sequenceDiagram
+    actor C as Store Manager
+    participant Web as Browser
+    participant API as tRPC API
+    participant DB as Database
+    participant RZP as Razorpay
+    participant Print as Thermal Printer
+
+    C->>Web: Enters Roll No / Phone
+    Web->>API: Fetch Student/Parent details
+    API-->>Web: Pre-fills billing info
+
+    C->>Web: Selects "Size 32 Blazer" + "Class 5 Books"
+    Web->>Web: Calculates Total (e.g. ₹5,200)
+
+    C->>Web: Clicks "Generate Dynamic QR"
+    Web->>API: POST /trpc/inventory.createOrder
+    API->>RZP: Create Order (amount: 5200)
+    RZP-->>API: returns qr_url
+    API-->>Web: Displays QR on screen
+
+    Note over C,RZP: Parent scans & pays via PhonePe
+    RZP->>API: Webhook (payment.captured)
+    API->>DB: UPDATE StoreSale (status=PAID)
+    API->>DB: DECREMENT InventoryStock
+    API-->>Web: Trigger Success Event via Pusher
+
+    Web->>Print: Sends receipt format via JS `window.print()`
+    Print-->>C: 80mm GST Thermal Receipt prints
+```
+
+### 2.12 Monthly Payroll Execution
+```mermaid
+sequenceDiagram
+    actor P as Principal
+    participant Web as Browser
+    participant API as tRPC API
+    participant DB as Database
+    participant Bank as Bank Portal
+
+    P->>Web: Clicks "Run Payroll (Aug 2026)"
+    Web->>API: POST /trpc/payroll.runMonthlyPayroll
+    
+    loop For each Teacher
+        API->>DB: Fetch TeacherAttendance (Aug)
+        API->>DB: Fetch LeaveApplications (Approved)
+        API->>API: Calculate PayableDays = (Total - Absent)
+        API->>API: Gross = Base * (PayableDays / TotalDays)
+        API->>API: Deduct PF(12%), TDS, Advances
+        API->>DB: INSERT Payslip (NetSalary, pdfUrl)
+    end
+
+    API-->>Web: { processed: 45, totalPayout: ₹18.5L }
+
+    P->>Web: Clicks "Download Bank NACH File"
+    Web->>API: GET /trpc/payroll.exportBankFile
+    API-->>Web: CSV file (Acct No, IFSC, Amount)
+    
+    P->>Bank: Uploads CSV to Corporate Banking
+    Bank-->>P: Salaries deposited instantly
+```
+
 ---
 
 ## 3. Data Isolation & Multi-Tenancy

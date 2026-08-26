@@ -115,6 +115,21 @@ enum Role {
   PARENT
   DRIVER
   ACCOUNTANT
+  LIBRARIAN
+  STORE_MANAGER
+}
+
+enum BookStatus {
+  AVAILABLE
+  ISSUED
+  LOST
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  ONLINE
+  CHEQUE
 }
 
 model User {
@@ -598,6 +613,157 @@ model AdmissionEnquiry {
   @@index([schoolId, parentPhone])
   @@index([schoolId, source])  // Filter by admission channel
 }
+
+// ==========================================
+// LIBRARY MANAGEMENT
+// ==========================================
+
+model Book {
+  id               String      @id @default(cuid())
+  schoolId         String
+  isbn             String?
+  title            String
+  author           String
+  category         String
+  totalCopies      Int         @default(1)
+  availableCopies  Int         @default(1)
+  school           School      @relation(fields: [schoolId], references: [id])
+  copies           BookCopy[]
+  createdAt        DateTime    @default(now())
+}
+
+model BookCopy {
+  id               String      @id @default(cuid())
+  bookId           String
+  barcodeId        String      @unique
+  status           BookStatus  @default(AVAILABLE) // AVAILABLE, ISSUED, LOST
+  book             Book        @relation(fields: [bookId], references: [id])
+  issues           BookIssue[]
+}
+
+model BookIssue {
+  id               String      @id @default(cuid())
+  schoolId         String
+  copyId           String
+  studentId        String
+  issueDate        DateTime    @default(now())
+  dueDate          DateTime
+  returnDate       DateTime?
+  fineAmount       Float       @default(0)
+  finePaid         Boolean     @default(false)
+  school           School      @relation(fields: [schoolId], references: [id])
+  copy             BookCopy    @relation(fields: [copyId], references: [id])
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+}
+
+// ==========================================
+// INVENTORY & STORE
+// ==========================================
+
+model InventoryItem {
+  id               String      @id @default(cuid())
+  schoolId         String
+  category         String      // UNIFORM, BOOK, STATIONERY
+  name             String
+  variant          String?     // e.g., "Size 32"
+  price            Float
+  stockCount       Int         @default(0)
+  lowStockAlert    Int         @default(5)
+  school           School      @relation(fields: [schoolId], references: [id])
+  sales            SaleItem[]
+}
+
+model StoreSale {
+  id               String      @id @default(cuid())
+  schoolId         String
+  studentId        String?
+  parentPhone      String?
+  totalAmount      Float
+  paymentMode      PaymentMode // CASH, UPI, ONLINE
+  status           String      @default("PAID")
+  receiptUrl       String?
+  school           School      @relation(fields: [schoolId], references: [id])
+  student          StudentProfile? @relation(fields: [studentId], references: [id])
+  items            SaleItem[]
+  createdAt        DateTime    @default(now())
+}
+
+model SaleItem {
+  id               String      @id @default(cuid())
+  saleId           String
+  itemId           String
+  quantity         Int
+  unitPrice        Float
+  sale             StoreSale   @relation(fields: [saleId], references: [id])
+  item             InventoryItem @relation(fields: [itemId], references: [id])
+}
+
+// ==========================================
+// HR & PAYROLL
+// ==========================================
+
+model StaffSalary {
+  id               String      @id @default(cuid())
+  schoolId         String
+  userId           String      // Teacher or Staff
+  baseSalary       Float
+  hra              Float       @default(0)
+  allowances       Float       @default(0)
+  pfDeduction      Float       @default(0)
+  tdsDeduction     Float       @default(0)
+  school           School      @relation(fields: [schoolId], references: [id])
+  user             User        @relation(fields: [userId], references: [id])
+  payslips         Payslip[]
+}
+
+model Payslip {
+  id               String      @id @default(cuid())
+  schoolId         String
+  salaryId         String
+  monthYear        String      // e.g., "08-2026"
+  payableDays      Int
+  grossSalary      Float
+  totalDeductions  Float
+  netSalary        Float
+  status           String      @default("GENERATED") // PAID, PENDING
+  pdfUrl           String?
+  school           School      @relation(fields: [schoolId], references: [id])
+  salary           StaffSalary @relation(fields: [salaryId], references: [id])
+  createdAt        DateTime    @default(now())
+}
+
+// ==========================================
+// CERTIFICATE & REPORT CARD ENGINE
+// ==========================================
+
+model IssuedCertificate {
+  id               String      @id @default(cuid())
+  schoolId         String
+  studentId        String
+  type             String      // TC, BONAFIDE, CHARACTER
+  qrHash           String      @unique
+  pdfUrl           String
+  issuedBy         String      // UserId of Admin
+  school           School      @relation(fields: [schoolId], references: [id])
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+  createdAt        DateTime    @default(now())
+}
+
+model ReportCard {
+  id               String      @id @default(cuid())
+  schoolId         String
+  studentId        String
+  classId          String
+  term             String      // TERM_1, TERM_2, FINAL
+  totalMarks       Float
+  percentage       Float
+  grade            String      // e.g., A1, B2
+  aiRemarks        String?     @db.Text
+  pdfUrl           String?
+  school           School      @relation(fields: [schoolId], references: [id])
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+  createdAt        DateTime    @default(now())
+}
 ```
 
 ---
@@ -892,6 +1058,42 @@ erp-portal/
 | `bulkImport` | Mutation | `{ csvData: AdmissionRow[] }` | `{ imported: number, siblingsLinked: number, errors: Error[] }` |
 | `downloadTemplate` | Query | `{}` | `{ templateUrl: string }` (pre-built Excel template) |
 | `getQrCode` | Query | `{ schoolId }` | `{ qrCodeUrl: string, formUrl: string }` |
+
+### 6.11 Router: `library.ts` (Librarian)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `searchBook` | Query | `{ isbn?, title? }` | `Book[]` |
+| `issueBook` | Mutation | `{ barcodeId, studentId }` | `BookIssue` |
+| `returnBook` | Mutation | `{ barcodeId }` | `{ issue: BookIssue, fine: number }` |
+| `collectFine` | Mutation | `{ issueId }` | `BookIssue (finePaid = true)` |
+| `addFineToFees` | Mutation | `{ issueId }` | `FeePayment (added to student dues)` |
+
+### 6.12 Router: `inventory.ts` (Store Manager)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `getStock` | Query | `{ category? }` | `InventoryItem[]` |
+| `checkout` | Mutation | `{ studentId?, items: {id, qty}[], paymentMode }` | `StoreSale` |
+| `getLowStockAlerts` | Query | `{}` | `InventoryItem[]` |
+
+### 6.13 Router: `payroll.ts` (Principal + Accountant)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `runMonthlyPayroll` | Mutation | `{ monthYear }` | `Payslip[]` (bulk calculated) |
+| `getPayslip` | Query | `{ id }` | `Payslip (with pdfUrl)` |
+| `exportBankFile` | Query | `{ monthYear }` | `{ csvUrl: string }` |
+
+### 6.14 Router: `certificate.ts` (Admin Staff)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `generateTC` | Mutation | `{ studentId }` | `{ pdfUrl, qrHash }` (throws if dues exist) |
+| `generateBonafide` | Mutation | `{ studentId }` | `{ pdfUrl, qrHash }` |
+| `verifyQr` | Query | `{ qrHash }` | `IssuedCertificate & { isValid: true }` |
+
+### 6.15 Router: `reportCard.ts` (Super Admin + Teacher)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `calculateGrades` | Mutation | `{ classId, term }` | `ReportCard[]` (batch processed) |
+| `bulkGeneratePdf` | Mutation | `{ classId, term }` | `{ pdfUrl }` (single merged file) |
 
 ---
 
