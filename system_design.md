@@ -426,6 +426,36 @@ sequenceDiagram
     Bank-->>P: Salaries deposited instantly
 ```
 
+### 2.13 U-DISE+ / CBSE Compliance Report Generation Flow
+```mermaid
+sequenceDiagram
+    actor SA as Super Admin
+    participant Web as Browser
+    participant API as tRPC API (compliance.ts)
+    participant DB as Database
+    participant Gen as Report Generator (Excel)
+
+    SA->>Web: Clicks "Download U-DISE+ Report (2026-27)"
+    Web->>API: POST /trpc/compliance.generateUDISE { academicYear }
+    
+    par Demographics Data
+        API->>DB: Count Students by Class, Gender, Category
+    and Staff Data
+        API->>DB: Fetch Active Teachers (Qualifications, Joining Date)
+    and Transport Data
+        API->>DB: Fetch Active Buses (Fitness & Insurance expiry)
+    end
+
+    API->>API: Calculate Pupil-Teacher Ratio (PTR)
+    API->>Gen: Aggregate data into CBSE/U-DISE standardized template
+    Gen-->>API: returns base64_excel / S3_URL
+    
+    API->>DB: INSERT ComplianceExportLog (status: COMPLETED)
+    API-->>Web: { downloadUrl: "https://r2.../report.xlsx" }
+    
+    Web-->>SA: Downloads "UDISE_Report_2026.xlsx"
+```
+
 ---
 
 ## 3. Data Isolation & Multi-Tenancy

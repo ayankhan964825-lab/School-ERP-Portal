@@ -589,6 +589,14 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 - **AI Remarks:** Gemini API generates a 2-line personalized remark per student based on strong/weak subjects.
 - **Bulk PDF Export:** Generates the entire class's report cards as a single, print-ready, high-resolution PDF with Principal signatures.
 
+### 3.15 1-Click Govt & CBSE Inspection Report Export (U-DISE+)
+*Solves the 15-day manual data aggregation pain point for Principals during annual affiliation inspections.*
+- **Demographics Matrix:** Auto-calculates category-wise (General/OBC/SC/ST/EWS), gender-wise, and minority student counts per class.
+- **Pupil-Teacher Ratio (PTR):** Evaluates current active student count vs active teaching staff against board norms (e.g., 30:1).
+- **Staff Credential Register:** Generates a formatted table of all teachers, showing B.Ed/CTET qualifications, joining date, and salary account details.
+- **Transport Safety Compliance:** Summarizes active school buses, pollution/insurance validity, and driver police verification status.
+- **1-Click Export Format:** Outputs directly into an audit-ready, government-standard Excel/CSV format (CBSE OASIS & UDISE+ compatible).
+
 ---
 
 ## 4. AI Features — The 10 Market Differentiators

@@ -384,6 +384,24 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 
 ---
 
+### 3.11 SUPER_ADMIN / MASTER_ADMIN Dashboard (Compliance & Reports)
+**Layout:** Analytics & Data Export Hub
+
+**Navigation Items:**
+- 📈 School Performance Analytics
+- 📑 Government & CBSE Compliance (U-DISE+)
+- 💰 Revenue & Expense Summary
+
+**Compliance Export UI:**
+- **Action Header:** Prominent "[📥 Download U-DISE+ / CBSE Report]" button.
+- **Preview Cards (Top Row):**
+  - Demographics Card (Category & Gender breakdown).
+  - Staff Compliance Card (Total Staff, B.Ed count, PTR Ratio).
+  - Infrastructure Card (Active Transport, Safety Expirations).
+- **Log Table (Bottom):** History of past exported compliance reports with 1-click re-download options.
+
+---
+
 ## 4. Animation & Interaction Specifications
 
 ### 4.1 Framer Motion Spring Physics

@@ -764,6 +764,18 @@ model ReportCard {
   student          StudentProfile @relation(fields: [studentId], references: [id])
   createdAt        DateTime    @default(now())
 }
+
+model ComplianceExportLog {
+  id               String      @id @default(cuid())
+  schoolId         String
+  requestedBy      String      // UserId of SuperAdmin/MasterAdmin
+  reportType       String      // UDISE_PLUS, CBSE_OASIS, STATE_BOARD
+  academicYear     String      // e.g., 2026-27
+  status           String      // PENDING, COMPLETED, FAILED
+  downloadUrl      String?     // S3/R2 URL for the generated Excel/PDF
+  school           School      @relation(fields: [schoolId], references: [id])
+  createdAt        DateTime    @default(now())
+}
 ```
 
 ---
@@ -1094,6 +1106,13 @@ erp-portal/
 |---|---|---|---|
 | `calculateGrades` | Mutation | `{ classId, term }` | `ReportCard[]` (batch processed) |
 | `bulkGeneratePdf` | Mutation | `{ classId, term }` | `{ pdfUrl }` (single merged file) |
+
+### 6.16 Router: `compliance.ts` (Super Admin + Master Admin)
+| Procedure | Type | Input | Output |
+|---|---|---|---|
+| `generateUDISE` | Mutation | `{ academicYear }` | `{ logId: string, downloadUrl: string }` |
+| `generateCBSEReport` | Mutation | `{ academicYear }` | `{ logId: string, downloadUrl: string }` |
+| `getExportLogs` | Query | `{ page, limit }` | `ComplianceExportLog[]` |
 
 ---
 

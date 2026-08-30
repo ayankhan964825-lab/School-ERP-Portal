@@ -449,6 +449,12 @@ Source: Implementation Plan Lines 434-443
 - [ ] Integrate Gemini API for personalized 2-line student remarks.
 - [ ] Build bulk PDF generation engine for full class printing.
 
+**Task 58: Govt & CBSE Compliance Export**
+- [ ] Build `compliance.ts` router.
+- [ ] Aggregation logic for Student Demographics (Gender/Category) and PTR.
+- [ ] UI for Super Admin Compliance Dashboard (1-click export button).
+- [ ] Implement Excel/CSV generation matching U-DISE+ / OASIS standard layout.
+
 ---
 
 ## Verification & Testing Plan

@@ -159,8 +159,8 @@ const TREE_DATA = {
           ]
         },
         {
-          name: "Database Architecture (20 Tables)",
-          desc: "Prisma Schema • TRD Section 3 • Implementation Plan Lines 63-187",
+          name: "Database Architecture (29 Tables / Models)",
+          desc: "Prisma Schema • TRD Section 3 • Multi-Tenant Enterprise Foundation",
           icon: "🗄️",
           color: "general",
           children: [
@@ -252,11 +252,27 @@ const TREE_DATA = {
                 { name: "Notice", desc: "{ schoolId, title, content, targetRoles: JSON[], targetClasses: JSON[], isPublished, publishDate, attachments }", icon: "📢", color: "general" },
                 { name: "LeaveApplication", desc: "{ userId, leaveType: SICK|CASUAL|PERSONAL, role, fromDate, toDate, reason, status, aiSubstituteSuggestion: JSON }", icon: "🏖️", color: "general" }
               ]
+            },
+            {
+              name: "Section I-M: Enterprise & Admissions (9 Tables)",
+              desc: "Admissions, Library, Inventory, Payroll, Certificates, Report Cards, Compliance",
+              icon: "💼",
+              color: "general",
+              children: [
+                { name: "AdmissionEnquiry", desc: "{ studentName, parentPhone, appliedForClass, source: MANUAL|QR_CODE|BULK_CSV, status, documentsPending, siblingStudentId }", icon: "📝", color: "general" },
+                { name: "Book & BookCopy", desc: "{ isbn, title, author, category, totalCopies, availableCopies } + BookCopy { barcodeId, status: AVAILABLE|ISSUED|LOST }", icon: "📚", color: "general" },
+                { name: "BookIssue", desc: "{ copyId, studentId, issueDate, dueDate, returnDate, fineAmount, finePaid }", icon: "🔄", color: "general" },
+                { name: "InventoryItem & Sale", desc: "{ category, name, variant, price, stockCount, lowStockAlert } + StoreSale { totalAmount, paymentMode, items }", icon: "📦", color: "general" },
+                { name: "StaffSalary & Payslip", desc: "{ baseSalary, hra, pfDeduction, tdsDeduction } + Payslip { monthYear, payableDays, grossSalary, netSalary, pdfUrl }", icon: "💵", color: "general" },
+                { name: "IssuedCertificate", desc: "{ studentId, type: TC|BONAFIDE|CHARACTER, qrHash, pdfUrl, issuedBy }", icon: "📜", color: "general" },
+                { name: "ReportCard", desc: "{ studentId, classId, term, totalMarks, percentage, grade: A1-E, aiRemarks, pdfUrl }", icon: "🖨️", color: "general" },
+                { name: "ComplianceExportLog", desc: "{ schoolId, requestedBy, reportType: UDISE_PLUS|CBSE_OASIS, academicYear, status, downloadUrl }", icon: "📥", color: "general" }
+              ]
             }
           ]
         },
         {
-          name: "tRPC API Layer (9 Routers)",
+          name: "tRPC API Layer (16 Routers)",
           desc: "TRD Section 6 • src/server/routers/*.ts",
           icon: "🔌",
           color: "general",
@@ -532,17 +548,17 @@ const TREE_DATA = {
           icon: "📁",
           color: "general",
           children: [
-            { name: "prisma/schema.prisma", desc: "Complete 20-table database schema with all relations", icon: "🔷", color: "general" },
+            { name: "prisma/schema.prisma", desc: "Complete 29-table database schema with multi-tenant enterprise relations", icon: "🔷", color: "general" },
             { name: "src/app/(auth)/", desc: "login/ and register/ — Public authentication pages", icon: "🔐", color: "general" },
-            { name: "src/app/(dashboard)/", desc: "7 role panels: master/, admin/, teacher/, student/, parent/, driver/, accountant/", icon: "📊", color: "general" },
+            { name: "src/app/(dashboard)/", desc: "10 role panels: master/, admin/, teacher/, student/, parent/, driver/, accountant/, staff/, librarian/, store/", icon: "📊", color: "general" },
             { name: "src/app/api/trpc/[trpc]/route.ts", desc: "tRPC HTTP handler endpoint", icon: "🔌", color: "general" },
             { name: "src/app/api/webhooks/razorpay/route.ts", desc: "SmartCollect webhook receiver for payment auto-reconciliation", icon: "💳", color: "general" },
             { name: "src/components/{ui,dashboard,forms,tables,charts}/", desc: "shadcn/ui primitives + dashboard widgets + zod forms + data tables + charts", icon: "🧩", color: "general" },
             { name: "src/lib/auth.ts", desc: "NextAuth configuration with Credentials Provider + JWT callbacks", icon: "🔐", color: "general" },
             { name: "src/lib/db.ts", desc: "Prisma client singleton (prevent hot-reload connection leak)", icon: "🐘", color: "general" },
-            { name: "src/lib/ai/*.ts", desc: "timetable-generator, leave-suggester, notice-writer AI services", icon: "🤖", color: "general" },
+            { name: "src/lib/ai/*.ts", desc: "timetable-generator, leave-suggester, notice-writer, remark-generator AI services", icon: "🤖", color: "general" },
             { name: "src/lib/payment/*.ts", desc: "razorpay.ts (SDK init) + smartcollect.ts (virtual account mgmt)", icon: "💳", color: "general" },
-            { name: "src/server/routers/*.ts", desc: "9 domain tRPC routers: school, user, class, attendance, result, fee, transport, notice, leave", icon: "⚙️", color: "general" }
+            { name: "src/server/routers/*.ts", desc: "16 domain tRPC routers: school, user, class, attendance, result, fee, transport, notice, leave, admission, library, inventory, payroll, certificate, reportCard, compliance", icon: "⚙️", color: "general" }
           ]
         },
         {
@@ -579,7 +595,7 @@ const TREE_DATA = {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
       name: "API LAYER (1 Unified)",
-      desc: "tRPC + Next.js API Routes • 9 Domain Routers + 1 Webhook Endpoint",
+      desc: "tRPC + Next.js API Routes • 15 Domain Routers + 1 Webhook Endpoint",
       icon: "🔌",
       color: "general",
       children: [
@@ -698,6 +714,86 @@ const TREE_DATA = {
                 { name: "leave.approve", desc: "Mutation: { id } → LeaveApplication (status: APPROVED)", icon: "✅", color: "teacher" },
                 { name: "leave.reject", desc: "Mutation: { id, reason } → LeaveApplication (status: REJECTED)", icon: "❌", color: "teacher" },
                 { name: "leave.getSubstituteSuggestion", desc: "Query: { teacherId, date } → { suggestions: TeacherSuggestion[] } — AI ranked", icon: "🤖", color: "teacher" }
+              ]
+            },
+            {
+              name: "admission.ts (Admin Staff + Super Admin)",
+              desc: "Omni-Channel Admission Engine (Manual, QR Code, Bulk Import, Siblings)",
+              icon: "📝",
+              color: "general",
+              children: [
+                { name: "admission.createEnquiry", desc: "Mutation: Fast manual single-page admission form", icon: "⌨️", color: "general" },
+                { name: "admission.createQrEnquiry", desc: "Mutation: Minimal 3-field form from reception QR scan", icon: "📱", color: "general" },
+                { name: "admission.bulkImport", desc: "Mutation: Excel upload with automatic sibling phone matching", icon: "📊", color: "general" },
+                { name: "admission.searchSibling", desc: "Query: Search existing students by phone/name to link siblings", icon: "🔗", color: "general" },
+                { name: "admission.confirmAdmission", desc: "Mutation: Assign class, roll no, collect fee & create Parent/Student user accounts", icon: "✅", color: "general" },
+                { name: "admission.unlinkSibling", desc: "Mutation: Unlink sibling & create fresh standalone parent account", icon: "✂️", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "library.ts (Librarian)",
+              desc: "Library LMS • Barcode cataloging & circulation",
+              icon: "📚",
+              color: "teacher",
+              children: [
+                { name: "library.searchBook", desc: "Query: { isbn?, title? } → Book[] with available copies", icon: "🔍", color: "teacher" },
+                { name: "library.issueBook", desc: "Mutation: { barcodeId, studentId } → Fast 5-sec BookIssue", icon: "🔄", color: "teacher" },
+                { name: "library.returnBook", desc: "Mutation: { barcodeId } → Calculates per-day overdue fine", icon: "📖", color: "teacher" },
+                { name: "library.addFineToFees", desc: "Mutation: Push unpaid book fines directly to student fee dues", icon: "💰", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "inventory.ts (Store Manager)",
+              desc: "Inventory & POS counter billing for uniforms & stationery",
+              icon: "📦",
+              color: "driver",
+              children: [
+                { name: "inventory.getStock", desc: "Query: Filter by category (Uniforms, Books, Stationery)", icon: "📋", color: "driver" },
+                { name: "inventory.checkout", desc: "Mutation: POS sale with dynamic Razorpay QR or Cash", icon: "🛒", color: "driver" },
+                { name: "inventory.getLowStockAlerts", desc: "Query: Items where stockCount ≤ lowStockAlert", icon: "⚠️", color: "edge", edge: true }
+              ]
+            },
+            {
+              name: "payroll.ts (Principal + Accountant)",
+              desc: "Staff salary calculation, payslips & bank NACH export",
+              icon: "💵",
+              color: "accountant",
+              children: [
+                { name: "payroll.runMonthlyPayroll", desc: "Mutation: Bulk calculate salary synced with attendance & leaves", icon: "🧮", color: "accountant" },
+                { name: "payroll.getPayslip", desc: "Query: { id } → PDF payslip with salary breakdown", icon: "📄", color: "accountant" },
+                { name: "payroll.exportBankFile", desc: "Query: Corporate banking CSV export for bulk direct deposit", icon: "🏦", color: "accountant" }
+              ]
+            },
+            {
+              name: "certificate.ts (Admin Staff)",
+              desc: "1-Click Transfer, Bonafide & Character Certificates",
+              icon: "📜",
+              color: "general",
+              children: [
+                { name: "certificate.generateTC", desc: "Mutation: { studentId } → Throws error if fee or library dues exist", icon: "🚫", color: "edge", edge: true },
+                { name: "certificate.generateBonafide", desc: "Mutation: Instant PDF with student demographic mapping", icon: "📄", color: "general" },
+                { name: "certificate.verifyQr", desc: "Query: Cryptographic QR verification of certificate validity", icon: "🔐", color: "general" }
+              ]
+            },
+            {
+              name: "reportCard.ts (Super Admin + Teacher)",
+              desc: "CBSE & State Board standardized report card designer",
+              icon: "🖨️",
+              color: "super_admin",
+              children: [
+                { name: "reportCard.calculateGrades", desc: "Mutation: Batch calculate A1-E grades across subjects", icon: "⚙️", color: "super_admin" },
+                { name: "reportCard.bulkGeneratePdf", desc: "Mutation: 1-Click single merged PDF for entire class", icon: "📄", color: "super_admin" }
+              ]
+            },
+            {
+              name: "compliance.ts (Super Admin + Master Admin)",
+              desc: "1-Click U-DISE+ & CBSE Inspection Report Export",
+              icon: "📑",
+              color: "super_admin",
+              children: [
+                { name: "compliance.generateUDISE", desc: "Mutation: Aggregates PTR, Demographics, Staff & outputs Excel", icon: "📥", color: "super_admin" },
+                { name: "compliance.generateCBSEReport", desc: "Mutation: CBSE OASIS compliant data export", icon: "📥", color: "super_admin" },
+                { name: "compliance.getExportLogs", desc: "Query: History of previously generated compliance reports", icon: "🕒", color: "super_admin" }
               ]
             }
           ]
