@@ -113,7 +113,6 @@ enum Role {
   TEACHER
   STUDENT
   PARENT
-  DRIVER
   ACCOUNTANT
   LIBRARIAN
   STORE_MANAGER
@@ -149,7 +148,6 @@ model User {
   teacherProfile    TeacherProfile?
   studentProfile    StudentProfile?
   parentProfile     ParentProfile?
-  driverProfile     DriverProfile?
   leaveApplications LeaveApplication[]
   publishedNotices  Notice[]          @relation("NoticePublisher")
 
@@ -315,16 +313,22 @@ model ParentProfile {
   children    StudentProfile[]
 }
 
-// Implementation Plan Line 144-147: DriverProfile
-model DriverProfile {
+// Transport Staff are managed by Admin, they do not have User logins
+model TransportStaff {
   id                String   @id @default(uuid())
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  licenseNumber     String
-  contact           String
-  emergencyContact  String?
-  assignedVehicleId String?  @unique
-  assignedVehicle   Vehicle? @relation(fields: [assignedVehicleId], references: [id])
+  schoolId          String
+  school            School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name              String
+  phone             String
+  licenseNumber     String?
+  aadharNumber      String?
+  experienceYears   Int?
+  policeVerified    Boolean  @default(false)
+  role              String   // DRIVER, CONDUCTOR
+  isActive          Boolean  @default(true)
+
+  assignedVehicles  Vehicle[]
+  assignedRoutes    Route[]
 }
 
 // ==========================================
@@ -409,6 +413,7 @@ model Homework {
 }
 
 // ==========================================
+// ==========================================
 // SECTION F: TRANSPORTATION (2 Tables)
 // Source: Implementation Plan Lines 133-147
 // ==========================================
@@ -422,7 +427,8 @@ model Vehicle {
   isActive    Boolean  @default(true)
 
   routes      Route[]
-  driver      DriverProfile?
+  driverId    String?
+  driver      TransportStaff? @relation(fields: [driverId], references: [id])
 }
 
 model Route {
@@ -434,8 +440,8 @@ model Route {
   vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
   // JSON array of { name: string, lat: number, lng: number, time: string }
   stops         Json
-  driverId      String?
   conductorId   String?
+  conductor     TransportStaff? @relation(fields: [conductorId], references: [id])
 }
 
 // ==========================================

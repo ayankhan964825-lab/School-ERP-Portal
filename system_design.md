@@ -458,32 +458,52 @@ sequenceDiagram
 
 ---
 
-## 3. Data Isolation & Multi-Tenancy
+## 3. White-Label Agency Deployment & Feature Gating
 
-### 3.1 Pool Model (Shared DB, Shared Schema)
-Every table has `schoolId` FK. All queries automatically filter by tenant.
+### 3.1 Single-Tenant Dedicated Deployment Model
+Unlike a shared multi-tenant SaaS pool where all schools share one massive database, this ERP uses an **Agency Master Codebase Model**. 
+For every client (school), the agency spins up a logically and physically dedicated deployment (e.g., `dps.schoolerp.com`) along with a dedicated mobile app on the Google Play Store.
 
-### 3.2 Enforcement Strategies
-**Option A — Prisma Client Extension (Application Level):**
-```typescript
-const tenantPrisma = prisma.$extends({
-  query: {
-    $allModels: {
-      async findMany({ args, query }) {
-        args.where = { ...args.where, schoolId: session.user.schoolId };
-        return query(args);
-      }
+**Architectural Advantages of this Model:**
+- **Total Data Isolation & Security:** Each client gets their own database schema or database URL. A data breach in School A cannot compromise School B.
+- **Dedicated Performance:** High traffic during result declaration in School A will not affect the performance of School B.
+- **Instant Branding (White-Labeling):** The Master Codebase relies heavily on environment variables for instant white-labeling. When deploying, the CI/CD pipeline injects the school's unique identifiers.
+
+```env
+# Client-Specific White-Label Variables injected at Build Time
+NEXT_PUBLIC_SCHOOL_NAME="Delhi Public School"
+NEXT_PUBLIC_THEME_PRIMARY="#0f172a"
+NEXT_PUBLIC_THEME_SECONDARY="#38bdf8"
+NEXT_PUBLIC_LOGO_URL="https://r2.../dps_logo.png"
+NEXT_PUBLIC_CLIENT_ID="DPS-1001"
+
+# Database & Infrastructure
+DATABASE_URL="postgresql://user:pass@host/dps_db?pgbouncer=true"
+```
+The React/Next.js UI dynamically applies these CSS variables and config values at runtime, giving the school a deeply personalized "Premium Custom App" experience.
+
+### 3.2 Subscription-Based Feature Gating Architecture
+While every deployment runs the identical Master Codebase (ensuring the agency only has one Git repository to maintain), feature access is controlled via a centralized `subscriptionPlan` logic assigned by the Master Admin.
+
+**Plans:**
+1. **BASE:** Core ERP (Admissions, Attendance, Results, Basic Fee Collection).
+2. **PRO:** Adds Transport Management, Homework/Assignments, Notices.
+3. **PREMIUM:** Unlocks AI Timetable Generator, AI Leave Suggester, Library POS, and Payroll.
+
+**Gating Implementation (Middleware & tRPC):**
+- **UI Gating:** If a school is on the `BASE` plan, the UI removes navigation links for premium modules (like AI Timetable).
+- **API Gating (tRPC Middleware):**
+  ```typescript
+  const requirePremiumPlan = t.middleware(({ ctx, next }) => {
+    if (ctx.school.subscriptionPlan !== 'PREMIUM') {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Upgrade to Premium' });
     }
-  }
-});
-```
-
-**Option B — PostgreSQL Row-Level Security (Database Level):**
-```sql
-ALTER TABLE "Attendance" ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Tenant Isolation" ON "Attendance"
-FOR ALL USING (school_id = current_setting('app.current_school_id')::uuid);
-```
+    return next();
+  });
+  export const premiumProcedure = protectedProcedure.use(requirePremiumPlan);
+  ```
+- **Upsell Prompts:** Certain buttons may remain visible but disabled, showing a locked icon. Clicking them triggers a modal: *"Upgrade to Premium to Unlock AI Features"*, driving B2B upselling for the agency.
+- **Role Blocking:** Premium-only roles (e.g., `LIBRARIAN`, `STORE_MANAGER`) cannot be assigned by the Super Admin unless the school's subscription plan explicitly allows it.
 
 ---
 

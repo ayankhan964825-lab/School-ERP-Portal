@@ -118,7 +118,7 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 
 ---
 
-## 3. Role-Specific Dashboard Layouts — All 8 Panels
+## 3. Role-Specific Dashboard Layouts — All 9 Panels
 
 ### 3.1 MASTER_ADMIN Dashboard (Desktop Only)
 **Layout:** Full-width sidebar navigation (persistent left)
@@ -168,6 +168,21 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 - Drag & Drop layout builder (Header, Logo, Grading Scale, Remarks).
 - Preview mode (switch between CBSE 8-point / State Board scales).
 - 1-Click "Bulk Generate Class PDF" button.
+
+**Transportation Management UI (Admin Focus):**
+- **Transport Staff Directory:** A secure HR table exclusively for Drivers and Conductors. 
+  - Columns: `Name`, `Phone`, `Role`, `License No`, `Aadhar`, `Police Verification Status`.
+  - Actions: "Upload Documents", "Suspend Staff".
+- **Vehicle Fleet View:** List of buses with visual indicators (Green/Red) for compliance.
+  - Columns: `Bus No`, `Capacity`, `Insurance Expiry`, `Fitness Certificate Expiry`.
+  - Alerts: Red badge if any expiry is < 30 days away.
+- **Route Builder (Drag & Drop):** 
+  - Admin assigns a `Vehicle`, a `DRIVER`, and a `CONDUCTOR` to a Route. 
+  - Map UI to add stops with Expected Timings and calculate total route duration.
+  - Validations: Prevents assigning more students to the route than the Vehicle's capacity.
+- **Parent Visibility Toggle & Filtering:** 
+  - System automatically ensures parents NEVER see the driver's HR documents.
+  - Auto-exposes only essential data (Driver Name, Phone, Bus No, Route Name) to the Parent Dashboard for emergency contact.
 
 ---
 
@@ -253,23 +268,8 @@ From implementation plan line 439: "School-specific customization (logo, colors,
 
 ---
 
-### 3.6 DRIVER Dashboard (Ultra-Minimal)
-**Layout:** Dark mode default. Maximum 3 buttons visible at any time.
-
-**Navigation Items:**
-- 👤 Profile (Name, License, Emergency Contact)
-- 🗺️ Route (Assigned route + Stops)
-- 🚐 Vehicle (Bus number, Capacity, Fitness Certificate)
-
-**Dashboard:**
-- Massive map view (90% of screen)
-- Route line drawn on map
-- Large floating buttons: **"Start Trip"** / **"End Trip"** / **"Emergency"**
-- Stop list with expected arrival times
-- Student list on route (names + pickup points)
-- Minimum text, maximum touch targets (`min-h-16`)
-
----
+### 3.6 [REMOVED] Transport Dashboard
+*The dedicated Driver Dashboard has been removed. Transportation is now securely managed via the Admin Dashboard (TransportStaff profiles), and basic details are exposed to the Parent Dashboard.*
 
 ### 3.7 ACCOUNTANT Dashboard
 **Layout:** Desktop sidebar + Data-heavy tables

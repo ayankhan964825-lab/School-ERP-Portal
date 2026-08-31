@@ -8,9 +8,15 @@
 
 ## 1. Product Vision & Overview
 
-Ek **production-ready, multi-tenant School ERP SaaS Platform** banana hai jo AI-powered features ke saath existing market solutions (Teachmint, Fedena, Vidyalaya) se behtar ho.
+Ek **production-ready, White-Label School ERP Platform** banana hai jo AI-powered features ke saath existing market solutions (Teachmint, Fedena, Vidyalaya) se behtar ho.
 
-**Approach:** Pehle **Phase 1 mein ek single-school MVP** banayenge, phir **Phase 2 mein multi-tenant SaaS** mein convert karenge.
+**Approach & Agency Model:**
+Pehle **Phase 1 mein ek Master Codebase** banayenge jo highly generalized, modular aur scalable hoga. Iske baad, jab bhi koi naya school (client) onboard hoga:
+1. **Dedicated Deployment:** Hum uss school ke liye ek alag Vercel/Railway deployment spin up karenge. Data totally isolated hoga (Single-Tenant approach).
+2. **Instant White-Labeling:** Environment variables (`NEXT_PUBLIC_SCHOOL_NAME`, `NEXT_PUBLIC_THEME_COLOR`, `NEXT_PUBLIC_LOGO_URL`) ka use karke uss deployment ko instantly uss school ki branding (logo, colors, name) de di jayegi.
+3. **Play Store App:** Unke school ke naam se ek dedicated Android app publish kiya jayega jo parent aur marketing ke liye ek premium feel dega.
+4. **Centralized Maintenance:** Agency owner ke paas ek Master Admin panel hoga jahan se woh alag-alag schools ke subscription plans (Base, Pro, Premium) control karega, features ko toggle (enable/disable) karega, aur central codebase se updates push karega.
+Yeh model data security badhata hai aur client ko ek "Personal App" hone ka feel deta hai.
 
 **Core Differentiators:**
 1. AI-Powered Intelligence (Google Gemini) — Timetabling, Report Generation, At-Risk Alerts
@@ -23,7 +29,7 @@ Ek **production-ready, multi-tenant School ERP SaaS Platform** banana hai jo AI-
 
 ## 2. Target Users & Role-Based Access Control (RBAC)
 
-System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard hai. Ek role doosre role ka data access nahi kar sakta.
+System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard hai. Ek role doosre role ka data access nahi kar sakta.
 
 ### 2.1 MASTER_ADMIN (Developer — Platform Owner)
 
@@ -140,24 +146,6 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 ---
 
-### 2.6 DRIVER / CONDUCTOR
-
-**Profile:** Transport logistics operator.
-
-**Exact Permissions (from implementation plan line 238-242):**
-1. Update own profile (name, phone, license, emergency contact)
-2. View assigned route (route name, stops, timings, student list)
-3. Mark vehicle status (active, breakdown, maintenance)
-4. Cannot access academic data (no marks, attendance, or fee information)
-
-**Dashboard Features:**
-- Profile management (personal details, license number & validity, emergency contact)
-- Route details: Assigned route with stop list and expected timings
-- Student list on route (names and pickup points)
-- Vehicle status: Bus number, capacity, fitness certificate validity
-- Trip initiation: "Start Trip" / "End Trip" buttons
-
----
 
 ### 2.7 ACCOUNTANT
 
@@ -265,7 +253,7 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 - `email` — Unique login identifier
 - `phone` — Contact number
 - `password_hash` — bcrypt hashed password
-- `role` — Enum: MASTER_ADMIN | SUPER_ADMIN | ADMIN_STAFF | TEACHER | STUDENT | PARENT | DRIVER | ACCOUNTANT
+- `role` — Enum: MASTER_ADMIN | SUPER_ADMIN | ADMIN_STAFF | TEACHER | STUDENT | PARENT | ACCOUNTANT | LIBRARIAN | STORE_MANAGER
 - `profile_image` — Avatar URL
 - `is_active` — Boolean (for suspending users without deleting)
 - `created_at`, `updated_at` — Timestamps
@@ -368,32 +356,40 @@ System mein **8 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 ---
 
-### 3.6 Transportation & Fleet Module
-**Database Tables Used:** `Vehicle`, `Route`, `DriverProfile`
+### 3.6 Transportation Module (Admin Managed)
+**Purpose:** Manage school vehicle logistics securely without requiring low-tech staff (drivers/conductors) to use a digital application.
+
+**Database Tables Used:** `Vehicle`, `Route`, `TransportStaff`
+
+**TransportStaff Table Fields (Secure HR Data):**
+- `id`, `school_id`, `name`, `phone`
+- `role` — Enum: DRIVER | CONDUCTOR
+- `license_number`, `aadhar_number` — Sensitive government IDs
+- `experience_years`, `police_verified` — Safety compliance checks
+- `is_active`
 
 **Vehicle Table Fields:**
 - `id`, `school_id`, `bus_number`, `capacity`, `is_active`
+- `driver_id` (FK) — Link to TransportStaff
 
 **Route Table Fields:**
 - `id`, `school_id`, `name` (e.g., "Route 5 - South Delhi")
 - `vehicle_id` (FK)
+- `conductor_id` (FK) — Link to TransportStaff
 - `stops` — JSON array of `{ name: string, lat: number, lng: number, time: string }`
-- `driver_id` (FK), `conductor_id` (FK)
 
-**DriverProfile Table Fields:**
-- `id`, `user_id` (FK), `license_number`
-- `contact`, `emergency_contact`
-- `assigned_vehicle_id` (FK)
-
-**Key Features:**
-1. Super Admin creates vehicles and routes
-2. Assigns drivers to vehicles and routes
-3. Capacity validation: Cannot assign more students than vehicle seats
-4. Students/Parents view their assigned route, bus, and driver info
-5. Driver views stop list with expected timings
-6. License expiry tracking with alerts
-
----
+**Detailed Capabilities & Flows:**
+1. **Strict HR Data Isolation:** `TransportStaff` is strictly an administrative record. It does NOT link to the `User` table, meaning drivers cannot log in. Highly sensitive details like Police Verification, Aadhar, and detailed License numbers remain securely locked inside the Super Admin's dashboard.
+2. **Vehicle & Route Assignment:** Super Admin creates routes with GPS coordinates and expected timings for each stop. Admin then maps a `Vehicle`, a `DRIVER` (TransportStaff), and a `CONDUCTOR` (TransportStaff) to that route.
+3. **Capacity Engine:** System automatically prevents Admin from assigning more students to a route than the assigned vehicle's `capacity` allows.
+4. **Parent Visibility (Filtered Access):** The API heavily filters the data sent to the Parent App. Parents only see:
+   - Assigned Bus Number & Route Name
+   - Expected Stop Timings
+   - Driver Name and Contact Number (for direct emergency calls)
+   - They NEVER see the driver's HR documents or license numbers.
+5. **Automated Fleet Alerts:** A background cron job tracks vehicle and staff compliance. It triggers alerts on the Super Admin dashboard when:
+   - A driver's license is expiring within 30 days.
+   - A vehicle's Fitness Certificate or Insurance is expiring within 30 days.
 
 ### 3.7 Fee & Finance Module
 **Database Tables Used:** `FeeStructure`, `FeePayment`, `Expense`

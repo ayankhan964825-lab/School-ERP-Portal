@@ -279,16 +279,18 @@ Source: Implementation Plan Lines 397-417
 - [ ] "Download Receipt" button in payment history
 
 **Task 34: Transportation Tracking (Parent)**
-- [ ] View child's route, stops, timings
-- [ ] Driver details: name, phone, license number
-- [ ] Edge case: Route changed without notice → Alert parent
+- [ ] Build UI mapping the JSON stops array on a route to a visual timeline
+- [ ] Parent view logic: Filter driver data to ONLY show `Name`, `Phone`, and `Bus Number`
+- [ ] Emergency protocol: Add a "Call Driver" direct 1-tap action button
+- [ ] Edge case: Route/Bus changed temporarily → Push Notification alert to parent
 
-**Task 35: Driver / Conductor Panel (Mobile-Friendly UI)**
-- [ ] Profile management: personal details, license number & validity, emergency contact
-- [ ] Route details: assigned route, stop list, timings, student list
-- [ ] Vehicle status: bus number, capacity, fitness certificate
-- [ ] Edge cases: License expired → Alert, No route assigned → "Contact Admin"
-- [ ] Ultra-minimal dark mode UI with massive touch targets
+**Task 35: Transport Staff Management (Admin Only)**
+- [ ] Build tRPC router: `transport.ts` (Manage Vehicles, Routes, TransportStaff)
+- [ ] Create `<TransportStaffForm />` for Admin to input private HR data (License Number, Aadhar Number, Experience Years, Police Verification Status)
+- [ ] Ensure `TransportStaff` is strictly an administrative model (No User/Login relations created)
+- [ ] Build `<RouteBuilder />`: Admin assigns a `Vehicle`, `DRIVER`, and `CONDUCTOR` to a single Route
+- [ ] Background Cron Job logic: Daily check on `licenseExpiryDate` and `fitnessCertificateExpiryDate`
+- [ ] Admin Dashboard Alerts Widget: "⚠️ 2 Driver Licenses expiring this month"
 
 **Task 36: Account Office (Accountant) Panel**
 - [ ] Fee collection dashboard: Today's collections, pending dues overview
@@ -365,40 +367,36 @@ Source: Implementation Plan Lines 421-431
 
 ---
 
-## Phase 4: Multi-Tenant SaaS (Weeks 15-18)
-*Goal: Convert single-school MVP into scalable multi-tenant SaaS platform.*
+## Phase 4: White-Label Agency Deployment (Weeks 15-18)
+*Goal: Convert the single-school MVP into a scalable White-Label Master Codebase for dedicated client deployments.*
 
 Source: Implementation Plan Lines 434-443
 
-**Task 46: Master Admin Panel for Managing Multiple Schools**
-- [ ] Global dashboard: Total schools, Total users, Revenue
-- [ ] School listing with search, filter (Active/Suspended/Trial)
-- [ ] School detail view with analytics
-- [ ] System health monitoring
+**Task 46: Master Admin Agency Panel**
+- [ ] Global dashboard for the Agency Owner: Total clients (schools), Active Subscriptions, Monthly Recurring Revenue (MRR)
+- [ ] Client (School) listing with search and filter capabilities (Active, Suspended, Trial)
+- [ ] Feature toggle interface: Master Admin can enable/disable specific modules for specific schools remotely
 
-**Task 47: School Onboarding Flow**
-- [ ] 1-click provisioning wizard
-- [ ] Auto-create School row with default settings
-- [ ] Auto-create Super Admin account with temporary password
-- [ ] Send welcome email with login credentials
+**Task 47: Client Onboarding & Provisioning Flow**
+- [ ] Automated provisioning script: Spins up a dedicated Vercel project and Neon/Railway database automatically
+- [ ] Injects `NEXT_PUBLIC_*` environment variables instantly
+- [ ] Auto-creates the Super Admin account for the school Principal and dispatches a welcome email
 
-**Task 48: Subscription/Pricing Management**
-- [ ] Define plans: FREE, BASIC, PREMIUM
-- [ ] Feature flags based on plan (e.g., AI features = PREMIUM only)
-- [ ] Billing integration (Stripe or Razorpay Subscriptions)
-- [ ] Plan upgrade/downgrade flow
+**Task 48: Subscription-Based Feature Gating**
+- [ ] Implement robust `subscriptionPlan` logic in the database (Base, Pro, Premium)
+- [ ] Wrap premium tRPC endpoints (e.g. AI Timetable, Payroll) with a custom middleware that checks subscription status
+- [ ] Frontend UI component wrapper `<PremiumGated>`: Renders children if Premium, else renders an "Upgrade Required" lock overlay
+- [ ] Plan upgrade/downgrade flows with Razorpay B2B subscriptions
 
-**Task 49: School-Specific Customization**
-- [ ] Logo upload (stored in R2)
-- [ ] Primary color picker → Updates CSS variables dynamically
-- [ ] School name displayed throughout their portal
-- [ ] Custom grading scale configuration
+**Task 49: Deep Client Customization (White-Labeling)**
+- [ ] Admin interface to upload School Logo (persists to R2 bucket, updates Env var)
+- [ ] Color picker for Primary and Secondary theme colors → dynamically updates CSS variables globally
+- [ ] Custom grading scales and SMS provider keys configured per client instance
 
-**Task 50: Data Isolation Between Schools**
-- [ ] Verify all tRPC queries include `schoolId` filter
-- [ ] Security audit: Attempt to access School B data with School A token
-- [ ] Implement Prisma Client Extension or RLS policies
-- [ ] Cascade delete: Deleting school removes all its data
+**Task 50: Deployment Isolation Validation**
+- [ ] Setup strict CI/CD pipeline ensuring the Master Codebase pushes cleanly to all connected Vercel instances
+- [ ] Security audit: Validate that cross-database leakage is impossible since each client uses isolated connection strings
+- [ ] Network routing validation: Ensure `dps.schoolerp.com` strictly routes to the correct isolated deployment
 
 **Task 51: Landing Page for Marketing**
 - [ ] Build marketing landing page at root `/`

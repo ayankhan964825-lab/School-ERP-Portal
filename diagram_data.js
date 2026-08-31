@@ -128,7 +128,6 @@ const TREE_DATA = {
                 { name: "/teacher/* → TEACHER", desc: "Only teachers access teacher panel", icon: "👨‍🏫", color: "general" },
                 { name: "/student/* → STUDENT", desc: "Only students access student portal", icon: "👨‍🎓", color: "general" },
                 { name: "/parent/* → PARENT", desc: "Only parents access parent portal", icon: "👨‍👩‍👦", color: "general" },
-                { name: "/driver/* → DRIVER", desc: "Only drivers access driver panel", icon: "🚌", color: "general" },
                 { name: "/accountant/* → ACCOUNTANT", desc: "Only accountants access account office", icon: "💼", color: "general" },
                 { name: "Unauthorized → /login or 403", desc: "Redirect to login page or show forbidden error", icon: "🚫", color: "general" },
                 { name: "Session Hijacking", desc: "Prevent stolen JWT tokens from being reused across sessions", icon: "⚠️", color: "edge", edge: true }
@@ -188,7 +187,7 @@ const TREE_DATA = {
                   icon: "👤",
                   color: "general",
                   children: [
-                    { name: "role: ENUM(7 roles)", desc: "MASTER_ADMIN | SUPER_ADMIN | TEACHER | STUDENT | PARENT | DRIVER | ACCOUNTANT", icon: "🛡️", color: "general" },
+                    { name: "role: ENUM(9 roles)", desc: "MASTER_ADMIN | SUPER_ADMIN | ADMIN_STAFF | TEACHER | STUDENT | PARENT | ACCOUNTANT | LIBRARIAN | STORE_MANAGER", icon: "🛡️", color: "general" },
                     { name: "schoolId: FK → School", desc: "Tenant binding. NULL only for MASTER_ADMIN", icon: "🔗", color: "general" },
                     { name: "password_hash: String", desc: "bcryptjs hashed. Never stored in plaintext", icon: "🔒", color: "general" },
                     { name: "isActive: Boolean", desc: "Soft-delete / suspend. Login blocked when false", icon: "✅", color: "general" },
@@ -221,7 +220,7 @@ const TREE_DATA = {
                 { name: "TeacherProfile", desc: "{ userId, qualification, experience, specialization } — 1:1 with User", icon: "👨‍🏫", color: "general" },
                 { name: "StudentProfile", desc: "{ userId, classId, rollNumber, parentId, bloodGroup, medicalInfo, virtualAccountId }", icon: "👨‍🎓", color: "general" },
                 { name: "ParentProfile", desc: "{ userId, occupation, relation } — Has many StudentProfiles (multiple children)", icon: "👨‍👩‍👦", color: "general" },
-                { name: "DriverProfile", desc: "{ userId, licenseNumber, contact, emergencyContact, assignedVehicleId }", icon: "🚌", color: "general" }
+                { name: "TransportStaff", desc: "{ name, phone, licenseNumber, role } (Managed by Admin, no login)", icon: "🧑‍✈️", color: "general" }
               ]
             },
             {
@@ -244,8 +243,8 @@ const TREE_DATA = {
               color: "general",
               children: [
                 { name: "Homework", desc: "{ classId, subjectId, teacherId, title, description, dueDate, attachments: JSON[] }", icon: "📝", color: "general" },
-                { name: "Vehicle", desc: "{ schoolId, busNumber, capacity, isActive }", icon: "🚐", color: "general" },
-                { name: "Route", desc: "{ schoolId, name, vehicleId, stops: JSON[{name, lat, lng, time}], driverId }", icon: "🗺️", color: "general" },
+                { name: "Vehicle", desc: "{ schoolId, busNumber, capacity, isActive, driverId }", icon: "🚐", color: "general" },
+                { name: "Route", desc: "{ schoolId, name, vehicleId, stops: JSON[{name, lat, lng, time}], conductorId }", icon: "🗺️", color: "general" },
                 { name: "FeeStructure", desc: "{ schoolId, classId, feeType: TUITION|TRANSPORT|LIBRARY|SPORTS, amount, dueDate, frequency, lateFeePerDay }", icon: "💰", color: "general" },
                 { name: "FeePayment", desc: "{ studentId, feeStructureId, amountPaid, paymentMethod, transactionId, receiptNumber, status, onlineReceiptUrl }", icon: "💳", color: "general" },
                 { name: "Expense", desc: "{ schoolId, category, amount, description, date, approvedBy, receiptAttachment }", icon: "💸", color: "general" },
@@ -358,9 +357,9 @@ const TREE_DATA = {
               color: "general",
               children: [
                 { name: "transport.createVehicle", desc: "Mutation: { busNumber, capacity } → Vehicle", icon: "➕", color: "general" },
-                { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, driverId } → Route", icon: "🗺️", color: "general" },
+                { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, conductorId } → Route", icon: "🗺️", color: "general" },
                 { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndDriver", icon: "📋", color: "general" },
-                { name: "transport.getDriverRoute", desc: "Query: { driverId } → RouteWithStops", icon: "🧑‍✈️", color: "general" }
+                { name: "transport.getStaff", desc: "Query: { schoolId, role: DRIVER|CONDUCTOR } → TransportStaff[]", icon: "🧑‍✈️", color: "general" }
               ]
             },
             {
