@@ -5,7 +5,7 @@
  *   - trd.md (922 lines) 
  *   - prd.md, system_design.md, design.md, phase.md
  * Total Nodes: 750+
- * Roles: Master Admin, Super Admin, Admin Staff, Teacher, Student, Parent, Driver, Accountant
+ * Roles: Master Admin, Super Admin, Admin Staff, Teacher, Student, Parent, Accountant, Librarian, Store Manager
  */
 
 const TREE_DATA = {
@@ -36,8 +36,9 @@ const TREE_DATA = {
               color: "general",
               children: [
                 { name: "Next.js 14+ (App Router)", desc: "Server Components + Edge Runtime. SEO-friendly SSR", icon: "⚛️", color: "general" },
-                { name: "React Native (Expo)", desc: "Single codebase for iOS + Android mobile apps", icon: "📱", color: "general" },
-                { name: "shadcn/ui + Tailwind CSS", desc: "Premium, accessible UI components. Dynamic theming per tenant", icon: "🎨", color: "general" },
+                { name: "White-Label Theming", desc: "Dynamic CSS variables injected via NEXT_PUBLIC_ variables", icon: "🎨", color: "general" },
+                { name: "React Native (Expo)", desc: "Dedicated Play Store App compiled per client", icon: "📱", color: "general" },
+                { name: "shadcn/ui + Tailwind CSS", desc: "Premium, accessible UI components.", icon: "🖌️", color: "general" },
                 { name: "react-hook-form + zod", desc: "Type-safe form validation. Client-side + server-side schemas", icon: "📋", color: "general" }
               ]
             },
@@ -48,6 +49,7 @@ const TREE_DATA = {
               color: "general",
               children: [
                 { name: "tRPC + Next.js API Routes", desc: "End-to-end type-safe API. No manual API client generation", icon: "🔌", color: "general" },
+                { name: "Subscription Gating Middleware", desc: "tRPC middleware blocking API calls for BASE plan users", icon: "🛡️", color: "general" },
                 { name: "Prisma ORM", desc: "Type-safe DB queries. Auto migration. 20+ model schema", icon: "🔷", color: "general" },
                 { name: "NextAuth.js v5 (Auth.js)", desc: "JWT strategy. CSRF protection. Custom Credentials Provider", icon: "🔐", color: "general" }
               ]
@@ -82,8 +84,9 @@ const TREE_DATA = {
               icon: "🚀",
               color: "general",
               children: [
-                { name: "Vercel (Frontend)", desc: "Edge Network. Serverless functions. Auto-deploy on git push", icon: "▲", color: "general" },
-                { name: "Railway / Supabase (DB)", desc: "Managed PostgreSQL. Connection pooling. Daily backups", icon: "🛤️", color: "general" }
+                { name: "Agency Master Codebase", desc: "Single Repo -> Many Isolated Client Deployments", icon: "🐙", color: "general" },
+                { name: "Vercel (Frontend)", desc: "Edge Network. Dedicated deployment per school.", icon: "▲", color: "general" },
+                { name: "Railway / Supabase (DB)", desc: "Isolated PostgreSQL instances per school for security.", icon: "🛤️", color: "general" }
               ]
             }
           ]
@@ -112,7 +115,7 @@ const TREE_DATA = {
               color: "general",
               children: [
                 { name: "sub (User UUID)", desc: "Unique user identifier from User.id", icon: "🆔", color: "general" },
-                { name: "role (ENUM)", desc: "MASTER_ADMIN | SUPER_ADMIN | TEACHER | STUDENT | PARENT | DRIVER | ACCOUNTANT", icon: "🛡️", color: "general" },
+                { name: "role (ENUM)", desc: "MASTER_ADMIN | SUPER_ADMIN | ADMIN_STAFF | TEACHER | STUDENT | PARENT | ACCOUNTANT | LIBRARIAN | STORE_MANAGER", icon: "🛡️", color: "general" },
                 { name: "schoolId (Tenant Key)", desc: "Multi-tenant isolation. Every API query filters by this", icon: "🏫", color: "general" },
                 { name: "JWT Callbacks", desc: "NextAuth jwt() injects role + schoolId into token on login", icon: "⚙️", color: "general" }
               ]
@@ -213,7 +216,7 @@ const TREE_DATA = {
             },
             {
               name: "Section C: Profile Tables (4 Tables)",
-              desc: "TeacherProfile, StudentProfile, ParentProfile, DriverProfile",
+              desc: "TeacherProfile, StudentProfile, ParentProfile, TransportStaff",
               icon: "👥",
               color: "general",
               children: [
@@ -684,12 +687,12 @@ const TREE_DATA = {
               name: "transport.ts",
               desc: "Vehicles + Routes + Driver assignment",
               icon: "🚌",
-              color: "driver",
+              color: "general",
               children: [
-                { name: "transport.createVehicle", desc: "Mutation: { busNumber, capacity } → Vehicle row", icon: "➕", color: "driver" },
-                { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, driverId } → Route row", icon: "🗺️", color: "driver" },
-                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndDriver (full transport info)", icon: "📋", color: "driver" },
-                { name: "transport.getDriverRoute", desc: "Query: { driverId } → RouteWithStops (driver's assigned route)", icon: "🧑‍✈️", color: "driver" }
+                { name: "transport.createVehicle", desc: "Mutation: { busNumber, capacity } → Vehicle row", icon: "➕", color: "general" },
+                { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, driverId } → Route row", icon: "🗺️", color: "general" },
+                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndDriver (full transport info)", icon: "📋", color: "general" },
+                { name: "transport.getDriverRoute", desc: "Query: { driverId } → RouteWithStops (driver's assigned route)", icon: "🧑‍✈️", color: "general" }
               ]
             },
             {
@@ -745,10 +748,10 @@ const TREE_DATA = {
               name: "inventory.ts (Store Manager)",
               desc: "Inventory & POS counter billing for uniforms & stationery",
               icon: "📦",
-              color: "driver",
+              color: "general",
               children: [
-                { name: "inventory.getStock", desc: "Query: Filter by category (Uniforms, Books, Stationery)", icon: "📋", color: "driver" },
-                { name: "inventory.checkout", desc: "Mutation: POS sale with dynamic Razorpay QR or Cash", icon: "🛒", color: "driver" },
+                { name: "inventory.getStock", desc: "Query: Filter by category (Uniforms, Books, Stationery)", icon: "📋", color: "general" },
+                { name: "inventory.checkout", desc: "Mutation: POS sale with dynamic Razorpay QR or Cash", icon: "🛒", color: "general" },
                 { name: "inventory.getLowStockAlerts", desc: "Query: Items where stockCount ≤ lowStockAlert", icon: "⚠️", color: "edge", edge: true }
               ]
             },
@@ -873,7 +876,7 @@ const TREE_DATA = {
                 { name: "/teacher/* → [TEACHER]", desc: "Only teachers can access teacher panel routes", icon: "👨‍🏫", color: "teacher" },
                 { name: "/student/* → [STUDENT]", desc: "Only students can access student portal routes", icon: "👨‍🎓", color: "student" },
                 { name: "/parent/* → [PARENT]", desc: "Only parents can access parent portal routes", icon: "👨‍👩‍👦", color: "parent" },
-                { name: "/driver/* → [DRIVER]", desc: "Only drivers can access driver panel routes", icon: "🚌", color: "driver" },
+                { name: "/driver/* → [DRIVER]", desc: "Only drivers can access driver panel routes", icon: "🚌", color: "general" },
                 { name: "/accountant/* → [ACCOUNTANT]", desc: "Only accountants can access account office routes", icon: "💼", color: "accountant" },
                 { name: "Role Mismatch → 403 or /login", desc: "If user role doesn't match route requirement → Forbidden page", icon: "⚠️", color: "edge", edge: true }
               ]
@@ -1345,12 +1348,12 @@ const TREE_DATA = {
             },
             {
               name: "Driver Assignment",
-              desc: "DriverProfile ↔ Vehicle ↔ Route linkage",
+              desc: "TransportStaff ↔ Vehicle ↔ Route linkage",
               icon: "🧑‍✈️",
               color: "super_admin",
               children: [
-                { name: "Assign Driver", desc: "DriverProfile.assignedVehicleId + Route.driverId", icon: "🔗", color: "super_admin" },
-                { name: "License Verification", desc: "DriverProfile.licenseNumber + expiry date validation", icon: "🪪", color: "super_admin" },
+                { name: "Assign Driver", desc: "TransportStaff.assignedVehicleId + Route.driverId", icon: "🔗", color: "super_admin" },
+                { name: "License Verification", desc: "TransportStaff.licenseNumber + expiry date validation", icon: "🪪", color: "super_admin" },
                 { name: "Driver on Multiple Vehicles", desc: "@@unique(assignedVehicleId) prevents one driver on two buses", icon: "⚠️", color: "edge", edge: true }
               ]
             }
@@ -1697,7 +1700,7 @@ const TREE_DATA = {
           children: [
             { name: "Assigned Route", desc: "transport.getStudentRoute({ studentId }) → Route name, stop list, timings", icon: "🗺️", color: "student" },
             { name: "Bus Number & Timing", desc: "Vehicle.busNumber + Route.stops pickup/drop time", icon: "🚐", color: "student" },
-            { name: "Driver Contact", desc: "DriverProfile.contact (PII masked for students: only name visible)", icon: "📞", color: "student" }
+            { name: "Driver Contact", desc: "TransportStaff.contact (PII masked for students: only name visible)", icon: "📞", color: "student" }
           ]
         },
         {
@@ -1810,7 +1813,7 @@ const TREE_DATA = {
           color: "parent",
           children: [
             { name: "Route & Stops", desc: "transport.getStudentRoute → Route.stops JSON with names & timings", icon: "🗺️", color: "parent" },
-            { name: "Driver Details", desc: "DriverProfile: name, phone, licenseNumber (full access for parents)", icon: "🧑‍✈️", color: "parent" },
+            { name: "Driver Details", desc: "TransportStaff: name, phone, licenseNumber (full access for parents)", icon: "🧑‍✈️", color: "parent" },
             { name: "Route Changed Without Notice", desc: "Alert parent if Route.stops or timings modified without prior notification", icon: "⚠️", color: "edge", edge: true }
           ]
         },
@@ -1851,63 +1854,6 @@ const TREE_DATA = {
       ]
     },
 
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 🚌 DRIVER / CONDUCTOR
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    {
-      name: "DRIVER / CONDUCTOR",
-      desc: "Profile, route details, vehicle status • role=DRIVER • Ultra-minimal dark UI",
-      icon: "🚌",
-      color: "driver",
-      children: [
-        {
-          name: "Profile Management",
-          desc: "DriverProfile table • /driver/profile/",
-          icon: "👤",
-          color: "driver",
-          children: [
-            { name: "Personal Details", desc: "DriverProfile: name, phone, address, emergency contact", icon: "📝", color: "driver" },
-            { name: "License Number & Validity", desc: "DriverProfile.licenseNumber + expiry date tracking", icon: "🪪", color: "driver" },
-            { name: "Emergency Contact", desc: "DriverProfile.emergencyContact → Family member for emergencies", icon: "📞", color: "driver" },
-            { name: "License Expired", desc: "Alert & restrict dashboard access if license expiry date < today", icon: "⚠️", color: "edge", edge: true }
-          ]
-        },
-        {
-          name: "Route Details",
-          desc: "tRPC: transport.getDriverRoute • /driver/route/",
-          icon: "🗺️",
-          color: "driver",
-          children: [
-            { name: "Assigned Route", desc: "transport.getDriverRoute({ driverId }) → Route name, all stop details", icon: "📍", color: "driver" },
-            { name: "Stop Timings", desc: "Route.stops JSON → Expected arrival time at each stop", icon: "⏰", color: "driver" },
-            { name: "Student List on Route", desc: "StudentProfile WHERE routeId → Names & pickup points", icon: "👥", color: "driver" },
-            { name: "No Route Assigned", desc: "If Route WHERE driverId = me returns empty → Show 'Contact Admin' message", icon: "⚠️", color: "edge", edge: true }
-          ]
-        },
-        {
-          name: "Vehicle Status",
-          desc: "Vehicle table details • /driver/vehicle/",
-          icon: "🚐",
-          color: "driver",
-          children: [
-            { name: "Bus Number", desc: "Vehicle.busNumber → Registration number & model", icon: "🔢", color: "driver" },
-            { name: "Capacity & Load", desc: "Vehicle.capacity vs COUNT(StudentProfile on this route)", icon: "📊", color: "driver" },
-            { name: "Fitness Certificate", desc: "Certificate validity & renewal reminder alert", icon: "📜", color: "driver" }
-          ]
-        },
-        {
-          name: "UI Design Notes",
-          desc: "Driver-specific UX considerations",
-          icon: "🎨",
-          color: "driver",
-          children: [
-            { name: "Ultra-Minimal Dark Mode", desc: "Massive touch targets (min 44×44px). Icon-driven design", icon: "🌙", color: "driver" },
-            { name: "Language Toggle", desc: "1-click switch to Hindi/regional language for driver comfort", icon: "🌐", color: "driver" },
-            { name: "Mobile-First Layout", desc: "Designed for 360px width phone screens", icon: "📱", color: "driver" }
-          ]
-        }
-      ]
-    },
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 💼 ACCOUNTANT
@@ -2202,23 +2148,23 @@ const TREE_DATA = {
       name: "STORE MANAGER",
       desc: "Inventory & POS Billing • role=STORE_MANAGER",
       icon: "📦",
-      color: "driver",
+      color: "general",
       children: [
         {
           name: "POS Counter Billing",
           desc: "Fast checkout for uniforms and books",
           icon: "🛒",
-          color: "driver",
+          color: "general",
           children: [
-            { name: "Dynamic Razorpay QR", desc: "Instant UPI collection on screen", icon: "📱", color: "driver" },
-            { name: "Thermal Receipt", desc: "ESC/POS 80mm GST receipt auto-print", icon: "🖨️", color: "driver" }
+            { name: "Dynamic Razorpay QR", desc: "Instant UPI collection on screen", icon: "📱", color: "general" },
+            { name: "Thermal Receipt", desc: "ESC/POS 80mm GST receipt auto-print", icon: "🖨️", color: "general" }
           ]
         },
         {
           name: "Inventory Stock",
           desc: "Track variants (sizes) and low-stock alerts",
           icon: "📉",
-          color: "driver"
+          color: "general"
         }
       ]
     },
@@ -2309,7 +2255,9 @@ const COLORS = {
   teacher:     { bg: "#064e3b", border: "#059669", text: "#a7f3d0" },
   student:     { bg: "#164e63", border: "#0891b2", text: "#a5f3fc" },
   parent:      { bg: "#78350f", border: "#d97706", text: "#fde68a" },
-  driver:      { bg: "#44403c", border: "#78716c", text: "#d6d3d1" },
+  admin_staff: { bg: "#0369a1", border: "#0284c7", text: "#bae6fd" },
+  librarian:   { bg: "#3730a3", border: "#4f46e5", text: "#c7d2fe" },
+  store_manager: { bg: "#9a3412", border: "#ea580c", text: "#fed7aa" },
   accountant:  { bg: "#7f1d1d", border: "#dc2626", text: "#fecaca" },
   general:     { bg: "#1f2937", border: "#6b7280", text: "#d1d5db" },
   edge:        { bg: "#450a0a", border: "#991b1b", text: "#fca5a5", dashed: true }
@@ -2322,7 +2270,9 @@ const LEGEND = [
   { label: "Teacher", color: "#059669" },
   { label: "Student", color: "#0891b2" },
   { label: "Parent", color: "#d97706" },
-  { label: "Driver / Conductor", color: "#78716c" },
+  { label: "Admin Staff", color: "#0284c7" },
+  { label: "Librarian", color: "#4f46e5" },
+  { label: "Store Manager", color: "#ea580c" },
   { label: "Accountant", color: "#dc2626" },
   { label: "⚠ Edge Case", color: "#991b1b", dashed: true }
 ];
