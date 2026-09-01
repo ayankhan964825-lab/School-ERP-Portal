@@ -324,7 +324,7 @@ model TransportStaff {
   aadharNumber      String?
   experienceYears   Int?
   policeVerified    Boolean  @default(false)
-  role              String   // DRIVER, CONDUCTOR
+  role              String   // TRANSPORT_STAFF
   isActive          Boolean  @default(true)
 
   assignedVehicles  Vehicle[]
@@ -1042,7 +1042,7 @@ erp-portal/
 | `createVehicle` | Mutation | `{ busNumber, capacity }` | `Vehicle` |
 | `createRoute` | Mutation | `{ name, vehicleId, stops, driverId }` | `Route` |
 | `getStudentRoute` | Query | `{ studentId }` | `RouteWithVehicleAndDriver` |
-| `getDriverRoute` | Query | `{ driverId }` | `RouteWithStops` |
+| `getStaffRoute` | Query | `{ driverId }` | `RouteWithStops` |
 
 ### 6.8 Router: `notice.ts`
 | Procedure | Type | Input | Output |
@@ -1145,7 +1145,8 @@ const routePermissions: Record<string, Role[]> = {
   '/teacher':    ['TEACHER'],
   '/student':    ['STUDENT'],
   '/parent':     ['PARENT'],
-  '/driver':     ['DRIVER'],
+  '/librarian':  ['LIBRARIAN'],
+  '/store':      ['STORE_MANAGER'],
   '/accountant': ['ACCOUNTANT'],
 };
 ```

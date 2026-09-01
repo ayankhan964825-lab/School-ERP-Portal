@@ -578,7 +578,7 @@ school-erp-documents/
 ## 7. Realtime Communication (WebSockets)
 
 ### 7.1 Use Cases
-- **Bus GPS Tracking:** Driver pushes location every 10 seconds → Parent sees bus moving on map
+- **Bus GPS Tracking:** GPS pushes location every 10 seconds → Parent sees bus moving on map
 - **Live Notifications:** Fee paid → Accountant dashboard updates instantly
 - **Leave Approval:** Admin approves → Teacher gets instant notification
 

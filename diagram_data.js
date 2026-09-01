@@ -355,13 +355,13 @@ const TREE_DATA = {
             },
             {
               name: "transport.ts",
-              desc: "Vehicles + routes + driver assignment",
+              desc: "Vehicles + routes + transport staff assignment",
               icon: "🚌",
               color: "general",
               children: [
                 { name: "transport.createVehicle", desc: "Mutation: { busNumber, capacity } → Vehicle", icon: "➕", color: "general" },
                 { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, conductorId } → Route", icon: "🗺️", color: "general" },
-                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndDriver", icon: "📋", color: "general" },
+                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndStaff", icon: "📋", color: "general" },
                 { name: "transport.getStaff", desc: "Query: { schoolId, role: DRIVER|CONDUCTOR } → TransportStaff[]", icon: "🧑‍✈️", color: "general" }
               ]
             },
@@ -552,7 +552,7 @@ const TREE_DATA = {
           children: [
             { name: "prisma/schema.prisma", desc: "Complete 29-table database schema with multi-tenant enterprise relations", icon: "🔷", color: "general" },
             { name: "src/app/(auth)/", desc: "login/ and register/ — Public authentication pages", icon: "🔐", color: "general" },
-            { name: "src/app/(dashboard)/", desc: "10 role panels: master/, admin/, teacher/, student/, parent/, driver/, accountant/, staff/, librarian/, store/", icon: "📊", color: "general" },
+            { name: "src/app/(dashboard)/", desc: "9 role panels: master/, admin/, teacher/, student/, parent/, accountant/, staff/, librarian/, store/", icon: "📊", color: "general" },
             { name: "src/app/api/trpc/[trpc]/route.ts", desc: "tRPC HTTP handler endpoint", icon: "🔌", color: "general" },
             { name: "src/app/api/webhooks/razorpay/route.ts", desc: "SmartCollect webhook receiver for payment auto-reconciliation", icon: "💳", color: "general" },
             { name: "src/components/{ui,dashboard,forms,tables,charts}/", desc: "shadcn/ui primitives + dashboard widgets + zod forms + data tables + charts", icon: "🧩", color: "general" },
@@ -685,14 +685,14 @@ const TREE_DATA = {
             },
             {
               name: "transport.ts",
-              desc: "Vehicles + Routes + Driver assignment",
+              desc: "Vehicles + Routes + Transport staff assignment",
               icon: "🚌",
               color: "general",
               children: [
                 { name: "transport.createVehicle", desc: "Mutation: { busNumber, capacity } → Vehicle row", icon: "➕", color: "general" },
                 { name: "transport.createRoute", desc: "Mutation: { name, vehicleId, stops: JSON, driverId } → Route row", icon: "🗺️", color: "general" },
-                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndDriver (full transport info)", icon: "📋", color: "general" },
-                { name: "transport.getDriverRoute", desc: "Query: { driverId } → RouteWithStops (driver's assigned route)", icon: "🧑‍✈️", color: "general" }
+                { name: "transport.getStudentRoute", desc: "Query: { studentId } → RouteWithVehicleAndStaff (full transport info)", icon: "📋", color: "general" },
+                { name: "transport.getStaffRoute", desc: "Query: { staffId } → RouteWithStops (staff's assigned route)", icon: "🧑‍✈️", color: "general" }
               ]
             },
             {
@@ -839,11 +839,11 @@ const TREE_DATA = {
     },
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 🛡️ MIDDLEWARE LAYER (3 Middlewares)
+    // 🛡️ MIDDLEWARE LAYER (4 Middlewares)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     {
-      name: "MIDDLEWARE LAYER (3 Middlewares)",
-      desc: "Auth → Tenant Isolation → Rate Limiting • Every request passes through all 3",
+      name: "MIDDLEWARE LAYER (4 Middlewares)",
+      desc: "Auth → Tenant Isolation → Rate Limiting → Subscription Gating",
       icon: "🛡️",
       color: "general",
       children: [
@@ -876,7 +876,9 @@ const TREE_DATA = {
                 { name: "/teacher/* → [TEACHER]", desc: "Only teachers can access teacher panel routes", icon: "👨‍🏫", color: "teacher" },
                 { name: "/student/* → [STUDENT]", desc: "Only students can access student portal routes", icon: "👨‍🎓", color: "student" },
                 { name: "/parent/* → [PARENT]", desc: "Only parents can access parent portal routes", icon: "👨‍👩‍👦", color: "parent" },
-                { name: "/driver/* → [DRIVER]", desc: "Only drivers can access driver panel routes", icon: "🚌", color: "general" },
+                { name: "/staff/* → [ADMIN_STAFF]", desc: "Only front office can access staff routes", icon: "🏢", color: "admin_staff" },
+                { name: "/librarian/* → [LIBRARIAN]", desc: "Only librarians can access library routes", icon: "📚", color: "librarian" },
+                { name: "/store/* → [STORE_MANAGER]", desc: "Only store managers can access inventory routes", icon: "📦", color: "store_manager" },
                 { name: "/accountant/* → [ACCOUNTANT]", desc: "Only accountants can access account office routes", icon: "💼", color: "accountant" },
                 { name: "Role Mismatch → 403 or /login", desc: "If user role doesn't match route requirement → Forbidden page", icon: "⚠️", color: "edge", edge: true }
               ]
@@ -984,6 +986,24 @@ const TREE_DATA = {
                 { name: "Timeout: 30 seconds", desc: "If Gemini API doesn't respond in 30s → Return timeout error", icon: "⏰", color: "general" },
                 { name: "Retry with Backoff", desc: "On 500/503: retry up to 3 times with 2s, 4s, 8s delays", icon: "🔄", color: "general" },
                 { name: "Graceful Degradation", desc: "If AI fully down → Show manual mode option (e.g., manual timetable)", icon: "⚠️", color: "edge", edge: true }
+              ]
+            }
+          ]
+        },
+        {
+          name: "MW-4: Subscription Gating",
+          desc: "tRPC Middleware • requirePremiumPlan()",
+          icon: "💎",
+          color: "general",
+          children: [
+            {
+              name: "Plan Check",
+              desc: "Context injects school's subscription status",
+              icon: "🛡️",
+              color: "general",
+              children: [
+                { name: "Blocked for BASE", desc: "If school is on BASE plan, return TRPCError(UNAUTHORIZED)", icon: "❌", color: "general" },
+                { name: "Premium Features", desc: "Protects AI Timetable, AI Leaves, Advanced Payroll", icon: "👑", color: "general" }
               ]
             }
           ]
@@ -1320,7 +1340,7 @@ const TREE_DATA = {
         },
         {
           name: "Transport Management",
-          desc: "Vehicles, routes, drivers • tRPC: transport.ts • /admin/transport/",
+          desc: "Vehicles, routes, transport staff • tRPC: transport.ts • /admin/transport/",
           icon: "🚌",
           color: "super_admin",
           children: [
@@ -1343,18 +1363,18 @@ const TREE_DATA = {
               children: [
                 { name: "Define Route", desc: "transport.createRoute({ name, stops: JSON[{name, lat, lng, time}] })", icon: "📍", color: "super_admin" },
                 { name: "Assign Vehicle to Route", desc: "Route.vehicleId = vehicle.id", icon: "🔗", color: "super_admin" },
-                { name: "Route Without Driver", desc: "Alert if Route has Vehicle but driverId is NULL", icon: "⚠️", color: "edge", edge: true }
+                { name: "Route Without Staff", desc: "Alert if Route has Vehicle but driverId is NULL", icon: "⚠️", color: "edge", edge: true }
               ]
             },
             {
-              name: "Driver Assignment",
+              name: "Transport Staff Assignment",
               desc: "TransportStaff ↔ Vehicle ↔ Route linkage",
               icon: "🧑‍✈️",
               color: "super_admin",
               children: [
-                { name: "Assign Driver", desc: "TransportStaff.assignedVehicleId + Route.driverId", icon: "🔗", color: "super_admin" },
+                { name: "Assign Transport Staff", desc: "TransportStaff.assignedVehicleId + Route.driverId", icon: "🔗", color: "super_admin" },
                 { name: "License Verification", desc: "TransportStaff.licenseNumber + expiry date validation", icon: "🪪", color: "super_admin" },
-                { name: "Driver on Multiple Vehicles", desc: "@@unique(assignedVehicleId) prevents one driver on two buses", icon: "⚠️", color: "edge", edge: true }
+                { name: "Staff on Multiple Vehicles", desc: "@@unique(assignedVehicleId) prevents one driver on two buses", icon: "⚠️", color: "edge", edge: true }
               ]
             }
           ]
@@ -1700,7 +1720,7 @@ const TREE_DATA = {
           children: [
             { name: "Assigned Route", desc: "transport.getStudentRoute({ studentId }) → Route name, stop list, timings", icon: "🗺️", color: "student" },
             { name: "Bus Number & Timing", desc: "Vehicle.busNumber + Route.stops pickup/drop time", icon: "🚐", color: "student" },
-            { name: "Driver Contact", desc: "TransportStaff.contact (PII masked for students: only name visible)", icon: "📞", color: "student" }
+            { name: "Transport Contact", desc: "TransportStaff.contact (PII masked for students: only name visible)", icon: "📞", color: "student" }
           ]
         },
         {
@@ -1808,12 +1828,12 @@ const TREE_DATA = {
         },
         {
           name: "Transport Details",
-          desc: "Child's bus route & driver • /parent/transport/",
+          desc: "Child's bus route & transport info • /parent/transport/",
           icon: "🚌",
           color: "parent",
           children: [
             { name: "Route & Stops", desc: "transport.getStudentRoute → Route.stops JSON with names & timings", icon: "🗺️", color: "parent" },
-            { name: "Driver Details", desc: "TransportStaff: name, phone, licenseNumber (full access for parents)", icon: "🧑‍✈️", color: "parent" },
+            { name: "Transport Staff Details", desc: "TransportStaff: name, phone, licenseNumber (full access for parents)", icon: "🧑‍✈️", color: "parent" },
             { name: "Route Changed Without Notice", desc: "Alert parent if Route.stops or timings modified without prior notification", icon: "⚠️", color: "edge", edge: true }
           ]
         },
@@ -2217,8 +2237,8 @@ const TREE_DATA = {
       color: "general",
       children: [
         { name: "Universal Access (Web + Mobile)", desc: "ALL roles get both web portal AND React Native app. Data syncs instantly", icon: "🌐", color: "general" },
-        { name: "Role-Specific Dashboards", desc: "Clutter-free: Driver sees only Route/Map. Teacher sees only Attendance/Marks", icon: "📊", color: "general" },
-        { name: "Language Toggle (Vernacular)", desc: "1-click switch to Hindi/regional language for Parents & Drivers", icon: "🌍", color: "general" },
+        { name: "Role-Specific Dashboards", desc: "Clutter-free: Teacher sees only Attendance/Marks", icon: "📊", color: "general" },
+        { name: "Language Toggle (Vernacular)", desc: "1-click switch to Hindi/regional language for Parents & Staff", icon: "🌍", color: "general" },
         { name: "Icon-Driven Design", desc: "Minimal text, large clear icons. Calendar icon for leave, Rupee icon for fees", icon: "🎯", color: "general" },
         { name: "One-Click Actions", desc: "'Mark All Present' button, 'Remind All Unpaid Parents' — Save teacher/admin time", icon: "⚡", color: "general" },
         { name: "Touch Targets: 44×44px Minimum", desc: "All interactive elements meet accessibility standards for mobile", icon: "👆", color: "general" },

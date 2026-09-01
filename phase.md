@@ -25,7 +25,7 @@ Source: Implementation Plan Lines 366-394
 - [ ] Write complete `schema.prisma` with ALL 20 tables:
   - School, User (Foundation)
   - Class, SubjectMaster, Subject, ClassTeacher, TimetablePeriod, AcademicSchedule, Syllabus (Academic)
-  - TeacherProfile, StudentProfile, ParentProfile, DriverProfile (Profiles)
+  - TeacherProfile, StudentProfile, ParentProfile, TransportStaff (Profiles)
   - Attendance, Exam, Result (Results)
   - Homework (Assignments)
   - Vehicle, Route (Transport)
@@ -56,10 +56,11 @@ Source: Implementation Plan Lines 366-394
   - `/teacher/*` → TEACHER only
   - `/student/*` → STUDENT only
   - `/parent/*` → PARENT only
-  - `/driver/*` → DRIVER only
+  - `/librarian/*` → LIBRARIAN only
+  - `/store/*` → STORE_MANAGER only
   - `/accountant/*` → ACCOUNTANT only
 - [ ] Unauthorized access → Redirect to `/login` or show 403
-- [ ] Scaffold all 8 dashboard route groups under `(dashboard)/`
+- [ ] Scaffold all 9 dashboard route groups under `(dashboard)/`
 
 ---
 
@@ -237,7 +238,7 @@ Source: Implementation Plan Lines 397-417
 **Task 27: Transportation Details**
 - [ ] View assigned bus number, route name
 - [ ] Stop list with timings
-- [ ] Driver contact information
+- [ ] Transport staff contact information
 
 **Task 28: Student Leave Application**
 - [ ] Apply for leave online (pre-inform school)
@@ -280,17 +281,17 @@ Source: Implementation Plan Lines 397-417
 
 **Task 34: Transportation Tracking (Parent)**
 - [ ] Build UI mapping the JSON stops array on a route to a visual timeline
-- [ ] Parent view logic: Filter driver data to ONLY show `Name`, `Phone`, and `Bus Number`
-- [ ] Emergency protocol: Add a "Call Driver" direct 1-tap action button
+- [ ] Parent view logic: Filter transport staff data to ONLY show `Name`, `Phone`, and `Bus Number`
+- [ ] Emergency protocol: Add a "Call Transport Staff" direct 1-tap action button
 - [ ] Edge case: Route/Bus changed temporarily → Push Notification alert to parent
 
 **Task 35: Transport Staff Management (Admin Only)**
 - [ ] Build tRPC router: `transport.ts` (Manage Vehicles, Routes, TransportStaff)
 - [ ] Create `<TransportStaffForm />` for Admin to input private HR data (License Number, Aadhar Number, Experience Years, Police Verification Status)
 - [ ] Ensure `TransportStaff` is strictly an administrative model (No User/Login relations created)
-- [ ] Build `<RouteBuilder />`: Admin assigns a `Vehicle`, `DRIVER`, and `CONDUCTOR` to a single Route
+- [ ] Build `<RouteBuilder />`: Admin assigns a `Vehicle`, `DRIVER` and `CONDUCTOR` (internal tags) to a single Route
 - [ ] Background Cron Job logic: Daily check on `licenseExpiryDate` and `fitnessCertificateExpiryDate`
-- [ ] Admin Dashboard Alerts Widget: "⚠️ 2 Driver Licenses expiring this month"
+- [ ] Admin Dashboard Alerts Widget: "⚠️ 2 Staff Licenses expiring this month"
 
 **Task 36: Account Office (Accountant) Panel**
 - [ ] Fee collection dashboard: Today's collections, pending dues overview
@@ -349,7 +350,7 @@ Source: Implementation Plan Lines 421-431
 
 **Task 43: Mobile Responsive Optimization**
 - [ ] Audit all 7 dashboards for mobile responsiveness
-- [ ] Teacher, Student, Parent, Driver → Must work perfectly on 360px width
+- [ ] Teacher, Student, Parent → Must work perfectly on 360px width
 - [ ] Touch targets: Minimum 44x44px
 
 **Task 44: PWA (Progressive Web App) Setup**
@@ -468,7 +469,7 @@ Source: Implementation Plan Lines 496-508
 - [ ] `npm run build` compilation check (TypeScript strict)
 
 ### Manual Verification
-- [ ] Login as each of the 8 roles → Verify all features accessible
+- [ ] Login as each of the 9 roles → Verify all features accessible
 - [ ] Payment gateway sandbox testing (Razorpay test mode)
 - [ ] AI feature accuracy testing (Gemini output quality review)
 - [ ] Mobile responsiveness check (Chrome DevTools + real devices)

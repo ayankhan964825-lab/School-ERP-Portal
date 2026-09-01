@@ -57,13 +57,13 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 **Exact Permissions (from implementation plan line 201-209):**
 1. Full school access (all modules within their tenant)
-2. Assign all roles (create Teacher, Student, Parent, Driver, Accountant accounts)
+2. Assign all roles (create Teacher, Student, Parent, Admin Staff, Librarian, Store Manager, Accountant accounts)
 3. Class-Teacher mapping (assign teachers to specific classes and subjects)
 4. Publish notices & Define Syllabus
 5. Academic schedule management (exams, holidays, events calendar)
 6. View all reports (attendance, marks, financial, behavioral)
 7. Fee structure setup (define fee types, amounts, due dates)
-8. Transportation management (vehicles, routes, drivers)
+8. Transportation management (vehicles, routes, transport staff)
 
 **Dashboard Features:**
 - School overview stats (Total Students, Total Teachers, Today's Attendance %)
@@ -104,7 +104,7 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 1. View own attendance, results, schedule
 2. View homework & notices
 3. View Syllabus and Course Progress (what topics are pending)
-4. View transportation details (assigned bus, route, driver info)
+4. View transportation details (assigned bus, route, transport info)
 5. **Apply for Leave online** (pre-inform school digitally)
 6. Profile dashboard (read-only mostly)
 7. Cannot view other students' data
@@ -115,7 +115,7 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 - Homework list with submission tracking
 - Timetable grid view
 - Leave application form with status tracker
-- Transport details: Bus number, route, driver contact
+- Transport details: Bus number, route, transport contact
 
 ---
 
@@ -140,7 +140,7 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 - Attendance calendar view
 - Teacher contact information
 - AI Behavioral & Skill Report (narrative personality assessment)
-- Transport tracking (bus route, driver details)
+- Transport tracking (bus route, transport staff details)
 - Document Vault access (report cards, certificates, medical records)
 - Notice board (school announcements, fee reminders, exam schedules)
 
@@ -363,7 +363,7 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 
 **TransportStaff Table Fields (Secure HR Data):**
 - `id`, `school_id`, `name`, `phone`
-- `role` — Enum: DRIVER | CONDUCTOR
+- `role` — Enum: TRANSPORT_STAFF
 - `license_number`, `aadhar_number` — Sensitive government IDs
 - `experience_years`, `police_verified` — Safety compliance checks
 - `is_active`
@@ -385,10 +385,10 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 4. **Parent Visibility (Filtered Access):** The API heavily filters the data sent to the Parent App. Parents only see:
    - Assigned Bus Number & Route Name
    - Expected Stop Timings
-   - Driver Name and Contact Number (for direct emergency calls)
-   - They NEVER see the driver's HR documents or license numbers.
+   - Staff Name and Contact Number (for direct emergency calls)
+   - They NEVER see the staff's HR documents or license numbers.
 5. **Automated Fleet Alerts:** A background cron job tracks vehicle and staff compliance. It triggers alerts on the Super Admin dashboard when:
-   - A driver's license is expiring within 30 days.
+   - A staff's license is expiring within 30 days.
    - A vehicle's Fitness Certificate or Insurance is expiring within 30 days.
 
 ### 3.7 Fee & Finance Module
@@ -590,7 +590,7 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 - **Demographics Matrix:** Auto-calculates category-wise (General/OBC/SC/ST/EWS), gender-wise, and minority student counts per class.
 - **Pupil-Teacher Ratio (PTR):** Evaluates current active student count vs active teaching staff against board norms (e.g., 30:1).
 - **Staff Credential Register:** Generates a formatted table of all teachers, showing B.Ed/CTET qualifications, joining date, and salary account details.
-- **Transport Safety Compliance:** Summarizes active school buses, pollution/insurance validity, and driver police verification status.
+- **Transport Safety Compliance:** Summarizes active school buses, pollution/insurance validity, and staff police verification status.
 - **1-Click Export Format:** Outputs directly into an audit-ready, government-standard Excel/CSV format (CBSE OASIS & UDISE+ compatible).
 
 ---
@@ -665,8 +665,8 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 ## 5. UI/UX Strategy — 5 Design Principles (from implementation plan)
 
 1. **Universal Access (Web + Mobile):** Chahe Admin ho, Teacher, Student ya Parent — sabke paas choice hogi. Web portal (laptop) ya Mobile App (phone). Data instantly sync hoga.
-2. **Role-Specific Clutter-Free Dashboards:** Har user ko sirf apna kaam dikhega. Driver ko marks nahi dikhenge, bas Route aur map dikhega. Irrelevant features invisible, not just disabled.
-3. **Language Toggle (Vernacular):** Parents aur Drivers ke liye app ko Hindi/regional language mein switch karne ka 1-click option.
+2. **Role-Specific Clutter-Free Dashboards:** Har user ko sirf apna kaam dikhega.  Irrelevant features invisible, not just disabled.
+3. **Language Toggle (Vernacular):** Parents ke liye app ko Hindi/regional language mein switch karne ka 1-click option.
 4. **Icon-Driven Design:** Text kam aur bade, clear icons zyada. Leave ke liye bada Calendar Icon, Fee ke liye Rupee Icon.
 5. **One-Click Actions:** Teachers ke liye "Mark All Present" ya "Remind All Unpaid Parents" jaise one-click buttons taaki unka time bache.
 

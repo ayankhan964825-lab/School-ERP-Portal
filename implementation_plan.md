@@ -141,7 +141,7 @@ Route
 ├── stops (JSON array of {name, lat, lng, time})
 └── driver_id, conductor_id
 
-DriverProfile
+TransportStaff
 ├── id, user_id, license_number
 ├── contact, emergency_contact
 └── assigned_vehicle_id
@@ -235,7 +235,7 @@ PARENT
 ├── View notices & approve child's leave
 └── Cannot modify any data
 
-DRIVER / CONDUCTOR
+TRANSPORT_STAFF
 ├── Update own profile
 ├── View assigned route
 ├── Mark vehicle status
@@ -314,7 +314,7 @@ erp-portal/
 │   │   │   ├── teacher/      # Teacher Panel
 │   │   │   ├── student/      # Student Portal
 │   │   │   ├── parent/       # Parent Portal
-│   │   │   ├── driver/       # Driver Panel
+│   │   │   ├── staff/       # Driver Panel
 │   │   │   └── accountant/   # Account Office Panel
 │   │   ├── api/              # API Routes
 │   │   │   └── trpc/
