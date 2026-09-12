@@ -62,6 +62,12 @@ Source: Implementation Plan Lines 366-394
 - [ ] Unauthorized access → Redirect to `/login` or show 403
 - [ ] Scaffold all 9 dashboard route groups under `(dashboard)/`
 
+**Task 5.1: Next.js Performance & Stability Setup**
+- [ ] Implement Cache Busting patterns: `revalidatePath` and `revalidateTag` in tRPC mutations
+- [ ] Enforce Component Boundaries: Layouts/Pages as Server Components, interactive UI as Client Components (`"use client"`)
+- [ ] Set `export const dynamic = 'force-dynamic'` for real-time dashboards to prevent stale data bugs
+- [ ] Ensure Cloud-Agnostic architecture (Standard Next.js APIs, no proprietary Vercel hooks)
+
 ---
 
 ### Week 3-4: Super Admin (Principal) Panel
@@ -174,7 +180,9 @@ Source: Implementation Plan Lines 366-394
 
 **Task 17: Result/Marks Upload**
 - [ ] Build Exam creation UI (name, class, subject, date, totalMarks, passingMarks, type)
-- [ ] Build Marks upload UI: Table with student names, input for marks
+- [ ] Build `updateMarksInline` mutation for fast cell-based UI editing.
+- [ ] Build `downloadMarksTemplate` and `uploadMarksExcel` for offline bulk entry.
+- [ ] Build UI: `<MarksEntryGrid />` acting like an Excel sheet (Arrow key navigation).
 - [ ] Auto-calculate grade based on school's grading scale
 - [ ] Store in Result table (marksObtained, grade, remarks)
 

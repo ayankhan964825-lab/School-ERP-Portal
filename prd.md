@@ -20,10 +20,14 @@ Yeh model data security badhata hai aur client ko ek "Personal App" hone ka feel
 
 **Core Differentiators:**
 1. AI-Powered Intelligence (Google Gemini) — Timetabling, Report Generation, At-Risk Alerts
-2. Offline-First Architecture — Teachers can work without internet
+2. True Offline-First Architecture — Flutter Mobile App uses C++ based Isar/ObjectBox DB, letting teachers work with zero internet latency.
 3. Auto Fee Reconciliation — Razorpay SmartCollect, zero manual entry
 4. Consumer-Grade Premium UI — shadcn/ui + Tailwind CSS
-5. Universal Access — Web + Mobile App dono available for ALL roles
+5. Universal Access — Next.js Web + Flutter Mobile App dono available for ALL roles
+6. Astro-Grade Next.js Performance — Cache-busting (`revalidatePath`), Server/Client strict boundaries, and Edge Routing ensuring zero stale data and instant load times.
+7. Enterprise Data Retention (Soft Deletion) — No schools or users are ever hard-deleted. Financial records are preserved forever using `status` flags (Active/Suspended/Deleted).
+8. Agency White-Labeling (Media Proxy) — The platform completely masks the underlying Cloudflare/Supabase architecture via a `/api/media` reverse proxy.
+9. Strict Mobile-First UI — Flawless responsiveness across Mobile, Tablet, iPad, and Windows Desktop via enforced Tailwind CSS breakpoints, preventing broken layouts on scaling.
 
 ---
 
@@ -332,10 +336,13 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 **Key Features:**
 1. Super Admin creates exam definitions
 2. Teachers upload marks per student per subject
-3. System auto-calculates grades based on school's grading scale
-4. Report card generation (PDF download)
-5. Progress trends: Visual chart showing improvement/decline over exams
-6. AI-generated narrative report (behavioral + academic analysis)
+3. **Hybrid Marks Entry (Manual + Excel):**
+   - **Manual Inline:** Teacher selects class/subject -> Student list appears. Teacher types marks, and grades auto-calculate instantly on screen.
+   - **Excel Bulk:** Teacher clicks "Download Template" -> System provides `.xlsx` with all student names & roll numbers pre-filled. Teacher fills marks offline and uploads the file.
+4. System auto-calculates grades based on school's grading scale
+5. Report card generation (PDF download)
+6. Progress trends: Visual chart showing improvement/decline over exams
+7. AI-generated narrative report (behavioral + academic analysis)
 
 ---
 

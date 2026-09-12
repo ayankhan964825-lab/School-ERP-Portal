@@ -14,7 +14,7 @@ These 5 rules are NON-NEGOTIABLE. Every UI decision must pass through this filte
 > "Chahe Admin ho, Teacher, Student ya Parent — sabke paas choice hogi. Jo chahe Web portal use kare laptop par, jo chahe Mobile App use kare phone par. Data dono jagah instantly sync hoga."
 
 - **Web:** Next.js 14 responsive web app (works on laptops, tablets)
-- **Mobile:** React Native Expo app (native iOS + Android)
+- **Mobile:** Flutter app (native iOS + Android with Isar offline DB)
 - **Sync:** Same tRPC API backend → data is always consistent
 
 ### Principle 2: Role-Specific Clutter-Free Dashboards
@@ -48,6 +48,13 @@ These 5 rules are NON-NEGOTIABLE. Every UI decision must pass through this filte
 - Super Admin: "Remind All Unpaid Parents" (triggers bulk SMS)
 - Super Admin: "Generate AI Timetable" (1-click AI call)
 - Parent: "Pay Now via UPI" (immediate payment intent)
+
+### Principle 6: Client vs Server Separation (Performance First)
+> "Fast loading ke liye, heavy components server pe rahenge aur sirf buttons/forms client pe."
+
+- All Layouts, sidebars, and data-fetching pages are **Server Components** (Zero JS).
+- Interactive UI (Forms, Modals, DataTables, Clickable Graphs) are **Client Components** (`"use client"`).
+- This ensures the UI remains as fast as a static site (like Astro) while retaining full React capabilities.
 
 ---
 
@@ -90,7 +97,17 @@ From implementation plan line 439: "School-specific customization (logo, colors,
     /* Dynamic Per-Tenant Primary (injected from School.settings) */
     --primary: 221.2 83.2% 53.3%;     /* Default: Trust Blue */
     --primary-foreground: 210 40% 98%;
-    
+
+### 2.3 Responsive Breakpoints (Mobile-First Strategy)
+To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mobile phones, we enforce a strict **Mobile-First** design using Tailwind CSS breakpoints. Retrofitting responsiveness is difficult, so all components MUST be designed for mobile first, then scaled up.
+
+- **Base (Mobile/iOS/Android):** `< 640px`. UI is stacked (1 column). Sidebars become Hamburger menus (`Sheet` component).
+- **`sm:` (Large Phones/Small Tablets):** `>= 640px`.
+- **`md:` (iPad/Tablets):** `>= 768px`. UI shifts to 2 columns. Sidebar becomes visible as an icon-only dock.
+- **`lg:` (Laptops/Windows):** `>= 1024px`. Full dashboard view. Sidebar is fully expanded with text. Grid becomes 3-4 columns.
+- **`xl:` (Desktops):** `>= 1280px`. Maximum width (`max-w-7xl`).
+
+*Rule:* Never write `flex` without considering mobile. Always write `flex-col md:flex-row`.
     /* Semantic Status Colors */
     --success: 142.1 76.2% 36.3%;      /* PRESENT / PAID */
     --warning: 38 92% 50%;              /* LATE / PARTIAL */

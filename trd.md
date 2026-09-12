@@ -12,7 +12,7 @@ Every technology choice is mapped directly from the implementation plan (lines 1
 | # | Layer | Technology | Why (Exact Rationale) |
 |---|---|---|---|
 | 1 | **Frontend (Web)** | Next.js 14+ (App Router) | Available for ALL roles. Server Components for performance. SEO-friendly. |
-| 2 | **Mobile App** | React Native (Expo) | Available for ALL roles. Single codebase for iOS + Android. |
+| 2 | **Mobile App** | Flutter | Available for ALL roles. True offline-first C++ engine support (Isar/ObjectBox). Smooth UI. |
 | 3 | **UI Library** | shadcn/ui + Tailwind CSS | Premium, accessible UI components. Dynamic theming per tenant. |
 | 4 | **Backend API** | Next.js API Routes + tRPC | Type-safe, fullstack. No manual API client generation needed. |
 | 5 | **Database** | PostgreSQL (via Supabase/Neon) | Relational data integrity. Multi-tenant ready. Row-Level Security. |
@@ -33,7 +33,7 @@ Every technology choice is mapped directly from the implementation plan (lines 1
 ```
 ┌─────────────────────────────────────────────────┐
 │                   FRONTEND                       │
-│    Next.js 14 (Web)  +  React Native (Mobile)    │
+│    Next.js 14 (Web)  +  Flutter (Mobile App)     │
 │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
 │  │Master│ │Super │ │Teacher│ │Student│ │Parent│  │
 │  │Admin │ │Admin │ │Panel │ │Portal│ │Portal│  │
@@ -57,6 +57,24 @@ Every technology choice is mapped directly from the implementation plan (lines 1
 │  └──────────┘ └──────────┘ └──────────┘         │
 └─────────────────────────────────────────────────┘
 ```
+
+### 2.1 Next.js 14 Performance & Caching Rules
+To ensure the application maintains ultra-fast performance without stale data (Caching Issues), the following strict constraints are enforced:
+- **Cache Busting via Revalidation:** All tRPC mutation endpoints that alter database state must trigger `revalidatePath` or `revalidateTag` to purge stale Next.js cache.
+- **Real-Time Data Bypassing:** Real-time dashboards (e.g., Attendance, Fee Collection) must export `dynamic = 'force-dynamic'` to ensure zero caching.
+- **Server/Client Separation:** The root layout, pages, and data fetching wrappers MUST be **Server Components** (Zero JS to client). Interactive elements (buttons, forms, charts) MUST be isolated into **Client Components** (`"use client"`).
+- **Mobile-First Tailwind Execution:** All UI development MUST follow the `base -> sm -> md -> lg -> xl` breakpoint flow. Writing desktop-only layouts (`flex` without considering mobile stacking) is strictly prohibited to ensure iPad/Mobile compatibility.
+- **Cloud-Agnostic Setup:** The codebase will use standard Next.js and Prisma features, avoiding vendor lock-in to ensure deployability on AWS, Docker, or Vercel equally.
+
+### 2.2 Database Performance & Scale Rules (Vyapar Edge-Cases)
+To prevent the "Billion Row Problem" in a multi-tenant environment, these rules are mandatory:
+- **Composite B-Tree Indexes:** Every Prisma model MUST include an index on `schoolId` (e.g., `@@index([schoolId])`) to prevent Sequential Scans from crashing the DB.
+- **Aggressive Autovacuum:** High-update tables (`Attendance`, `Fee_Transactions`) MUST be tuned with `autovacuum_vacuum_scale_factor = 0.05` to prevent MVCC dead tuple bloat.
+- **Composite Unique Constraints:** Unique constraints involving people must be composite with `schoolId` (e.g., `@@unique([phone, schoolId])`) to allow a parent to register in multiple schools using the same phone number.
+- **Soft Deletion:** NEVER use hard deletes. All core tables must implement `status IN ('active', 'suspended', 'deleted')` to preserve financial history (Cascading Deletes are strictly forbidden for tenants/users).
+- **Atomic Transactions (Finance):** `SELECT -> UPDATE` is strictly prohibited for Fee/Wallet updates. MUST use Prisma `$transaction` or `increment`/`decrement` to prevent double-charging race conditions.
+- **Middleware Fast-Fail (DDoS Shield):** `middleware.ts` MUST instantly `return NextResponse.next()` for all static assets (`/_next/`, `*.png`, `*.css`) to prevent Edge function timeouts and database connection exhaustion.
+- **Private Data Vault:** Sensitive files (Report Cards, Medical docs) MUST be stored in private R2 buckets and served ONLY via API-generated Pre-Signed URLs with a 5-minute expiry. Watermarks ("Downloaded by User X") will be applied dynamically.
 
 ---
 
@@ -1019,10 +1037,14 @@ erp-portal/
 | `getStudentStats` | Query | `{ studentId, month, year }` | `{ present, absent, late, percentage }` |
 | `getStudentCalendar` | Query | `{ studentId, month, year }` | `AttendanceCalendarDay[]` |
 
-### 6.5 Router: `result.ts`
-| Procedure | Type | Input | Output |
+### 10.11 Exam & Result (`exam.ts` & `result.ts`)
+| Route | Type | Input | Returns |
 |---|---|---|---|
-| `createExam` | Mutation | `{ name, classId, subjectId, date, totalMarks, passingMarks, type }` | `Exam` |
+| `createExam` | Mutation | `{ name, term, classes }` | `Exam` |
+| `updateMarksInline` | Mutation | `{ studentId, subjectId, marks, examId }` | `Result` (auto-calculates grade) |
+| `downloadMarksTemplate` | Query | `{ classId, subjectId, examId }` | `{ templateUrl: string }` |
+| `uploadMarksExcel` | Mutation | `{ classId, subjectId, examId, excelData: Json }` | `Result[]` (bulk upsert) |
+| `calculateGrades` | Mutation | `{ classId, term }` | `ReportCard[]` (batch processed) |
 | `uploadMarks` | Mutation | `{ examId, marks: [{ studentId, marksObtained, remarks? }] }` | `{ uploaded: number }` |
 | `getStudentResults` | Query | `{ studentId }` | `ResultWithExam[]` |
 | `generateAiReport` | Mutation | `{ studentId }` | `{ narrative: string }` |

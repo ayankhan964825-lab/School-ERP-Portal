@@ -617,3 +617,57 @@ channel.bind('fee-paid', (data) => {
 ### 8.3 Database Rollback
 - Neon.tech provides branch-based database snapshots
 - If migration corrupts data → Create new branch from pre-migration snapshot → Point `DATABASE_URL` to recovered branch
+
+---
+
+## 9. Advanced Architecture (Vyapar Reference Portability)
+
+Based on learnings from the multi-tenant Vyapar platform, the ERP adopts the following strict database patterns:
+
+### 9.1 Cloud Portability (Supabase to AWS)
+To prevent vendor lock-in to Supabase Edge Functions:
+- All core business logic lives in **Next.js Server Actions / tRPC**.
+- **Prisma ORM** serves as the universal translation layer.
+- Moving to AWS RDS (Amazon Relational Database Service) or AWS Aurora requires zero code changes—only a connection string update.
+
+### 9.2 Multi-Tenant Database Tuning
+To solve the "Billion Row Problem" across 50+ schools:
+- **Composite Unique Constraints:** `UNIQUE(phone, school_id)` instead of a global unique constraint allows parents to register in multiple distinct schools using the same phone number.
+- **Composite B-Tree Indexes:** Indexes such as `(school_id, created_at)` prevent full table Sequential Scans, ensuring query times remain in milliseconds regardless of database scale.
+- **Aggressive Autovacuum:** By tuning `autovacuum_vacuum_scale_factor = 0.05` on tables like `Attendance` and `FeePayment`, we prevent MVCC bloat and database crashes.
+
+---
+
+## 10. Core Security & Stability Protocols (Vyapar Reference)
+
+### 10.1 Financial Data Integrity (Atomic Transactions)
+To prevent "IRCTC-style" payment glitches and race conditions (e.g., a parent double-clicking pay or paying from two devices at the exact same millisecond):
+- `SELECT -> UPDATE` patterns are strictly forbidden for wallets or fees.
+- All financial operations MUST use Prisma `$transaction` blocks or atomic operators (`increment`, `decrement`).
+- If a Razorpay payment succeeds but the DB update fails, the `$transaction` automatically rolls back and triggers an automatic refund API call to prevent a "half-paid" database state.
+- Over-payments due to race condition accuracy will be safely stored in the `School Wallet` for the next month's fee adjustment.
+
+### 10.2 Edge Middleware Stability (DDoS Prevention)
+To prevent Database Connection Pool exhaustion and API latency spikes:
+- The Vercel `middleware.ts` is configured with a **Fast-Fail** approach.
+- Routes such as `/_next/`, `/assets/`, `*.png`, `*.css`, and `*.pdf` explicitly bypass JWT/Database tenant checks.
+- This ensures the API only fires up for actual data mutations and sensitive routes.
+
+### 10.3 Private Data Vault (Cloudflare R2 + Pre-Signed URLs)
+Bypassing middleware for static assets introduces a risk for sensitive files (like Student Report Cards or Medical Documents).
+- Sensitive files are stored in a strictly private Cloudflare R2 bucket.
+- They are NEVER served via the public `/_next/image` routing.
+- The API validates the user's role and `schoolId`, then generates a **Pre-Signed URL** (valid for 5 minutes).
+- Report Cards served via these URLs receive an on-the-fly digital **Watermark** ("Downloaded by User X on Date Y") to prevent tampering and forgery.
+
+### 10.4 Agency White-Labeling (Media Reverse Proxy)
+To prevent schools from discovering the underlying infrastructure (Cloudflare/Supabase) and ensure the platform looks like a premium, custom-built enterprise solution:
+- Direct cloud storage URLs (`*.r2.cloudflarestorage.com`) are NEVER exposed to the frontend.
+- A Next.js API route `/api/media/[...path]` acts as a reverse proxy.
+- The frontend requests `https://dps.schoolerp.com/api/media/logo.png`, masking the true origin of the files.
+
+### 10.5 API Key Handover & Maintenance Model
+The business model of this ERP is a pure **Software-as-a-Product (Handover) Model**, not a micro-transaction SaaS model.
+- **No Monthly API Billing:** The Agency will NOT bill schools monthly for SMS (MSG91) or AI (Gemini) usage.
+- **Handover Protocol:** During deployment, the Agency provides a strictly rate-limited "Test API Key" for demonstration. The school administration is explicitly instructed to purchase and integrate their own API keys in the Super Admin dashboard.
+- **Agency Scope:** The Agency's responsibility is limited to platform maintenance, bug fixes, and handling edge cases, ensuring zero operational overhead regarding third-party service billing.

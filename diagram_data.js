@@ -37,8 +37,9 @@ const TREE_DATA = {
               children: [
                 { name: "Next.js 14+ (App Router)", desc: "Server Components + Edge Runtime. SEO-friendly SSR", icon: "⚛️", color: "general" },
                 { name: "White-Label Theming", desc: "Dynamic CSS variables injected via NEXT_PUBLIC_ variables", icon: "🎨", color: "general" },
-                { name: "React Native (Expo)", desc: "Dedicated Play Store App compiled per client", icon: "📱", color: "general" },
+                { name: "Flutter", desc: "Dedicated Play Store App (Isar offline-first) compiled per client", icon: "📱", color: "general" },
                 { name: "shadcn/ui + Tailwind CSS", desc: "Premium, accessible UI components.", icon: "🖌️", color: "general" },
+                { name: "Strict Mobile-First Breakpoints", desc: "Tailwind sm/md/lg scaling ensures seamless iPad/Tablet/Mobile support", icon: "📱", color: "general" },
                 { name: "react-hook-form + zod", desc: "Type-safe form validation. Client-side + server-side schemas", icon: "📋", color: "general" }
               ]
             },
@@ -87,6 +88,16 @@ const TREE_DATA = {
                 { name: "Agency Master Codebase", desc: "Single Repo -> Many Isolated Client Deployments", icon: "🐙", color: "general" },
                 { name: "Vercel (Frontend)", desc: "Edge Network. Dedicated deployment per school.", icon: "▲", color: "general" },
                 { name: "Railway / Supabase (DB)", desc: "Isolated PostgreSQL instances per school for security.", icon: "🛤️", color: "general" }
+              ]
+            },
+            {
+              name: "True White-Labeling",
+              desc: "Masking underlying infrastructure from clients",
+              icon: "🏢",
+              color: "edge",
+              edge: true,
+              children: [
+                { name: "Media Reverse Proxy", desc: "Serve R2 files via /api/media to hide Cloudflare/Supabase footprints", icon: "🎭", color: "general" }
               ]
             }
           ]
@@ -166,6 +177,19 @@ const TREE_DATA = {
           icon: "🗄️",
           color: "general",
           children: [
+            {
+              name: "Advanced DB Tuning (Vyapar Edge-Cases)",
+              desc: "Preventing 'Billion Row' crashes in multi-tenant setup",
+              icon: "🚀",
+              color: "edge",
+              edge: true,
+              children: [
+                { name: "Composite B-Tree Indexes", desc: "e.g. @@index([schoolId]) on ALL tables to prevent Sequential Scans", icon: "🔍", color: "general" },
+                { name: "Aggressive Autovacuum", desc: "autovacuum_vacuum_scale_factor = 0.05 for high-update tables (Attendance)", icon: "🧹", color: "general" },
+                { name: "Composite Unique Constraints", desc: "@@unique([phone, schoolId]) so parents can register in multiple schools", icon: "🔒", color: "general" },
+                { name: "Soft Deletion", desc: "Never hard-delete (status IN 'active', 'suspended', 'deleted') to protect finance data", icon: "🗑️", color: "general" }
+              ]
+            },
             {
               name: "Section A: Multi-Tenant Foundation (2 Tables)",
               desc: "Implementation Plan Lines 66-76",
@@ -335,7 +359,8 @@ const TREE_DATA = {
               color: "general",
               children: [
                 { name: "result.createExam", desc: "Mutation: { name, classId, subjectId, date, totalMarks, passingMarks, type } → Exam", icon: "➕", color: "general" },
-                { name: "result.uploadMarks", desc: "Mutation: { examId, marks: [{studentId, marksObtained, remarks?}] } → { uploaded }", icon: "📤", color: "general" },
+                { name: "result.updateMarksInline", desc: "Mutation: { studentId, subjectId, marks, examId } → Result (auto-calculates grade)", icon: "⌨️", color: "general" },
+                { name: "result.uploadMarksExcel", desc: "Mutation: { classId, subjectId, examId, excelData } → Result[] (bulk upsert from Excel)", icon: "📁", color: "general" },
                 { name: "result.getStudentResults", desc: "Query: { studentId } → ResultWithExam[]", icon: "📋", color: "general" },
                 { name: "result.generateAiReport", desc: "Mutation: { studentId } → { narrative: string } — Gemini behavioral narrative", icon: "🤖", color: "general" }
               ]
@@ -574,6 +599,19 @@ const TREE_DATA = {
             { name: "Feature Toggles", desc: "AI features = PREMIUM only. Transport module = BASIC+. Feature flags per plan", icon: "🎛️", color: "general" },
             { name: "Subscription Plans", desc: "FREE (basic), BASIC (standard), PREMIUM (all AI + analytics)", icon: "💎", color: "general" },
             { name: "Theme Conflict", desc: "Ensure accessibility with bad custom colors (contrast ratio checks)", icon: "⚠️", color: "edge", edge: true }
+          ]
+        },
+        {
+          name: "Performance & Stability Architecture",
+          desc: "Next.js 14 Optimization, Caching & Cloud Strategy",
+          icon: "🚀",
+          color: "general",
+          children: [
+            { name: "Cache Busting (On-Demand)", desc: "Strict use of revalidatePath and revalidateTag after tRPC mutations to prevent stale data (e.g., Attendance, Fees)", icon: "🧹", color: "general" },
+            { name: "Dynamic Pages", desc: "export const dynamic = 'force-dynamic' on live dashboards to bypass cache completely for real-time accuracy", icon: "⚡", color: "general" },
+            { name: "Server/Client Boundary", desc: "Rule: 'Pages on Server, Buttons on Client'. UI interactions get 'use client', data fetching stays on server", icon: "🧱", color: "general" },
+            { name: "Cloud-Agnostic Setup", desc: "Standard Next.js + Prisma code avoiding Vendor Lock-in (Vercel). Deployable on AWS, Docker, or Railway", icon: "☁️", color: "general" },
+            { name: "Stale Cache Bug", desc: "Forgetting to revalidate cache after a mutation causes users to see outdated data", icon: "⚠️", color: "edge", edge: true }
           ]
         },
         {
