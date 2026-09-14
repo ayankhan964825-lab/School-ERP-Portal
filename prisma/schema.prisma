@@ -1,0 +1,719 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================
+// SECTION A: MULTI-TENANT FOUNDATION (2 Tables)
+// ==========================================
+
+model School {
+  id                  String   @id @default(uuid())
+  name                String
+  logo                String?           // URL to R2/S3
+  address             String?
+  contact             String?           // Phone/email
+  subscriptionPlan    String   @default("FREE") // FREE | BASIC | PREMIUM
+  academicYearStart   DateTime
+  academicYearEnd     DateTime
+  settings            Json?             // JSON blob: grading scale, SMS prefs, theme colors
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  users               User[]
+  classes             Class[]
+  subjects            SubjectMaster[]
+  feeStructures       FeeStructure[]
+  notices             Notice[]
+  vehicles            Vehicle[]
+  routes              Route[]
+  academicSchedules   AcademicSchedule[]
+  expenses            Expense[]
+  admissionEnquiries  AdmissionEnquiry[]
+  books               Book[]
+  bookIssues          BookIssue[]
+  inventoryItems      InventoryItem[]
+  storeSales          StoreSale[]
+  staffSalaries       StaffSalary[]
+  payslips            Payslip[]
+  issuedCertificates  IssuedCertificate[]
+  reportCards         ReportCard[]
+  complianceLogs      ComplianceExportLog[]
+  transportStaff      TransportStaff[]
+}
+
+enum Role {
+  MASTER_ADMIN
+  SUPER_ADMIN
+  ADMIN_STAFF
+  TEACHER
+  STUDENT
+  PARENT
+  ACCOUNTANT
+  LIBRARIAN
+  STORE_MANAGER
+}
+
+enum BookStatus {
+  AVAILABLE
+  ISSUED
+  LOST
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  ONLINE
+  CHEQUE
+}
+
+model User {
+  id             String    @id @default(uuid())
+  schoolId       String
+  school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  email          String    @unique
+  phone          String?
+  passwordHash   String
+  role           Role
+  profileImage   String?           // URL to R2/S3
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Role-specific profiles (nullable)
+  teacherProfile    TeacherProfile?
+  studentProfile    StudentProfile?
+  parentProfile     ParentProfile?
+  leaveApplications LeaveApplication[]
+  publishedNotices  Notice[]          @relation("NoticePublisher")
+  staffSalaries     StaffSalary[]
+
+  @@index([schoolId, role])
+  @@index([schoolId, email])
+}
+
+// ==========================================
+// SECTION B: ACADEMIC MODULE (6 Tables)
+// ==========================================
+
+model Class {
+  id            String   @id @default(uuid())
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name          String   // e.g., "10th"
+  section       String   // e.g., "A"
+  academicYear  String   // e.g., "2026-2027"
+
+  // Relations
+  subjects      Subject[]
+  students      StudentProfile[]
+  timetable     TimetablePeriod[]
+  exams         Exam[]
+  homework      Homework[]
+  attendances   Attendance[]
+  syllabi       Syllabus[]
+
+  @@unique([schoolId, name, section, academicYear])
+}
+
+model SubjectMaster {
+  id        String   @id @default(uuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name      String   // e.g., "Mathematics"
+  code      String   // e.g., "MATH101"
+
+  subjects  Subject[]
+
+  @@unique([schoolId, code])
+}
+
+model Subject {
+  id              String        @id @default(uuid())
+  classId         String
+  class           Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectMasterId String
+  subjectMaster   SubjectMaster @relation(fields: [subjectMasterId], references: [id])
+
+  classTeachers   ClassTeacher[]
+  timetable       TimetablePeriod[]
+  exams           Exam[]
+  homework        Homework[]
+  syllabi         Syllabus[]
+}
+
+model ClassTeacher {
+  id            String   @id @default(uuid())
+  teacherId     String
+  teacher       TeacherProfile @relation(fields: [teacherId], references: [id])
+  classId       String
+  subjectId     String
+  subject       Subject  @relation(fields: [subjectId], references: [id])
+  isClassTeacher Boolean @default(false) // Only one per class
+  assignedBy    String   // super_admin_id who made this assignment
+
+  @@unique([teacherId, classId, subjectId])
+}
+
+model TimetablePeriod {
+  id            String   @id @default(uuid())
+  classId       String
+  class         Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId     String
+  subject       Subject  @relation(fields: [subjectId], references: [id])
+  teacherId     String
+  teacher       TeacherProfile @relation(fields: [teacherId], references: [id])
+  dayOfWeek     String   // MON, TUE, WED, THU, FRI, SAT
+  startTime     String   // "08:00"
+  endTime       String   // "08:45"
+  room          String?
+  isAiGenerated Boolean  @default(false) // Tracks if AI created this slot
+
+  @@unique([classId, dayOfWeek, startTime])
+}
+
+enum ScheduleType {
+  EXAM
+  HOLIDAY
+  EVENT
+}
+
+model AcademicSchedule {
+  id          String       @id @default(uuid())
+  schoolId    String
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title       String       // e.g., "Diwali Holiday"
+  date        DateTime     @db.Date
+  type        ScheduleType
+  description String?
+}
+
+model Syllabus {
+  id            String   @id @default(uuid())
+  classId       String
+  class         Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId     String
+  subject       Subject  @relation(fields: [subjectId], references: [id])
+  academicYear  String
+  // JSON array of { topic_name, expected_hours, is_completed, completion_date }
+  topics        Json
+  uploadedBy    String   // super_admin_id or teacher_id
+
+  @@unique([classId, subjectId, academicYear])
+}
+
+// ==========================================
+// SECTION C: ROLE PROFILES (4 Tables)
+// ==========================================
+
+model TeacherProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  empId          String?
+  qualification  String?
+
+  classTeachers  ClassTeacher[]
+  timetable      TimetablePeriod[]
+}
+
+model StudentProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId          String
+  class            Class    @relation(fields: [classId], references: [id])
+  rollNumber       Int
+  parentId         String?
+  parent           ParentProfile? @relation(fields: [parentId], references: [id])
+  virtualAccountId String?  @unique // Razorpay SmartCollect VA
+
+  attendances      Attendance[]
+  results          Result[]
+  feePayments      FeePayment[]
+  bookIssues       BookIssue[]
+  storeSales       StoreSale[]
+  issuedCertificates IssuedCertificate[]
+  reportCards      ReportCard[]
+
+  @@unique([classId, rollNumber])
+}
+
+model ParentProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address     String?
+
+  children    StudentProfile[]
+}
+
+// Transport Staff are managed by Admin, they do not have User logins
+model TransportStaff {
+  id                String   @id @default(uuid())
+  schoolId          String
+  school            School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name              String
+  phone             String
+  licenseNumber     String?
+  aadharNumber      String?
+  experienceYears   Int?
+  policeVerified    Boolean  @default(false)
+  role              String   // TRANSPORT_STAFF
+  isActive          Boolean  @default(true)
+
+  assignedVehicles  Vehicle[]
+  assignedRoutes    Route[]
+}
+
+// ==========================================
+// SECTION D: ATTENDANCE & RESULTS (3 Tables)
+// ==========================================
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+}
+
+model Attendance {
+  id          String           @id @default(uuid())
+  studentId   String
+  student     StudentProfile   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId     String
+  class       Class            @relation(fields: [classId], references: [id])
+  date        DateTime         @db.Date
+  status      AttendanceStatus
+  markedBy    String           // teacher_id who marked it
+  syncedAt    DateTime         @default(now()) // For offline conflict resolution
+
+  @@unique([studentId, date]) // One record per student per day
+}
+
+enum ExamType {
+  UNIT_TEST
+  MID_TERM
+  FINAL
+}
+
+model Exam {
+  id            String   @id @default(uuid())
+  schoolId      String
+  name          String   // e.g., "Unit Test 1"
+  classId       String
+  class         Class    @relation(fields: [classId], references: [id])
+  subjectId     String
+  subject       Subject  @relation(fields: [subjectId], references: [id])
+  date          DateTime @db.Date
+  totalMarks    Int
+  passingMarks  Int
+  type          ExamType
+
+  results       Result[]
+}
+
+model Result {
+  id             String   @id @default(uuid())
+  examId         String
+  exam           Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        StudentProfile @relation(fields: [studentId], references: [id])
+  marksObtained  Float
+  grade          String?  // Auto-calculated: A+, A, B+, etc.
+  remarks        String?
+  uploadedBy     String   // teacher_id
+
+  @@unique([examId, studentId])
+}
+
+// ==========================================
+// SECTION E: HOMEWORK (1 Table)
+// ==========================================
+
+model Homework {
+  id          String   @id @default(uuid())
+  classId     String
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId   String
+  subject     Subject  @relation(fields: [subjectId], references: [id])
+  teacherId   String
+  title       String
+  description String?
+  dueDate     DateTime @db.Date
+  attachments Json?    // JSON array of file URLs in R2/S3
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// SECTION F: TRANSPORTATION (2 Tables)
+// ==========================================
+
+model Vehicle {
+  id          String   @id @default(uuid())
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  busNumber   String
+  capacity    Int
+  isActive    Boolean  @default(true)
+
+  routes      Route[]
+  driverId    String?
+  driver      TransportStaff? @relation(fields: [driverId], references: [id])
+}
+
+model Route {
+  id            String   @id @default(uuid())
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name          String   // e.g., "Route 5 - South Delhi"
+  vehicleId     String
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
+  // JSON array of { name: string, lat: number, lng: number, time: string }
+  stops         Json
+  conductorId   String?
+  conductor     TransportStaff? @relation(fields: [conductorId], references: [id])
+}
+
+// ==========================================
+// SECTION G: FEE & FINANCE (3 Tables)
+// ==========================================
+
+enum FeeType {
+  TUITION
+  TRANSPORT
+  LIBRARY
+  SPORTS
+}
+
+enum FeeFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum FeeStatus {
+  PAID
+  PARTIAL
+  PENDING
+  OVERDUE
+}
+
+model FeeStructure {
+  id            String       @id @default(uuid())
+  schoolId      String
+  school        School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classId       String
+  academicYear  String
+  feeType       FeeType
+  amount        Float
+  dueDate       DateTime     @db.Date
+  frequency     FeeFrequency
+  lateFeePerDay Float        @default(0)
+
+  payments      FeePayment[]
+}
+
+model FeePayment {
+  id               String      @id @default(uuid())
+  studentId        String
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+  feeStructureId   String
+  feeStructure     FeeStructure @relation(fields: [feeStructureId], references: [id])
+  amountPaid       Float       @default(0)
+  paymentDate      DateTime?
+  paymentMethod    String?     // UPI, Card, Cash, Cheque, NEFT
+  transactionId    String?     // Razorpay payment reference
+  receiptNumber    String?     @unique // System-generated unique receipt
+  status           FeeStatus   @default(PENDING)
+  onlineReceiptUrl String?     // PDF download link in R2
+
+  @@unique([studentId, feeStructureId])
+}
+
+model Expense {
+  id                String   @id @default(uuid())
+  schoolId          String
+  school            School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  category          String   // e.g., "Electricity", "Stationery"
+  amount            Float
+  description       String?
+  date              DateTime @db.Date
+  approvedBy        String?  // Principal approval for large expenses
+  receiptAttachment String?  // Vendor bill/invoice scan URL
+}
+
+// ==========================================
+// SECTION H: COMMUNICATION (2 Tables)
+// ==========================================
+
+model Notice {
+  id            String   @id @default(uuid())
+  schoolId      String
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title         String
+  content       String   // Rich text / HTML
+  targetRoles   Json?    // JSON array: ["TEACHER", "PARENT"]
+  targetClasses Json?    // JSON array: ["class_10_A"]
+  publishedBy   String
+  publisher     User     @relation("NoticePublisher", fields: [publishedBy], references: [id])
+  isPublished   Boolean  @default(false) // Draft vs Published
+  publishDate   DateTime?
+  attachments   Json?    // JSON array of file URLs
+  createdAt     DateTime @default(now())
+}
+
+enum LeaveType {
+  SICK
+  CASUAL
+  PERSONAL
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model LeaveApplication {
+  id                      String      @id @default(uuid())
+  userId                  String
+  user                    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType               LeaveType
+  role                    Role        // TEACHER or STUDENT
+  fromDate                DateTime    @db.Date
+  toDate                  DateTime    @db.Date
+  reason                  String
+  status                  LeaveStatus @default(PENDING)
+  approvedBy              String?     // Who approved/rejected
+  // AI suggests which free teacher can substitute
+  aiSubstituteSuggestion  Json?
+  createdAt               DateTime    @default(now())
+}
+
+// ==========================================
+// SECTION I: ADMISSION & ONBOARDING (1 Table)
+// ==========================================
+
+enum AdmissionStatus {
+  ENQUIRY
+  APPLIED
+  ADMITTED
+  REJECTED
+}
+
+enum AdmissionSource {
+  MANUAL       // Staff Data Entry Mode
+  QR_CODE      // Parent scanned QR at reception
+  BULK_IMPORT  // CSV/Excel batch upload
+}
+
+enum AdmissionFeeStatus {
+  PAID
+  PARTIAL
+  PENDING
+  WAIVED
+}
+
+model AdmissionEnquiry {
+  id                       String              @id @default(uuid())
+  schoolId                 String
+  school                   School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentName              String
+  dob                      DateTime            @db.Date
+  gender                   String              // MALE | FEMALE | OTHER
+  parentName               String
+  parentPhone              String
+  parentEmail              String?
+  previousSchool           String?
+  previousClass            String?
+  appliedForClass          String              // Target class for admission
+  source                   AdmissionSource     @default(MANUAL)
+  status                   AdmissionStatus     @default(ENQUIRY)
+  documents                Json?               // JSON array of R2 URLs (OPTIONAL at admission)
+  documentsPending         Boolean             @default(true)  // true = docs skipped during fast entry
+  admissionFeeStatus       AdmissionFeeStatus  @default(PENDING)
+  admissionFeeAmount       Float               @default(0)  // Total admission fee for this class
+  admissionFeePaid         Float               @default(0)  // Amount actually collected
+  admissionFeeDiscount     Float               @default(0)  // Principal's waiver amount
+  admissionFeeDiscountReason String?           // e.g., "Sibling Discount", "Staff Ward"
+  notes                    String?             // Admin staff remarks
+  siblingStudentId         String?             // FK to existing StudentProfile if sibling exists
+  createdStudentId         String?             // FK to StudentProfile created on ADMITTED
+  createdParentId          String?             // FK to ParentProfile created/reused on ADMITTED
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  @@index([schoolId, status])
+  @@index([schoolId, parentPhone])
+  @@index([schoolId, source])  // Filter by admission channel
+}
+
+// ==========================================
+// LIBRARY MANAGEMENT
+// ==========================================
+
+model Book {
+  id               String      @id @default(cuid())
+  schoolId         String
+  isbn             String?
+  title            String
+  author           String
+  category         String
+  totalCopies      Int         @default(1)
+  availableCopies  Int         @default(1)
+  school           School      @relation(fields: [schoolId], references: [id])
+  copies           BookCopy[]
+  createdAt        DateTime    @default(now())
+}
+
+model BookCopy {
+  id               String      @id @default(cuid())
+  bookId           String
+  barcodeId        String      @unique
+  status           BookStatus  @default(AVAILABLE) // AVAILABLE, ISSUED, LOST
+  book             Book        @relation(fields: [bookId], references: [id])
+  issues           BookIssue[]
+}
+
+model BookIssue {
+  id               String      @id @default(cuid())
+  schoolId         String
+  copyId           String
+  studentId        String
+  issueDate        DateTime    @default(now())
+  dueDate          DateTime
+  returnDate       DateTime?
+  fineAmount       Float       @default(0)
+  finePaid         Boolean     @default(false)
+  school           School      @relation(fields: [schoolId], references: [id])
+  copy             BookCopy    @relation(fields: [copyId], references: [id])
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+}
+
+// ==========================================
+// INVENTORY & STORE
+// ==========================================
+
+model InventoryItem {
+  id               String      @id @default(cuid())
+  schoolId         String
+  category         String      // UNIFORM, BOOK, STATIONERY
+  name             String
+  variant          String?     // e.g., "Size 32"
+  price            Float
+  stockCount       Int         @default(0)
+  lowStockAlert    Int         @default(5)
+  school           School      @relation(fields: [schoolId], references: [id])
+  sales            SaleItem[]
+}
+
+model StoreSale {
+  id               String      @id @default(cuid())
+  schoolId         String
+  studentId        String?
+  parentPhone      String?
+  totalAmount      Float
+  paymentMode      PaymentMode // CASH, UPI, ONLINE
+  status           String      @default("PAID")
+  receiptUrl       String?
+  school           School      @relation(fields: [schoolId], references: [id])
+  student          StudentProfile? @relation(fields: [studentId], references: [id])
+  items            SaleItem[]
+  createdAt        DateTime    @default(now())
+}
+
+model SaleItem {
+  id               String      @id @default(cuid())
+  saleId           String
+  itemId           String
+  quantity         Int
+  unitPrice        Float
+  sale             StoreSale   @relation(fields: [saleId], references: [id])
+  item             InventoryItem @relation(fields: [itemId], references: [id])
+}
+
+// ==========================================
+// HR & PAYROLL
+// ==========================================
+
+model StaffSalary {
+  id               String      @id @default(cuid())
+  schoolId         String
+  userId           String      // Teacher or Staff
+  baseSalary       Float
+  hra              Float       @default(0)
+  allowances       Float       @default(0)
+  pfDeduction      Float       @default(0)
+  tdsDeduction     Float       @default(0)
+  school           School      @relation(fields: [schoolId], references: [id])
+  user             User        @relation(fields: [userId], references: [id])
+  payslips         Payslip[]
+}
+
+model Payslip {
+  id               String      @id @default(cuid())
+  schoolId         String
+  salaryId         String
+  monthYear        String      // e.g., "08-2026"
+  payableDays      Int
+  grossSalary      Float
+  totalDeductions  Float
+  netSalary        Float
+  status           String      @default("GENERATED") // PAID, PENDING
+  pdfUrl           String?
+  school           School      @relation(fields: [schoolId], references: [id])
+  salary           StaffSalary @relation(fields: [salaryId], references: [id])
+  createdAt        DateTime    @default(now())
+}
+
+// ==========================================
+// CERTIFICATE & REPORT CARD ENGINE
+// ==========================================
+
+model IssuedCertificate {
+  id               String      @id @default(cuid())
+  schoolId         String
+  studentId        String
+  type             String      // TC, BONAFIDE, CHARACTER
+  qrHash           String      @unique
+  pdfUrl           String
+  issuedBy         String      // UserId of Admin
+  school           School      @relation(fields: [schoolId], references: [id])
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+  createdAt        DateTime    @default(now())
+}
+
+model ReportCard {
+  id               String      @id @default(cuid())
+  schoolId         String
+  studentId        String
+  classId          String
+  term             String      // TERM_1, TERM_2, FINAL
+  totalMarks       Float
+  percentage       Float
+  grade            String      // e.g., A1, B2
+  aiRemarks        String?     @db.Text
+  pdfUrl           String?
+  school           School      @relation(fields: [schoolId], references: [id])
+  student          StudentProfile @relation(fields: [studentId], references: [id])
+  createdAt        DateTime    @default(now())
+}
+
+model ComplianceExportLog {
+  id               String      @id @default(cuid())
+  schoolId         String
+  requestedBy      String      // UserId of SuperAdmin/MasterAdmin
+  reportType       String      // UDISE_PLUS, CBSE_OASIS, STATE_BOARD
+  academicYear     String      // e.g., 2026-27
+  status           String      // PENDING, COMPLETED, FAILED
+  downloadUrl      String?     // S3/R2 URL for the generated Excel/PDF
+  school           School      @relation(fields: [schoolId], references: [id])
+  createdAt        DateTime    @default(now())
+}

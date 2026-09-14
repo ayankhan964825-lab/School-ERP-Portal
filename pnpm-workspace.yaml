@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: set this to true or false
+  msgpackr-extract: set this to true or false
+  unrs-resolver: set this to true or false
+  workerd: set this to true or false
+minimumReleaseAgeExclude:
+  - lucide-react@1.46.0
