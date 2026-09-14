@@ -1,0 +1,319 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabase } from '../../lib/database';
+
+const storeId = Astro.locals.storeId;
+if (!storeId) {
+    return Astro.redirect('/start');
+}
+
+// Fetch Wallet Balance
+const { data: wallet } = await supabase
+  .from('wallets')
+  .select('*')
+  .eq('store_id', storeId)
+  .single();
+
+// Fetch Wallet Transactions
+const { data: transactions } = await supabase
+  .from('wallet_transactions')
+  .select('*')
+  .eq('store_id', storeId)
+  .order('created_at', { ascending: false })
+  .limit(50);
+
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+};
+---
+
+<AdminLayout title="Wallet & Commission | VyaparPe">
+    <div class="px-4 sm:px-6 lg:px-8 py-8">
+        <div class="sm:flex sm:items-center">
+            <div class="sm:flex-auto">
+                <h1 class="text-2xl font-bold text-gray-900">Wallet & Earnings</h1>
+                <p class="mt-2 text-sm text-gray-700">Manage your store balance, platform commissions, and payouts.</p>
+            </div>
+            <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none flex gap-3">
+                {wallet && wallet.balance < 0 && (
+                    <button type="button" onclick="document.getElementById('recharge-modal').classList.remove('hidden')" class="inline-flex items-center justify-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:w-auto">
+                        Clear Dues
+                    </button>
+                )}
+                {(!wallet || wallet.balance >= 0) && (
+                    <button type="button" onclick="document.getElementById('payout-modal').classList.remove('hidden')" class="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto">
+                        Request Payout
+                    </button>
+                )}
+            </div>
+        </div>
+
+        <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 border-l-4 border-indigo-500">
+                <dt class="truncate text-sm font-medium text-gray-500">Current Balance</dt>
+                <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">{wallet ? formatCurrency(wallet.balance) : '₹0.00'}</dd>
+                <dd class="mt-2 text-xs text-gray-500">Funds available for payout</dd>
+            </div>
+            <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 border-l-4 border-green-500">
+                <dt class="truncate text-sm font-medium text-gray-500">Total Earned</dt>
+                <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">{wallet ? formatCurrency(wallet.total_earned) : '₹0.00'}</dd>
+                <dd class="mt-2 text-xs text-gray-500">Lifetime revenue</dd>
+            </div>
+            <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 border-l-4 border-red-500">
+                <dt class="truncate text-sm font-medium text-gray-500">Platform Commission Paid</dt>
+                <dd class="mt-1 text-3xl font-semibold tracking-tight text-red-600">-{wallet ? formatCurrency(wallet.total_commission_paid) : '₹0.00'}</dd>
+                <dd class="mt-2 text-xs text-gray-500">Auto-deducted on sales</dd>
+            </div>
+        </div>
+
+        <div class="mt-8 flex flex-col">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Recent Transactions</h2>
+            <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+                <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+                    <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg bg-white">
+                        <table class="min-w-full divide-y divide-gray-300">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Date</th>
+                                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
+                                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
+                                    <th scope="col" class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 bg-white">
+                                {transactions && transactions.length > 0 ? transactions.map((txn) => (
+                                    <tr>
+                                        <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-500 sm:pl-6">
+                                            {new Date(txn.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                                        </td>
+                                        <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                            <span class={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                                txn.type === 'commission_debit' ? 'bg-red-100 text-red-800' : 
+                                                txn.type === 'payout' ? 'bg-orange-100 text-orange-800' :
+                                                'bg-green-100 text-green-800'
+                                            }`}>
+                                                {txn.type.replace('_', ' ').toUpperCase()}
+                                            </span>
+                                        </td>
+                                        <td class="px-3 py-4 text-sm text-gray-500">
+                                            <div class="font-medium text-gray-900">{txn.description || 'Order transaction'}</div>
+                                            {txn.order_id && <div class="text-xs text-gray-400">Order: {txn.order_id}</div>}
+                                            {txn.reference_id && <div class="text-xs text-gray-400">Ref: {txn.reference_id}</div>}
+                                        </td>
+                                        <td class={`whitespace-nowrap px-3 py-4 text-sm text-right font-medium ${txn.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                            {txn.amount > 0 ? '+' : ''}{formatCurrency(txn.amount)}
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colspan="4" class="py-12 text-center text-sm text-gray-500">
+                                            No transactions found.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- Payout Request Modal -->
+    <div id="payout-modal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+      <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+            <div>
+              <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
+                <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div class="mt-3 text-center sm:mt-5">
+                <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Request a Payout</h3>
+                <div class="mt-2">
+                  <p class="text-sm text-gray-500">Enter your bank details to withdraw from your available balance: <strong class="text-gray-900">{wallet ? formatCurrency(wallet.balance) : '₹0.00'}</strong></p>
+                </div>
+              </div>
+            </div>
+            
+            <form id="payout-form" class="mt-6 space-y-4">
+                <div>
+                    <label for="amount" class="block text-sm font-medium leading-6 text-gray-900">Amount (₹)</label>
+                    <div class="mt-2">
+                        <input type="number" name="amount" id="amount" max={wallet?.balance || 0} min="100" required class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+                <div>
+                    <label for="bank_name" class="block text-sm font-medium leading-6 text-gray-900">Bank Name</label>
+                    <div class="mt-2">
+                        <input type="text" name="bank_name" id="bank_name" required placeholder="e.g. HDFC Bank" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+                <div>
+                    <label for="bank_account_no" class="block text-sm font-medium leading-6 text-gray-900">Account Number</label>
+                    <div class="mt-2">
+                        <input type="text" name="bank_account_no" id="bank_account_no" required class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+                <div>
+                    <label for="bank_ifsc" class="block text-sm font-medium leading-6 text-gray-900">IFSC Code</label>
+                    <div class="mt-2">
+                        <input type="text" name="bank_ifsc" id="bank_ifsc" required placeholder="e.g. HDFC0001234" class="block w-full uppercase rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+
+                <div id="payout-error" class="hidden rounded-md bg-red-50 p-4">
+                  <div class="flex">
+                    <div class="ml-3">
+                      <h3 class="text-sm font-medium text-red-800" id="payout-error-msg"></h3>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
+                  <button type="submit" id="submit-btn" class="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:col-start-2">Submit Request</button>
+                  <button type="button" onclick="document.getElementById('payout-modal').classList.add('hidden')" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0">Cancel</button>
+                </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recharge Modal -->
+    <div id="recharge-modal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+      <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+            <div>
+              <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div class="mt-3 text-center sm:mt-5">
+                <h3 class="text-base font-semibold leading-6 text-gray-900">Clear Pending Dues</h3>
+                <div class="mt-2">
+                  <p class="text-sm text-gray-500">You have a negative balance of <strong class="text-red-600">{wallet ? formatCurrency(Math.abs(wallet.balance)) : '₹0.00'}</strong> due to platform commissions. Please pay this amount via UPI to <strong>vyaparpe@upi</strong> and enter the UTR below.</p>
+                </div>
+              </div>
+            </div>
+            
+            <form id="recharge-form" class="mt-6 space-y-4">
+                <div>
+                    <label for="recharge_amount" class="block text-sm font-medium leading-6 text-gray-900">Amount Paid (₹)</label>
+                    <div class="mt-2">
+                        <input type="number" name="amount" id="recharge_amount" min="1" max={wallet ? Math.abs(wallet.balance) : 0} value={wallet ? Math.abs(wallet.balance) : 0} required class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+                <div>
+                    <label for="utr_number" class="block text-sm font-medium leading-6 text-gray-900">UPI Ref / UTR Number</label>
+                    <div class="mt-2">
+                        <input type="text" name="utr_number" id="utr_number" required placeholder="e.g. 312345678901" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+
+                <div id="recharge-error" class="hidden rounded-md bg-red-50 p-4">
+                  <div class="flex">
+                    <div class="ml-3"><h3 class="text-sm font-medium text-red-800" id="recharge-error-msg"></h3></div>
+                  </div>
+                </div>
+
+                <div class="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
+                  <button type="submit" id="submit-recharge-btn" class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 sm:col-start-2">Submit Payment</button>
+                  <button type="button" onclick="document.getElementById('recharge-modal').classList.add('hidden')" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0">Cancel</button>
+                </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script is:inline data-astro-rerun>
+        document.getElementById('payout-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const errorDiv = document.getElementById('payout-error');
+            const errorMsg = document.getElementById('payout-error-msg');
+            const btn = document.getElementById('submit-btn');
+            
+            btn.disabled = true;
+            btn.innerText = 'Processing...';
+            errorDiv.classList.add('hidden');
+
+            const payload = {
+                amount: parseFloat(form.amount.value),
+                bank_name: form.bank_name.value,
+                bank_account_no: form.bank_account_no.value,
+                bank_ifsc: form.bank_ifsc.value.toUpperCase()
+            };
+
+            try {
+                const res = await fetch('/api/admin/request-payout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    errorMsg.innerText = data.error;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.innerText = 'Submit Request';
+                }
+            } catch (err) {
+                errorMsg.innerText = 'Network error. Please try again.';
+                errorDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerText = 'Submit Request';
+            }
+        });
+        document.getElementById('recharge-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const errorDiv = document.getElementById('recharge-error');
+            const errorMsg = document.getElementById('recharge-error-msg');
+            const btn = document.getElementById('submit-recharge-btn');
+            
+            btn.disabled = true;
+            btn.innerText = 'Processing...';
+            errorDiv.classList.add('hidden');
+
+            const payload = {
+                amount: parseFloat(form.amount.value),
+                utr_number: form.utr_number.value
+            };
+
+            try {
+                const res = await fetch('/api/admin/recharge-wallet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    errorMsg.innerText = data.error;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.innerText = 'Submit Payment';
+                }
+            } catch (err) {
+                errorMsg.innerText = 'Network error. Please try again.';
+                errorDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerText = 'Submit Payment';
+            }
+        });
+    </script>
+</AdminLayout>

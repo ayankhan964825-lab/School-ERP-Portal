@@ -1,0 +1,174 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getSettings } from '../lib/database';
+
+const urlStoreId = Astro.url.searchParams.get('id');
+const rawSettings = await getSettings(urlStoreId || undefined);
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : (fallback || '');
+};
+const brandName = s('brand_name') || 'Your Brand';
+const teamVisibility = s('team_visibility') || 'visible';
+let teamMembers = [];
+try {
+  let rawTeam = settings?.team_members;
+  if (typeof rawTeam === 'string') {
+    let parsed = JSON.parse(rawTeam);
+    while (typeof parsed === 'string') parsed = JSON.parse(parsed);
+    teamMembers = Array.isArray(parsed) ? parsed : [];
+  } else if (Array.isArray(rawTeam)) {
+    teamMembers = rawTeam;
+  }
+} catch (e) {
+  teamMembers = [];
+}
+
+const teamToRender = teamMembers;
+
+// Parse process steps from settings with fallback
+let aboutProcessSteps = [
+  { title: 'Step 1', desc: 'Description of your first process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>' },
+  { title: 'Step 2', desc: 'Description of your second process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>' },
+  { title: 'Step 3', desc: 'Description of your third process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>' },
+  { title: 'Step 4', desc: 'Description of your fourth process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>' },
+];
+try {
+  const rawSteps = settings.about_process_steps;
+  if (rawSteps) {
+    let parsed = typeof rawSteps === 'string' ? JSON.parse(rawSteps) : rawSteps;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      aboutProcessSteps = parsed;
+    }
+  }
+} catch (e) { /* keep defaults */ }
+---
+
+<Layout bodyClass="bg-surface" title={`About Us - ${brandName}`} description={`Learn about ${brandName}`}>
+  <!-- Spacer -->
+  <!-- Hero Section -->
+  <section class="bg-primary text-center px-4 relative overflow-hidden pt-12 pb-12">
+    <div class="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white to-transparent"></div>
+    <div class="max-w-3xl mx-auto relative z-10">
+      <span class="text-accent-orange font-semibold tracking-[0.2em] uppercase text-xs" data-setting="about_hero_subtitle">{s('about_hero_subtitle', 'Brand Subtitle')}</span>
+      <h1 class="text-4xl md:text-6xl font-serif font-bold text-surface mt-4 mb-6 leading-tight" data-setting="about_hero_title" data-setting-html><Fragment set:html={s('about_hero_title', 'Your Brand<br/>Title Here')} /></h1>
+      <p class="text-lg text-surface/80 leading-relaxed" data-setting="about_hero_text">{s('about_hero_text', 'Add a description of your brand, your mission, and what makes your products unique.')}</p>
+    </div>
+  </section>
+
+  <!-- Mission & Approach -->
+  <section class="py-12 md:py-20 bg-surface">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid md:grid-cols-2 gap-16 items-center">
+        <div>
+          <h2 class="text-3xl font-serif font-bold text-secondary mb-6" data-setting="about_mission_title">{s('about_mission_title')}</h2>
+          <div class="text-secondary/70 leading-relaxed space-y-6" data-setting="about_mission_text" set:html={s('about_mission_text')}></div>
+        </div>
+        <div class="bg-background-alt p-10 rounded-3xl border border-background-alt relative">
+          <div class="absolute -top-4 -left-4 text-primary/30"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+          <h2 class="text-3xl font-serif font-bold text-secondary mb-6" data-setting="about_approach_title">{s('about_approach_title')}</h2>
+          <div class="text-secondary/70 leading-relaxed space-y-6" data-setting="about_approach_text" data-setting-paragraphs>
+            {s('about_approach_text').split('\n').filter(p => p.trim()).map(p => <p>{p}</p>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How We Do It -->
+  <section class="py-12 md:py-20 bg-background-alt">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <h2 class="text-3xl md:text-4xl font-serif font-bold text-secondary mb-4" data-setting="about_process_title">{s('about_process_title', 'Our Process')}</h2>
+        <p class="text-secondary/60 max-w-2xl mx-auto" data-setting="about_process_subtitle">{s('about_process_subtitle', 'Describe your unique process here.')}</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        {aboutProcessSteps.map((step, i) => (
+          <div class="bg-surface p-8 rounded-2xl text-center shadow-sm border border-background-alt hover:-translate-y-1 transition-transform duration-300">
+            <div class="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center text-primary mb-6" set:html={step.icon}>
+            </div>
+            <h3 class="text-xl font-bold text-secondary mb-3">{i + 1}. {step.title}</h3>
+            <p class="text-sm text-secondary/70 leading-relaxed">{step.desc}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Sustainability -->
+  <section class="py-12 md:py-20 bg-primary text-surface text-center">
+    <div class="max-w-4xl mx-auto px-4">
+      <h2 class="text-3xl md:text-4xl font-serif font-bold mb-6" data-setting="about_sustainability_title">{s('about_sustainability_title', 'Commitment to Sustainability')}</h2>
+      <div class="text-lg text-surface/80 leading-relaxed space-y-6" data-setting="about_sustainability_text" data-setting-paragraphs>
+        {s('about_sustainability_text', 'Describe your commitment to sustainability and ethical practices.').split('\n').filter(p => p.trim()).map(p => <p>{p}</p>)}
+      </div>
+    </div>
+  </section>
+
+  <!-- Team -->
+  {teamVisibility !== 'hidden' && teamToRender.length > 0 && (
+    <section class="py-12 md:py-20 bg-surface relative" id="team-section" data-visibility={teamVisibility}>
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl md:text-4xl font-serif font-bold text-secondary mb-4">Meet Our Team</h2>
+        <p class="text-secondary/60 mb-10">The passionate individuals behind {brandName}'s vision.</p>
+        
+        {teamVisibility === 'button_reveal' && (
+          <div id="team-reveal-btn-container" class="mb-10 transition-all duration-300">
+            <button id="btn-reveal-team" class="btn-primary inline-flex items-center gap-2">
+              Show Our Team
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+            </button>
+          </div>
+        )}
+
+        <div id="team-grid" class={`flex flex-wrap justify-center gap-10 transition-all duration-700 overflow-hidden ${teamVisibility === 'button_reveal' ? 'max-h-0 opacity-0' : 'max-h-[2000px] opacity-100 mt-10'}`}>
+          {teamToRender.map((member: any) => {
+            const initials = member.initials || member.name.split(' ').map((n: string) => n[0]).join('').substring(0,2).toUpperCase() || '?';
+            return (
+              <div class="text-center w-32 sm:w-40">
+                {member.image_url ? (
+                  <img src={member.image_url} alt={member.name} class="w-32 h-32 mx-auto rounded-full mb-4 border-4 border-white shadow-md object-cover bg-background-alt" />
+                ) : (
+                  <div class="w-32 h-32 mx-auto bg-background-alt rounded-full mb-4 border-4 border-white shadow-md flex items-center justify-center">
+                    <span class="text-2xl font-bold text-primary">{initials}</span>
+                  </div>
+                )}
+                <h3 class="font-bold text-lg text-secondary leading-tight mb-1">{member.name}</h3>
+                <p class="text-xs sm:text-sm text-secondary/60 leading-tight">{member.role}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  )}
+</Layout>
+
+<script is:inline>
+  function initTeamReveal() {
+    const btn = document.getElementById('btn-reveal-team');
+    const container = document.getElementById('team-reveal-btn-container');
+    const grid = document.getElementById('team-grid');
+    
+    if (!btn || !grid || !container) return;
+    
+    // Clone to remove stale event listeners from client-router navigations
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+
+    newBtn.addEventListener('click', () => {
+      grid.classList.remove('max-h-0', 'opacity-0');
+      grid.classList.add('max-h-[2000px]', 'opacity-100', 'mt-10');
+      container.style.opacity = '0';
+      setTimeout(() => container.style.display = 'none', 300);
+    });
+  }
+
+  // Ensure it runs on direct loads and Astro Client Router navigations
+  document.addEventListener('DOMContentLoaded', initTeamReveal);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initTeamReveal();
+  }
+</script>

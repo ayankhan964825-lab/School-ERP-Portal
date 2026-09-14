@@ -1,0 +1,232 @@
+---
+import { getSettings, getCategories } from '../lib/database';
+const settings = await getSettings(Astro.locals?.storeId);
+const logoUrl = settings?.logo_url;
+const storeName = settings?.brand_name || settings?.store_name || 'Store Name';
+const storeNameCompact = storeName.replace(/\s+/g, '');
+
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null) ? val : fallback || '';
+};
+
+const rawCategories = await getCategories(Astro.locals?.storeId);
+const activeCategories = rawCategories.filter((c: any) => c.product_count > 0).slice(0, 10);
+const first5Categories = activeCategories.slice(0, 5);
+const next5Categories = activeCategories.slice(5, 10);
+
+// Parse dynamic footer navigation from admin panel
+let footerNav: { label: string; url?: string }[] = [];
+try {
+  if (settings?.website_navigation) {
+    const parsed = typeof settings.website_navigation === 'string'
+      ? JSON.parse(settings.website_navigation)
+      : settings.website_navigation;
+    if (parsed?.footer && Array.isArray(parsed.footer) && parsed.footer.length > 0) {
+      footerNav = parsed.footer;
+    }
+  }
+} catch (e) {}
+
+const companyLinks = [
+  { label: 'About Us', href: '/about' },
+  { label: 'Contact', href: '/contact' },
+  { label: 'Blog', href: '/blog' },
+  { label: 'Sustainability', href: '/sustainability' },
+  { label: 'FAQ', href: '/faq' },
+].filter(link => settings[`show_footer_link_${link.label.replace(/\s+/g, '_')}`] !== 'false');
+
+const supportLinks = [
+  { label: 'Track Order', href: '/track-order' },
+  { label: 'Delivery & Returns', href: '/delivery' },
+  { label: 'Shipping Policy', href: '/shipping-policy' },
+  { label: 'Product Guarantee', href: '/warranty' },
+  { label: 'Bulk Orders', href: '/bulk-order' },
+  { label: 'Refund Policy', href: '/refund-policy' },
+  { label: 'Terms of Service', href: '/terms' },
+  { label: 'Privacy Policy', href: '/privacy-policy' },
+].filter(link => settings[`show_footer_link_${link.label.replace(/\s+/g, '_')}`] !== 'false');
+
+const rawWhatsapp = s('social_whatsapp') || s('contact_phone') || '919876543211';
+const firstWhatsapp = rawWhatsapp.split(/[\/,]/)[0];
+const whatsappNumber = firstWhatsapp.replace(/\D/g, '');
+---
+
+<footer class="bg-primary font-sans">
+  <!-- Top Section -->
+  <div class="hidden md:block max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-16">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
+
+      <!-- Brand Column -->
+      <div class="lg:col-span-2 flex flex-col gap-5">
+        <div class="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+          <a href="/" aria-label={`${storeName} Home`} class="bg-white/10 p-2 rounded-xl flex-shrink-0">
+            {logoUrl ? <img src={logoUrl} alt={storeName} class="h-12 w-auto" data-setting="logo_url" /> : <div class="h-12 w-12 bg-primary/10 rounded-xl flex items-center justify-center text-primary"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>}
+          </a>
+          {s('parent_company_name') && (
+            <Fragment>
+              <div class="h-10 w-px bg-primary/20 flex-shrink-0"></div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-surface/70 font-medium tracking-wide uppercase leading-tight">Parent<br/>Company</span>
+                {s('parent_company_logo') ? (
+                  <img src={s('parent_company_logo')} alt={s('parent_company_name')} class="h-10 w-auto rounded object-contain bg-white/90 p-1 opacity-90 hover:opacity-100 transition-opacity" data-setting="parent_company_name_img_alt" />
+                ) : (
+                  <span class="font-bold text-surface/70" data-setting="parent_company_name">{s('parent_company_name')}</span>
+                )}
+              </div>
+            </Fragment>
+          )}
+        </div>
+        <p class="text-sm text-surface/70 leading-relaxed max-w-sm mt-3">
+          {s('parent_company_name', 'Company Name') && (
+            <Fragment>A Brand by <span data-setting="parent_company_name">{s('parent_company_name', 'Company Name')}</span>.<br/></Fragment>
+          )}
+          <span data-setting="footer_description">{s('footer_description', 'Premium products directly from the manufacturer. 100% genuine and high quality.')}</span>
+        </p>
+        
+        <!-- Contact Info -->
+        <div class="text-sm text-surface/70 mt-1 space-y-1">
+          {s('parent_company_name', 'Company Name') && <p class="font-semibold text-surface uppercase" data-setting="parent_company_name">{s('parent_company_name', 'Company Name')}</p>}
+          <p class="whitespace-pre-line" data-setting="contact_address">{s('contact_address', '')}</p>
+          {s('contact_email', '') && <p class="pt-2"><a href={`mailto:${s('contact_email', '')}`} class="hover:text-accent-warm transition-colors" data-setting="contact_email">{s('contact_email', '')}</a></p>}
+          {s('contact_phone', '') && <p data-setting="contact_phone">{s('contact_phone', '')}</p>}
+        </div>
+
+        <!-- Socials -->
+        <div class="flex items-center gap-3 mt-2">
+          <!-- Facebook -->
+          {s('social_facebook') && (
+            <a href={s('social_facebook')} aria-label="Facebook" target="_blank" rel="noopener" class="p-2 rounded-full bg-white/10 hover:bg-primary hover:text-accent transition-all duration-300">
+              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/></svg>
+            </a>
+          )}
+          <!-- Instagram -->
+          {s('social_instagram') && (
+            <a href={s('social_instagram')} aria-label="Instagram" target="_blank" rel="noopener" class="p-2 rounded-full bg-white/10 hover:bg-primary hover:text-accent transition-all duration-300">
+              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+            </a>
+          )}
+          <!-- WhatsApp -->
+          {s('social_whatsapp') && (
+            <a href={`https://wa.me/${whatsappNumber}`} aria-label="WhatsApp" target="_blank" rel="noopener" class="p-2 rounded-full bg-white/10 hover:bg-green-600 hover:text-white transition-all duration-300">
+              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            </a>
+          )}
+        </div>
+      </div>
+
+      <!-- Shop Links -->
+      <div>
+        <h4 class="text-surface font-serif font-semibold text-base mb-4">Shop</h4>
+        <ul class="flex flex-col gap-2">
+          <li><a href="/products" class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200">All Products</a></li>
+          {first5Categories.map((c: any) => (
+            <li><a href={`/products?category=${c.slug}`} class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200">{c.name}</a></li>
+          ))}
+          {next5Categories.length > 0 && (
+            <li>
+              <button id="btn-more-categories" class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200 flex items-center gap-1">More... <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg></button>
+              <ul id="more-categories" class="hidden flex-col gap-2 mt-2 pl-2 border-l border-theme-section-muted">
+                {next5Categories.map((c: any) => (
+                  <li><a href={`/products?category=${c.slug}`} class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200">{c.name}</a></li>
+                ))}
+              </ul>
+            </li>
+          )}
+        </ul>
+      </div>
+
+      <!-- Company Links -->
+      <div>
+        <h4 class="text-surface font-serif font-semibold text-base mb-4">Company</h4>
+        <ul class="flex flex-col gap-2">
+          {companyLinks.map(link => (
+            <li><a href={link.href} class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200">{link.label}</a></li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- Support Links -->
+      <div>
+        <h4 class="text-surface font-serif font-semibold text-base mb-4">Support</h4>
+        <ul class="flex flex-col gap-2">
+          {supportLinks.map(link => (
+            <li><a href={link.href} class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200">{link.label}</a></li>
+          ))}
+        </ul>
+      </div>
+
+      {footerNav.length > 0 && (
+        <!-- Dynamic Quick Links from Admin Navigation -->
+        <div>
+          <h4 class="text-surface font-serif font-semibold text-base mb-4">Quick Links</h4>
+          <ul class="flex flex-col gap-2">
+            {footerNav.map(link => (
+              <li><a href={link.url || '#'} class="text-sm text-surface/70 text-surface/70-hover transition-colors duration-200">{link.label}</a></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+    </div>
+  </div>
+
+  <!-- Grievance Officer + Legal Registrations -->
+  <div class="hidden md:block border-t border-theme-section-muted">
+    <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-5 space-y-1.5">
+      <p class="text-xs text-surface/70 leading-relaxed">
+        {s('gstin') && <Fragment><span class="font-semibold text-surface/70">GSTIN:</span> {s('gstin')} &nbsp;|&nbsp;</Fragment>}
+        {s('fssai') && <Fragment><span class="font-semibold text-surface/70">FSSAI Lic. No.:</span> {s('fssai')}</Fragment>}
+      </p>
+      <p class="text-xs text-surface/70 leading-relaxed">
+        {s('grievance_officer') ? <Fragment><span class="font-semibold text-surface/70">Grievance Officer:</span> {s('grievance_officer')} &nbsp;|&nbsp;</Fragment> : ''}
+        {s('contact_email') ? <Fragment><a href={`mailto:${s('contact_email')}`} class="text-surface/70-hover transition-colors" data-setting="contact_email">{s('contact_email')}</a> &nbsp;|&nbsp;</Fragment> : ''}
+        {s('contact_phone') ? <span data-setting="contact_phone">{s('contact_phone')}</span> : ''}
+      </p>
+    </div>
+  </div>
+
+  <!-- Bottom Bar -->
+  <div class="border-t border-theme-section-muted">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <p class="text-xs text-surface/70">© {new Date().getFullYear()} {storeNameCompact}. {s('parent_company_name') && <Fragment>A Brand by <span data-setting="parent_company_name">{s('parent_company_name')}</span>.</Fragment>} All rights reserved.</p>
+      <div class="flex items-center gap-4 text-xs text-surface/70">
+        <a href="/privacy-policy" class="text-surface/70-hover transition-colors">Privacy</a>
+        <span>·</span>
+        <a href="/terms" class="text-surface/70-hover transition-colors">Terms</a>
+        {s('fssai') && (
+          <Fragment>
+            <span>·</span>
+            <span title="Food Safety and Standards Authority of India">FSSAI Lic. No. {s('fssai')}</span>
+          </Fragment>
+        )}
+      </div>
+    </div>
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-[80px] md:pb-5 text-center flex justify-center w-full">
+      <p class="text-xs text-surface/70 flex items-center gap-1.5 flex-wrap justify-center">
+        Powered by <a href="https://vyaparpe.in" target="_blank" rel="noopener" class="font-medium text-surface hover:text-surface/70 transition-colors border-b border-surface/30 hover:border-primary">VyaparPe</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script is:inline>
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('btn-more-categories');
+    const ul = document.getElementById('more-categories');
+    if (btn && ul) {
+      btn.addEventListener('click', () => {
+        const isHidden = ul.classList.contains('hidden');
+        if (isHidden) {
+          ul.classList.remove('hidden');
+          ul.classList.add('flex');
+          btn.innerHTML = 'Less... <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>';
+        } else {
+          ul.classList.add('hidden');
+          ul.classList.remove('flex');
+          btn.innerHTML = 'More... <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>';
+        }
+      });
+    }
+  });
+</script>

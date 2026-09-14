@@ -1,0 +1,44 @@
+[
+  {
+    "id": "REV-1716270000000",
+    "product": "Amla Powder",
+    "product_slug": "amla-powder",
+    "variant": "100g",
+    "customer": "Rahul Sharma",
+    "phone": "+91 98765 43210",
+    "rating": 5,
+    "title": "Excellent Quality",
+    "body": "The amla powder is very fine and pure. I've been taking it daily with warm water and can see a difference in my digestion.",
+    "status": "approved",
+    "is_featured": true,
+    "created_at": "2024-05-18T10:00:00Z"
+  },
+  {
+    "id": "REV-1716270100000",
+    "product": "Jamun Honey",
+    "product_slug": "jamun-honey",
+    "variant": "250g",
+    "customer": "Priya Singh",
+    "phone": "+91 91234 56789",
+    "rating": 4,
+    "title": "Good taste, slightly different",
+    "body": "The taste is good and you can tell it's raw and unprocessed. A bit less sweet than normal honey which is what I wanted.",
+    "status": "pending",
+    "is_featured": false,
+    "created_at": "2024-05-19T14:30:00Z"
+  },
+  {
+    "id": "REV-1716270200000",
+    "product": "Moringa Powder",
+    "product_slug": "moringa-powder",
+    "variant": "100g",
+    "customer": "Amit Patel",
+    "phone": "+91 87654 32109",
+    "rating": 5,
+    "title": "Energy Booster!",
+    "body": "Great addition to my morning smoothies. I feel much more energetic throughout the day. Will definitely reorder.",
+    "status": "approved",
+    "is_featured": false,
+    "created_at": "2024-05-20T08:15:00Z"
+  }
+]

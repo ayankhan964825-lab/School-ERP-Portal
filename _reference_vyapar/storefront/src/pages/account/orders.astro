@@ -1,0 +1,407 @@
+---
+import { verifyCustomerAuth } from '../../lib/auth';
+
+if (!verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value)) {
+  return Astro.redirect('/account/login');
+}
+const customerId = verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value) || '';
+
+import Layout from '../../layouts/Layout.astro';
+import QCommerceLayout from '../../layouts/QCommerceLayout.astro';
+import ReviewModal from '../../components/ReviewModal.astro';
+import AccountSidebar from '../../components/AccountSidebar.astro';
+import { getCustomerById, getOrdersByCustomerId, getSettings } from '../../lib/database';
+import { storeContext } from '../../lib/storeContext';
+import { getEffectiveAuthMode } from '../../lib/auth';
+
+const { authMode } = await getEffectiveAuthMode(Astro.locals?.storeId);
+
+let customer: any = null;
+let phone = '';
+let email = '';
+let myOrders: any[] = [];
+
+await storeContext.run({ storeId: Astro.locals.storeId as string }, async () => {
+  if (customerId) {
+    customer = await getCustomerById(customerId);
+    phone = customer?.phone || '';
+    email = customer?.email || '';
+  }
+  
+  if (customer && customer.id) {
+    myOrders = await getOrdersByCustomerId(customer.id);
+  }
+});
+
+const loginMethod = Astro.cookies.get('login_method')?.value || '';
+const isEmailAuth = loginMethod === 'email';
+const emailFromCookie = email;
+
+const settings = await getSettings(Astro.locals?.storeId as string);
+const hasGoogleMaps = !!settings?.google_maps_api_key;
+
+let qcThemeActive = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string'
+      ? JSON.parse(settings.website_configuration)
+      : settings.website_configuration;
+    if (parsed.theme === 'qcommerce') qcThemeActive = true;
+  }
+} catch (e) {}
+
+const ActiveLayout = qcThemeActive ? QCommerceLayout : Layout;
+
+const statusColors: Record<string, string> = {
+  pending: 'bg-amber-100 text-amber-700',
+  confirmed: 'bg-blue-100 text-blue-700',
+  shipped: 'bg-violet-100 text-violet-700',
+  delivered: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
+};
+
+const statusIcons: Record<string, string> = {
+  pending: '🕐',
+  confirmed: '✅',
+  shipped: '🚚',
+  delivered: '🎉',
+  cancelled: '❌',
+};
+---
+
+<ActiveLayout bodyClass="bg-background-alt" title="My Orders" description="Manage your account, orders, and addresses." settings={settings}>
+  {qcThemeActive ? (
+    <div class="min-h-screen bg-[#f4f6f9] pb-24">
+      <div class="bg-white px-4 py-4 flex items-center gap-3 border-b border-gray-100 sticky top-0 z-10">
+        <a href="/account" class="p-1 -ml-1 text-gray-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        </a>
+        <h1 class="text-lg font-bold text-gray-900">My Orders</h1>
+      </div>
+
+      <div class="p-4 space-y-4">
+        {myOrders.length === 0 ? (
+          <div class="bg-white rounded-xl p-8 text-center border border-gray-100 shadow-sm">
+            <div class="w-16 h-16 rounded-full bg-green-50 text-green-500 mx-auto flex items-center justify-center mb-3">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+            </div>
+            <h3 class="font-bold text-gray-900">No orders yet</h3>
+            <p class="text-sm text-gray-500 mt-1">Looks like you haven't placed an order yet.</p>
+            <a href="/" class="mt-4 inline-block bg-[#0c831f] text-white px-6 py-2 rounded-lg font-medium text-sm">Start Shopping</a>
+          </div>
+        ) : (
+          myOrders.map((order) => (
+            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+              <div class="flex items-center justify-between mb-3 border-b border-gray-50 pb-3">
+                <div>
+                  <span class={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColors[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                    {statusIcons[order.status]} {order.status}
+                  </span>
+                  <p class="text-xs text-gray-500 mt-1.5 font-medium">Order #{order.order_id}</p>
+                </div>
+                <div class="text-right">
+                  <p class="font-bold text-gray-900">₹{(order.total_amount || order.amount || 0).toLocaleString('en-IN')}</p>
+                  <p class="text-[10px] text-gray-400 mt-0.5">{new Date(order.created_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+              
+              <div class="space-y-2 mb-4">
+                {order.items?.map((item: any) => (
+                  <div class="flex items-center justify-between text-sm">
+                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                      <span class="text-gray-400 font-medium whitespace-nowrap">{item.quantity} ×</span>
+                      <span class="text-gray-700 truncate">{item.product_name}</span>
+                    </div>
+                    <span class="text-gray-500 font-medium shrink-0 ml-2">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
+              </div>
+              
+              <div class="flex items-center gap-3 mt-4">
+                {order.status === 'delivered' && (
+                  <button data-order-id={order.id} class="open-review-modal flex-1 border border-[#0c831f] text-[#0c831f] py-2 rounded-lg text-sm font-semibold text-center">Rate Order</button>
+                )}
+                {hasGoogleMaps && order.status !== 'delivered' && order.status !== 'cancelled' && order.status !== 'pending' && (
+                  <a href={`/order/track/${order.order_id}`} class="flex-1 bg-[#0c831f] text-white py-2 rounded-lg text-sm font-semibold text-center">Track Order</a>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  ) : (
+  <div class="min-h-screen bg-background-alt pt-16 pb-16">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+
+      <!-- Page Header -->
+      <div class="mb-8 pt-6">
+        <h1 class="text-2xl font-serif font-bold text-secondary">My Account</h1>
+        <p class="text-sm text-secondary/50 mt-1">Welcome back, <span class="text-primary font-medium">{customer?.name || (isEmailAuth ? emailFromCookie : phone)}</span></p>
+      </div>
+
+      <div class="flex flex-col lg:flex-row gap-6">
+
+        <AccountSidebar 
+          customer={customer}
+          phone={phone}
+          emailFromCookie={isEmailAuth ? emailFromCookie : ''}
+          isEmailAuth={isEmailAuth}
+          activeTab="orders"
+          addressesCount={0}
+          ordersCount={myOrders.length}
+          className="hidden lg:block"
+        />
+
+
+        <!-- ΓöÇΓöÇΓöÇΓöÇ MAIN CONTENT ΓöÇΓöÇΓöÇΓöÇ -->
+        <div id="account-main-content" class="flex-1 min-w-0 space-y-6">
+          <!-- Mobile Back Button -->
+          <a href="/account" class="lg:hidden flex items-center gap-2 text-secondary hover:text-primary transition-colors font-medium mb-2 px-2 py-1 bg-white rounded-lg shadow-sm border border-gray-100 w-fit">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Menu
+          </a>
+
+          <!-- ΓöÇΓöÇ ORDERS SECTION ΓöÇΓöÇ -->
+          <section id="section-orders">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div class="flex items-center gap-3 px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 class="text-base font-bold text-secondary">Order History</h2>
+                  <p class="text-xs text-secondary/50">{myOrders.length} order{myOrders.length !== 1 ? 's' : ''} placed</p>
+                </div>
+              </div>
+
+              {myOrders.length === 0 ? (
+                <div class="text-center py-16 px-6">
+                  <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                    </svg>
+                  </div>
+                  <p class="text-secondary/60 font-medium text-sm">No orders yet</p>
+                  <p class="text-xs text-secondary/30 mt-1 mb-5">Discover our premium products</p>
+                  <a href="/products" class="btn-primary inline-flex text-sm px-6">Start Shopping</a>
+                </div>
+              ) : (
+                <div class="divide-y divide-gray-100">
+                  {myOrders.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((order: any) => {
+                    const canCancel = order.payment_method === 'cod' && ['pending','confirmed'].includes(order.status);
+                    const statusSteps = ['pending','confirmed','shipped','delivered'];
+                    const currentStep = statusSteps.indexOf(order.status);
+
+                    return (
+                      <div class="p-5 sm:p-6">
+                        {/* Order Header */}
+                        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                          <div>
+                            <p class="font-bold text-secondary text-sm flex items-center gap-2 flex-wrap">
+                              Order <span class="font-mono text-primary">#{order.order_number || order.orderId}</span>
+                              {order.items?.some((i: any) => i.is_q_commerce_only) && (
+                                <span class="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5" title="Q-Commerce / Hyperlocal Order">
+                                  ⚡ QC
+                                </span>
+                              )}
+                            </p>
+                            <p class="text-xs text-secondary/40 mt-0.5">
+                              {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </p>
+                          </div>
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class={`inline-flex items-center gap-1 text-xs capitalize font-semibold px-3 py-1.5 rounded-full ${statusColors[order.status] || 'bg-gray-100 text-gray-600'}`}>
+                              {statusIcons[order.status] || ''} {order.status}
+                            </span>
+                            <span class="font-bold text-secondary text-base">₹{(order.amount || order.total_amount || 0).toLocaleString('en-IN')}</span>
+                          </div>
+                        </div>
+
+                        {/* Order Items */}
+                        <div class="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
+                          {(order.items || []).map((item: any) => {
+                            const isQc = order.delivery_type === 'q_commerce_inhouse';
+                            const etaText = isQc ? (item.eta_override ? `⚡ ${item.eta_override}` : '⚡ Delivery in 10-30 mins') : '🚚 Delivery in 2-3 days';
+                            const etaClass = isQc ? 'bg-primary/10 text-primary border-primary/20' : 'bg-gray-100 text-gray-600 border-gray-200';
+                            
+                            return (
+                              <div class="flex flex-col sm:flex-row sm:items-center justify-between text-sm gap-2 sm:gap-4 py-1">
+                                <div class="flex items-center gap-2 min-w-0">
+                                  <span class="w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">{item.quantity || 1}</span>
+                                  <span class="text-secondary font-medium truncate">{item.name}</span>
+                                </div>
+                                <div class="flex items-center gap-3 flex-shrink-0">
+                                  {order.status === 'shipped' && (
+                                    <span class={`text-[10px] font-semibold border px-2 py-0.5 rounded-full whitespace-nowrap ${etaClass}`}>
+                                      {etaText}
+                                    </span>
+                                  )}
+                                  <span class="text-secondary/50 text-xs bg-white border border-gray-200 px-2 py-0.5 rounded-md">{item.weight}</span>
+                                  {order.status === 'delivered' && (
+                                    <button
+                                      class="review-modal-trigger text-xs font-medium text-primary hover:text-primary/70 transition-colors"
+                                      data-product={item.name}
+                                      data-variant={item.weight}
+                                      data-product-id={item.product_id}
+                                    >
+                                      ⭐ Review
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Tracking Timeline */}
+                        {order.status !== 'cancelled' && (
+                          <div class="mb-4">
+                            <div class="flex items-start relative">
+                              {['Placed','Confirmed','Shipped','Delivered'].map((step, i) => {
+                                const done = currentStep >= i;
+                                const active = i === currentStep;
+                                return (
+                                  <div class="flex-1 flex flex-col items-center relative">
+                                    {i < 3 && (
+                                      <div class={`absolute top-3.5 left-1/2 w-full h-0.5 ${done && currentStep > i ? 'bg-primary' : 'bg-gray-200'}`}></div>
+                                    )}
+                                    <div class={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mb-2 ${done ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-gray-200 text-gray-400'} ${active ? 'ring-2 ring-primary ring-offset-2' : ''}`}>
+                                      {done ? '✓' : i + 1}
+                                    </div>
+                                    <p class={`text-[10px] text-center font-medium leading-tight ${done ? 'text-primary' : 'text-secondary/30'}`}>{step}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* AWB Tracking */}
+                        {order.awb && (
+                          <div class="mb-4 flex items-center gap-2 text-xs">
+                            <span class="text-secondary/50">AWB:</span>
+                            <span class="font-mono font-medium text-secondary bg-gray-100 px-2 py-1 rounded-lg">{order.awb}</span>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div class="flex flex-wrap gap-2">
+                          {order.status === 'shipped' && order.delivery_type === 'q_commerce_inhouse' && (
+                            <a href={`/track-rider?id=${order.order_number || order.orderId}&phone=${order.customer?.phone || ''}`}
+                              class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              {hasGoogleMaps ? 'Track Rider Location' : 'Rider Details'}
+                            </a>
+                          )}
+
+                          <a href={`/account/invoice/${order.orderId}`} target="_blank"
+                            class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Invoice
+                          </a>
+
+                          <button
+                            class="reorder-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-gray-100 text-secondary rounded-xl hover:bg-secondary hover:text-white transition-colors"
+                            data-items={JSON.stringify(order.items || [])}>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Reorder
+                          </button>
+
+                          {canCancel && (
+                            <button
+                              class="cancel-btn inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-colors"
+                              data-order-id={order.orderId}>
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              Cancel Order
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  )}
+
+  <ReviewModal customerName={customer?.name} phone={phone} />
+</ActiveLayout>
+
+<script>
+  // ΓöÇΓöÇ Reorder ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  document.querySelectorAll('.reorder-btn').forEach(btn => {
+    (btn).addEventListener('click', function() {
+      const self = this;
+      const items = JSON.parse(self.dataset.items || '[]');
+      const cartKey = 'vyaparpe-cart-' + window.location.hostname;
+      const cart = JSON.parse(localStorage.getItem(cartKey) || '[]');
+      items.forEach((item) => {
+        const existing = cart.find((c) => c.id === item.id);
+        if (existing) { existing.quantity = (existing.quantity || 1) + (item.quantity || 1); }
+        else { cart.push({ ...item }); }
+      });
+      localStorage.setItem(cartKey, JSON.stringify(cart));
+      window.dispatchEvent(new Event('cart-updated'));
+      alert(`✅ ${items.length} item(s) added to cart!`);
+      window.location.href = '/checkout';
+    });
+  });
+
+  // ΓöÇΓöÇ Cancel Order ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  document.querySelectorAll('.cancel-btn').forEach(btn => {
+    (btn).addEventListener('click', async function(e) {
+      const button = e.currentTarget;
+      const orderId = button.dataset.orderId;
+      if (!confirm(`Cancel order #${orderId}?\n\nThis action cannot be undone.`)) return;
+
+      button.setAttribute('disabled', 'true');
+      button.textContent = 'Cancelling...';
+
+      try {
+        const res = await fetch('/api/account/cancel-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          button.remove();
+          const card = document.querySelector(`[data-order-id="${orderId}"]`)?.closest('.p-5');
+          const badge = card?.querySelector('[class*="rounded-full"]');
+          if (badge) { badge.textContent = '❌ cancelled'; }
+          alert(`Order #${orderId} has been cancelled.`);
+        } else {
+          alert(data.error || 'Failed to cancel order.');
+          button.removeAttribute('disabled');
+          button.textContent = 'Cancel Order';
+        }
+      } catch {
+        alert('Network error. Please try again.');
+        button.removeAttribute('disabled');
+        button.textContent = 'Cancel Order';
+      }
+    });
+  });
+
+
+</script>

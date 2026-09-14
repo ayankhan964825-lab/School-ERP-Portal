@@ -1,0 +1,455 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "super_admin")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getOrders, getProducts } from '../../lib/database';
+
+const orders = await getOrders(Astro.locals?.storeId);
+const products = await getProducts(Astro.locals?.storeId);
+
+// Helper
+const isActive = (o: any) => !['cancelled', 'returned', 'rto', 'quotation'].includes(o.status?.toLowerCase());
+
+// Stratification
+const b2bOrders = orders.filter((o: any) => o.customer?.is_b2b || o.customer?.source === 'b2b_pos');
+const manualOrders = orders.filter((o: any) => o.customer?.source === 'manual_whatsapp');
+const websiteOrders = orders.filter((o: any) => !o.customer?.is_b2b && o.customer?.source !== 'b2b_pos' && o.customer?.source !== 'manual_whatsapp' && o.customer?.source !== 'pos');
+
+// B2B Metrics
+const activeB2B = b2bOrders.filter(isActive);
+const b2bTotalOrders = activeB2B.length;
+const b2bTotalBilled = activeB2B.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+const b2bPaid = activeB2B.reduce((sum: number, o: any) => sum + (Number(o.customer?.amount_received) || 0), 0);
+const b2bUnpaid = b2bTotalBilled - b2bPaid;
+
+// Manual Metrics
+const activeManual = manualOrders.filter(isActive);
+const manualTotalOrders = activeManual.length;
+const manualTotalAmount = activeManual.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+const manualConfirmed = activeManual.filter((o: any) => ['confirmed', 'processing', 'shipped', 'dispatched', 'delivered'].includes(o.status?.toLowerCase())).reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+const manualPending = activeManual.filter((o: any) => ['pending', 'placed'].includes(o.status?.toLowerCase())).reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+
+// Website Metrics
+const activeWebsite = websiteOrders.filter(isActive);
+const webTotalOrders = activeWebsite.length;
+const webTotalAmount = activeWebsite.reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+const webRealized = activeWebsite.filter((o: any) => o.payment_status === 'paid' || o.status?.toLowerCase() === 'delivered').reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+const webPipeline = webTotalAmount - webRealized;
+
+// Overall Master Metrics
+const masterTotalGross = b2bTotalBilled + manualTotalAmount + webTotalAmount;
+const masterTotalRecovered = b2bPaid + manualConfirmed + webRealized;
+const masterTotalPipeline = b2bUnpaid + manualPending + webPipeline;
+const masterTotalOrders = b2bTotalOrders + manualTotalOrders + webTotalOrders;
+const totalProducts = products.length;
+
+// Keep original variables for the charts to work seamlessly
+const totalRevenue = masterTotalGross;
+const totalOrders = masterTotalOrders;
+const pendingOrders = orders.filter((o: any) => ['pending', 'placed'].includes(o.status)).length;
+const shippedOrders = orders.filter((o: any) => ['shipped', 'dispatched'].includes(o.status)).length;
+const deliveredOrders = orders.filter((o: any) => o.status === 'delivered').length;
+const confirmedOrders = orders.filter((o: any) => ['confirmed', 'processing'].includes(o.status)).length;
+const cancelledOrders = orders.filter((o: any) => ['cancelled', 'returned'].includes(o.status)).length;
+
+// Build 7-day revenue data
+const today = new Date();
+const days: string[] = [];
+const revenues: number[] = [];
+const orderCounts: number[] = [];
+for (let i = 6; i >= 0; i--) {
+  const d = new Date(today);
+  d.setDate(d.getDate() - i);
+  const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const dateStr = d.toISOString().split('T')[0];
+  days.push(label);
+  const dayOrders = orders.filter((o: any) => o.createdAt?.startsWith(dateStr) && isActive(o));
+  revenues.push(dayOrders.reduce((s: number, o: any) => s + (o.amount || 0), 0));
+  orderCounts.push(dayOrders.length);
+}
+
+// Status distribution for donut
+const statusDist = [confirmedOrders, shippedOrders, deliveredOrders, pendingOrders, cancelledOrders];
+
+// Recent orders
+const recentOrders = [...orders]
+  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  .slice(0, 4);
+
+// Status badge styles
+const statusStyle: { [key: string]: string } = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  placed: 'bg-yellow-100 text-yellow-800',
+  confirmed: 'bg-blue-100 text-blue-800',
+  processing: 'bg-blue-100 text-blue-800',
+  shipped: 'bg-purple-100 text-purple-800',
+  dispatched: 'bg-purple-100 text-purple-800',
+  delivered: 'bg-green-100 text-green-800',
+  cancelled: 'bg-red-100 text-red-800',
+  returned: 'bg-red-100 text-red-800',
+};
+
+const dashboardDataForAI = JSON.stringify({
+  totalRevenue,
+  masterTotalRecovered,
+  masterTotalPipeline,
+  totalOrders,
+  pendingOrders,
+  shippedOrders,
+  deliveredOrders,
+  totalProducts
+});
+---
+
+<AdminLayout title="Dashboard | Admin Panel">
+
+  <div class="mb-4">
+    <h1 class="text-2xl font-serif font-bold text-secondary">Dashboard Overview</h1>
+    <p class="text-sm text-secondary/60 mt-1">Welcome back. Here's what's happening with your store today.</p>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="dashboard"
+    title="Dashboard Assistant"
+    pageDataJson={dashboardDataForAI}
+    guideTitleEn="Dashboard Guide"
+    guideTitleHi="Dashboard Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Metrics:</strong> High-level view of revenue, orders, and products.</li>
+      <li><strong>Charts:</strong> Visual representation of recent revenue trends and order statuses.</li>
+      <li><strong>Recent Orders:</strong> Quick access to the 6 most recent orders.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Metrics:</strong> Total revenue, orders aur products ki summary.</li>
+      <li><strong>Charts:</strong> Pichle dino ka revenue aur order status ka visual chart.</li>
+      <li><strong>Recent Orders:</strong> Sabse naye 6 orders jaldi se access karne ke liye.</li>
+    </ul>`}
+    quickActions={[
+      { label: '📦 Orders', query: 'orders section mein le jao' },
+      { label: '📊 Reports', query: 'reports page pe le jao' },
+      { label: '💰 Revenue', query: 'is mahine ki revenue kitni hai' },
+      { label: '⏳ Pending', query: 'pending orders kitne hain' }
+    ]}
+  />
+
+  <!-- Master Overall Section -->
+  <div class="bg-gradient-to-br from-gray-900 to-black rounded-2xl shadow-lg border border-gray-800 p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-bold text-white flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+        Master Operations Overview
+      </h2>
+      <div class="text-xs font-semibold px-3 py-1 bg-white/10 text-white rounded-full">All Streams</div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+        <div class="text-sm font-medium text-gray-400 mb-1">Total Gross Volume</div>
+        <div class="text-3xl font-bold text-white mb-1">₹{masterTotalGross.toLocaleString('en-IN')}</div>
+        <div class="text-xs text-gray-500">{masterTotalOrders} Active Orders</div>
+      </div>
+      <div class="bg-green-500/10 rounded-xl p-4 border border-green-500/20">
+        <div class="text-sm font-medium text-green-400 mb-1">Recovered / Confirmed</div>
+        <div class="text-3xl font-bold text-green-300 mb-1">₹{masterTotalRecovered.toLocaleString('en-IN')}</div>
+        <div class="text-xs text-green-500/70">Secured revenue</div>
+      </div>
+      <div class="bg-yellow-500/10 rounded-xl p-4 border border-yellow-500/20">
+        <div class="text-sm font-medium text-yellow-400 mb-1">Pipeline / Outstanding</div>
+        <div class="text-3xl font-bold text-yellow-300 mb-1">₹{masterTotalPipeline.toLocaleString('en-IN')}</div>
+        <div class="text-xs text-yellow-500/70">Pending collection</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detailed Metric Cards -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    
+    <!-- Website E-Commerce -->
+    <div class="bg-white rounded-2xl shadow-sm border border-indigo-100 p-5 flex flex-col gap-4">
+      <div class="flex items-center justify-between pb-3 border-b border-indigo-50">
+        <span class="text-sm font-bold text-indigo-900 flex items-center gap-2">
+          <div class="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
+          </div>
+          Website E-Commerce
+        </span>
+        <span class="text-xs font-semibold text-indigo-500 bg-indigo-50 px-2.5 py-1 rounded-full">{webTotalOrders} Orders</span>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <div class="text-xs text-gray-500 font-medium mb-0.5">Total Ordered</div>
+          <div class="text-lg font-bold text-indigo-950">₹{webTotalAmount.toLocaleString('en-IN')}</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 font-medium mb-0.5">Paid / Delivered</div>
+          <div class="text-lg font-bold text-green-600">₹{webRealized.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="col-span-2 bg-gray-50 rounded-xl p-3 mt-1">
+          <div class="text-xs text-gray-500 font-medium flex justify-between">
+            <span>Pipeline / COD</span>
+            <span class="text-orange-600 font-bold">₹{webPipeline.toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- B2B Operations -->
+    <div class="bg-white rounded-2xl shadow-sm border border-emerald-100 p-5 flex flex-col gap-4">
+      <div class="flex items-center justify-between pb-3 border-b border-emerald-50">
+        <span class="text-sm font-bold text-emerald-900 flex items-center gap-2">
+          <div class="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+          </div>
+          B2B Operations
+        </span>
+        <span class="text-xs font-semibold text-emerald-500 bg-emerald-50 px-2.5 py-1 rounded-full">{b2bTotalOrders} Orders</span>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <div class="text-xs text-gray-500 font-medium mb-0.5">Total Billed</div>
+          <div class="text-lg font-bold text-emerald-950">₹{b2bTotalBilled.toLocaleString('en-IN')}</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 font-medium mb-0.5">Paid Received</div>
+          <div class="text-lg font-bold text-green-600">₹{b2bPaid.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="col-span-2 bg-gray-50 rounded-xl p-3 mt-1">
+          <div class="text-xs text-gray-500 font-medium flex justify-between">
+            <span>Outstanding / Unpaid</span>
+            <span class="text-red-500 font-bold">₹{b2bUnpaid.toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual Billing -->
+    <div class="bg-white rounded-2xl shadow-sm border border-amber-100 p-5 flex flex-col gap-4">
+      <div class="flex items-center justify-between pb-3 border-b border-amber-50">
+        <span class="text-sm font-bold text-amber-900 flex items-center gap-2">
+          <div class="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          </div>
+          Manual Billing (WA)
+        </span>
+        <span class="text-xs font-semibold text-amber-500 bg-amber-50 px-2.5 py-1 rounded-full">{manualTotalOrders} Orders</span>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <div class="text-xs text-gray-500 font-medium mb-0.5">Total Ordered</div>
+          <div class="text-lg font-bold text-amber-950">₹{manualTotalAmount.toLocaleString('en-IN')}</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 font-medium mb-0.5">Confirmed</div>
+          <div class="text-lg font-bold text-green-600">₹{manualConfirmed.toLocaleString('en-IN')}</div>
+        </div>
+        <div class="col-span-2 bg-gray-50 rounded-xl p-3 mt-1">
+          <div class="text-xs text-gray-500 font-medium flex justify-between">
+            <span>Pending Process</span>
+            <span class="text-amber-500 font-bold">₹{manualPending.toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Charts Row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <!-- Revenue Chart -->
+    <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="font-bold text-secondary">Revenue — Last 7 Days</h2>
+          <p class="text-xs text-secondary/50 mt-0.5">Daily revenue breakdown</p>
+        </div>
+      </div>
+      <div class="h-56">
+        <canvas id="revenueChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Donut Chart -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div class="mb-6">
+        <h2 class="font-bold text-secondary">Order Status</h2>
+        <p class="text-xs text-secondary/50 mt-0.5">Distribution by status</p>
+      </div>
+      <div class="h-40 flex items-center justify-center">
+        <canvas id="statusChart"></canvas>
+      </div>
+      <div class="mt-4 space-y-2">
+        {[
+          { label: 'Confirmed', count: confirmedOrders, color: 'bg-blue-500' },
+          { label: 'Shipped', count: shippedOrders, color: 'bg-purple-500' },
+          { label: 'Delivered', count: deliveredOrders, color: 'bg-green-500' },
+          { label: 'Pending', count: pendingOrders, color: 'bg-yellow-400' },
+          { label: 'Cancelled', count: cancelledOrders, color: 'bg-red-400' },
+        ].map(item => (
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2">
+              <div class={`w-2.5 h-2.5 rounded-full ${item.color}`}></div>
+              <span class="text-secondary/70">{item.label}</span>
+            </div>
+            <span class="font-bold text-secondary">{item.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Orders Table -->
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+      <h2 class="text-base font-bold text-secondary">Recent Orders</h2>
+      <a href="/admin/orders" class="text-sm text-primary font-medium hover:underline">View all →</a>
+    </div>
+
+    {recentOrders.length === 0 ? (
+      <div class="p-10 text-center text-secondary/60 text-sm">No orders yet.</div>
+    ) : (
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full text-sm text-left">
+          <thead class="text-xs text-secondary/60 uppercase bg-gray-50/60 border-b border-gray-100">
+            <tr>
+              <th class="px-6 py-3 font-semibold">Order ID</th>
+              <th class="px-6 py-3 font-semibold">Customer</th>
+              <th class="px-6 py-3 font-semibold">Amount</th>
+              <th class="px-6 py-3 font-semibold">Status</th>
+              <th class="px-6 py-3 font-semibold">Date</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            {recentOrders.map((order: any) => {
+              return (
+                <tr class="hover:bg-gray-50/50 transition-colors">
+                  <td class="px-6 py-3.5 font-semibold text-secondary text-xs">{order.orderId}</td>
+                  <td class="px-6 py-3.5">
+                    <div class="font-medium text-secondary">{order.customer?.name || '—'}</div>
+                    <div class="text-xs text-secondary/50">{order.customer?.phone || ''}</div>
+                  </td>
+                  <td class="px-6 py-3.5 font-bold text-secondary">₹{(order.amount || 0).toLocaleString('en-IN')}</td>
+                  <td class="px-6 py-3.5">
+                    <span class={`text-xs capitalize font-semibold px-2.5 py-1 rounded-full ${statusStyle[order.status] || 'bg-gray-100 text-gray-600'}`}>
+                      {order.status}
+                    </span>
+                  </td>
+                  <td class="px-6 py-3.5 text-xs text-secondary/60">
+                    {order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+
+<!-- Chart.js from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" is:inline data-astro-rerun></script>
+<div id="dashboard-data" class="hidden" data-days={JSON.stringify(days)} data-revenues={JSON.stringify(revenues)} data-counts={JSON.stringify(orderCounts)} data-status={JSON.stringify(statusDist)}></div>
+<script is:inline>
+  document.addEventListener('astro:page-load', () => {
+    const initCharts = () => {
+      const dEl = document.getElementById('dashboard-data');
+      if (!dEl) return;
+      
+      if (typeof Chart === 'undefined') {
+        setTimeout(initCharts, 100);
+        return;
+      }
+      
+      const days = JSON.parse(dEl.dataset.days || '[]');
+      const revenues = JSON.parse(dEl.dataset.revenues || '[]');
+      const orderCounts = JSON.parse(dEl.dataset.counts || '[]');
+      const statusDist = JSON.parse(dEl.dataset.status || '[]');
+      
+      Chart.defaults.font.family = "'Inter', 'Segoe UI', sans-serif";
+
+      // Revenue Line Chart
+      const revenueCtx = document.getElementById('revenueChart');
+      if (revenueCtx) {
+        // Destroy existing chart if it exists (for Astro ViewTransitions)
+        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
+        window.revenueChartInstance = new Chart(revenueCtx, {
+          type: 'line',
+          data: {
+            labels: days,
+            datasets: [{
+              label: 'Revenue (₹)',
+              data: revenues,
+              borderColor: '#4d7c0f',
+              backgroundColor: 'rgba(77, 124, 15, 0.08)',
+              borderWidth: 2.5,
+              fill: true,
+              tension: 0.4,
+              pointBackgroundColor: '#4d7c0f',
+              pointRadius: 4,
+              pointHoverRadius: 6,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: v => '₹' + Number(v).toLocaleString('en-IN'), font: { size: 11 } },
+                grid: { color: 'rgba(0,0,0,0.04)' }
+              },
+              x: { ticks: { font: { size: 10 } }, grid: { display: false } }
+            }
+          }
+        });
+      }
+
+      // Status Donut Chart
+      const statusCtx = document.getElementById('statusChart');
+      if (statusCtx) {
+        // Destroy existing chart if it exists (for Astro ViewTransitions)
+        if (window.statusChartInstance) window.statusChartInstance.destroy();
+        window.statusChartInstance = new Chart(statusCtx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Confirmed', 'Shipped', 'Delivered', 'Pending', 'Cancelled'],
+            datasets: [{
+              data: statusDist,
+              backgroundColor: ['#3b82f6','#a855f7','#22c55e','#facc15','#f87171'],
+              borderWidth: 0,
+              hoverOffset: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '72%',
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}` } } }
+          }
+        });
+      }
+    };
+    
+    initCharts();
+  });
+</script>
+
+<script data-astro-rerun>
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+  });
+</script>
+
+</AdminLayout>

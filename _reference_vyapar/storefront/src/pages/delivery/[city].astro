@@ -1,0 +1,422 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import { getStorefrontProducts, getCategories, getSettings } from '../../lib/database';
+import categoryIcons from '../../data/categoryIcons';
+
+// Smart cache: serve from CDN for 60s, revalidate in background
+Astro.response.headers.set('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
+
+const forceStoreId = Astro.locals.storeId;
+const [allProductsRaw, dbCategories, settings] = await Promise.all([getStorefrontProducts(forceStoreId, Astro.cookies.get('delivery_pincode')?.value, Astro.cookies.get('qc_eligible')?.value), getCategories(forceStoreId), getSettings(forceStoreId)]);
+
+let hideOutOfStock = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string' 
+      ? JSON.parse(settings.website_configuration) 
+      : settings.website_configuration;
+    if (parsed.hide_out_of_stock === true || parsed.hide_out_of_stock === 'true') {
+      hideOutOfStock = true;
+    }
+  }
+} catch (e) {}
+
+const allProducts = allProductsRaw
+  .map((p: any) => ({ ...p, variants: p.variants?.filter((v: any) => !v.is_hidden) || [] }))
+  .filter((p: any) => p.is_active !== false && p.variants.length > 0)
+  .filter((p: any) => {
+    if (!hideOutOfStock) return true;
+    return (p.variants || []).some((v: any) => !v.is_hidden && !v.is_out_of_stock && (!p.track_inventory || (v.stock || 0) > 0));
+  });
+
+// Build category tabs dynamically from DB + always include "All"
+// Only show top-level categories in the main filter bar
+const topLevelCats = dbCategories.filter((c: any) => !c.parent_id);
+
+const categoryImages: Record<string, string> = {};
+
+const urlCategory = Astro.url.searchParams.get('category') || 'all';
+
+let topLevelCatsWithCount = topLevelCats
+  .map((c: any) => {
+    // Count products in this category + child categories
+    const childSlugs = dbCategories.filter((ch: any) => ch.parent_id === c.id).map((ch: any) => ch.slug);
+    const allSlugs = [c.slug, ...childSlugs];
+    const count = allProducts.filter((p: any) => allSlugs.includes(p.category)).length;
+    return { id: c.slug, name: c.name, count, image: c.image || categoryImages[c.slug] || null };
+  })
+  .filter((c: any) => c.count > 0);
+
+if (urlCategory && urlCategory !== 'all') {
+  const selectedIndex = topLevelCatsWithCount.findIndex((c: any) => c.id === urlCategory);
+  if (selectedIndex > -1) {
+    const [selectedCat] = topLevelCatsWithCount.splice(selectedIndex, 1);
+    topLevelCatsWithCount.unshift(selectedCat);
+  }
+}
+
+const categories = [
+  { id: 'all', name: 'All Products' },
+  ...topLevelCatsWithCount
+];
+
+const isDeals = Astro.url.searchParams.get('deals') === 'true';
+
+// Sort products for display
+let sortedProducts = [...allProducts];
+
+if (isDeals) {
+  sortedProducts = sortedProducts.filter((p: any) => {
+    const v = p.variants?.[0];
+    return v && v.mrp > v.price;
+  });
+  sortedProducts.sort((a: any, b: any) => {
+    const aV = a.variants[0];
+    const bV = b.variants[0];
+    const aDiscount = ((aV.mrp - aV.price) / aV.mrp) * 100;
+    const bDiscount = ((bV.mrp - bV.price) / bV.mrp) * 100;
+    return bDiscount - aDiscount;
+  });
+} else {
+  sortedProducts.sort((a: any, b: any) => {
+    const aHasBadge = a.badges?.some((b: string) => b.toLowerCase().includes('best'));
+    const bHasBadge = b.badges?.some((b: string) => b.toLowerCase().includes('best'));
+    if (aHasBadge && !bHasBadge) return -1;
+    if (!aHasBadge && bHasBadge) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+
+
+// Build subcategory pills for the selected parent category
+const selectedParentCat = dbCategories.find((c: any) => c.slug === urlCategory && !c.parent_id);
+const subcategories = selectedParentCat
+  ? dbCategories
+      .filter((c: any) => c.parent_id === selectedParentCat.id)
+      .map((c: any) => ({ id: c.slug, name: c.name, count: allProducts.filter((p: any) => p.category === c.slug).length }))
+      .filter((c: any) => c.count > 0)
+  : [];
+
+// For filtering: when a parent category is selected, include products from all its child slugs
+const parentChildSlugMap: Record<string, string[]> = {};
+topLevelCats.forEach((c: any) => {
+  const childSlugs = dbCategories.filter((ch: any) => ch.parent_id === c.id).map((ch: any) => ch.slug);
+  parentChildSlugMap[c.slug] = [c.slug, ...childSlugs];
+});
+
+const { city } = Astro.params;
+const cityName = city ? city.charAt(0).toUpperCase() + city.slice(1) : '';
+const brandName = settings?.brand_name || settings?.store_name || 'Your Brand';
+---
+
+<Layout bodyClass="bg-surface" title={`Buy Premium Products in ${cityName} | ${brandName}`} description={`Order premium quality products. Delivering fresh to ${cityName}.`}>
+  <!-- Hero -->
+  <div class="bg-primary pb-14 text-center pt-12 pb-12">
+    <div class="max-w-2xl mx-auto px-4">
+      <h1 class="font-serif text-4xl sm:text-5xl font-bold text-surface mb-4">
+        Fast Delivery to {cityName}
+      </h1>
+      <p class="text-surface/75 text-lg">
+        {isDeals ? `Grab the best discounts before they are gone in ${cityName}.` : `Premium quality products delivered directly to ${cityName}.`}
+      </p>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 py-10 w-full">
+    <!-- Category Filter Tabs — DB se dynamic -->
+    <div class="category-carousel-container w-full min-w-0 max-w-full flex overflow-x-auto pb-4 pt-2 px-2 no-scrollbar mb-6 overscroll-x-contain touch-pan-x" style="scroll-behavior: auto; -webkit-overflow-scrolling: touch;">
+      <div class="carousel-set flex gap-3 sm:gap-6 md:gap-8 pr-3 sm:pr-6 md:pr-8 shrink-0">
+        {categories.map(cat => (
+          <button
+            class={`category-btn flex flex-col items-center flex-shrink-0 group w-16 sm:w-24 transition-all duration-300 ${urlCategory === cat.id ? 'opacity-100 scale-105' : 'opacity-80 hover:opacity-100'}`}
+            data-category={cat.id}
+            id={`cat-btn-${cat.id}`}
+          >
+            <div class={`w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden flex items-center justify-center shadow-sm border transition-all duration-300 mb-1.5 ${urlCategory === cat.id ? 'bg-primary border-primary text-surface' : 'bg-white border-background-alt text-secondary group-hover:border-primary'}`}>
+              {cat.image ? (
+                <img src={cat.image} alt={cat.name} class="w-full h-full object-cover" loading="lazy" />
+              ) : (
+                <span class="[&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-7 sm:[&>svg]:h-7 transition-colors duration-300" set:html={categoryIcons[cat.id] || categoryIcons['default']} />
+              )}
+            </div>
+            <p class={`font-medium text-[9px] sm:text-xs transition-colors duration-200 text-center leading-tight ${urlCategory === cat.id ? 'text-primary font-bold' : 'text-secondary group-hover:text-primary'}`}>
+              {cat.name}
+            </p>
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {/* Subcategory pills — only shown when a parent category with children is selected */}
+    {subcategories.length > 0 && (
+      <div class="flex flex-wrap gap-2 mb-6" id="subcategory-pills">
+        <button class="subcategory-btn px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 bg-primary text-surface border-primary" data-subcategory="all">
+          All {selectedParentCat?.name}
+        </button>
+        {subcategories.map((sub: any) => (
+          <button class="subcategory-btn px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 bg-white text-secondary border-gray-200 hover:border-primary hover:text-primary" data-subcategory={sub.id}>
+            {sub.name} <span class="text-secondary/40 ml-1">({sub.count})</span>
+          </button>
+        ))}
+      </div>
+    )}
+
+    <!-- Results count + Controls -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 w-full min-w-0">
+      <p id="results-count" class="text-sm text-secondary/50"></p>
+
+      <div class="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 hide-scrollbar min-w-0">
+        <!-- Price Filter -->
+        <select id="filter-price" class="px-3 py-2 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-xs sm:text-sm text-secondary bg-white min-w-[120px] shrink-0">
+          <option value="all">All Prices</option>
+          <option value="under500">Under ₹500</option>
+          <option value="500-1000">₹500 - ₹1000</option>
+          <option value="over1000">Over ₹1000</option>
+        </select>
+
+        <!-- Sort By -->
+        <select id="sort-by" class="px-3 py-2 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-xs sm:text-sm text-secondary bg-white min-w-[140px] shrink-0">
+          <option value="default">Sort by: Default</option>
+          <option value="price-asc">Price: Low to High</option>
+          <option value="price-desc">Price: High to Low</option>
+          <option value="rating-desc">Highest Rated</option>
+          <option value="name-asc">Alphabetical: A-Z</option>
+        </select>
+
+        <!-- Grid Toggle (mobile only) -->
+        <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-xl sm:hidden shrink-0">
+          <!-- 1 Column -->
+          <button
+            id="grid-1col"
+            aria-label="Single column view"
+            class="grid-toggle-btn p-2 rounded-lg transition-all duration-200"
+            title="Large view"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="8" rx="2" />
+              <rect x="3" y="13" width="18" height="8" rx="2" />
+            </svg>
+          </button>
+          <!-- 2 Columns -->
+          <button
+            id="grid-2col"
+            aria-label="Two column view"
+            class="grid-toggle-btn p-2 rounded-lg transition-all duration-200"
+            title="Grid view"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="9" height="9" rx="1.5" />
+              <rect x="12" y="3" width="9" height="9" rx="1.5" />
+              <rect x="3" y="12" width="9" height="9" rx="1.5" />
+              <rect x="12" y="12" width="9" height="9" rx="1.5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Product Grid -->
+    <div id="product-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+      {sortedProducts.map((product: any, i: number) => {
+        const defaultPrice = product.variants?.[0]?.price || 0;
+        const ratingVal = product.rating?.value || 5.0;
+        return (
+        <div
+          class="product-wrapper reveal min-w-0 w-full"
+          data-category={product.category || 'uncategorized'}
+          data-price={defaultPrice}
+          data-rating={ratingVal}
+          data-name={product.name}
+          style={`transition-delay: ${(i % 8) * 0.06}s`}
+        >
+          <ProductCard
+            id={product.id}
+            name={product.name}
+            slug={product.slug}
+            description={product.description}
+            variants={product.variants}
+            image={product.image ?? `/products/${product.slug}.webp`}
+            badge={product.badges?.[0] ?? product.badge ?? null}
+            rating={product.rating}
+            track_inventory={product.track_inventory}
+            is_q_commerce_only={product.is_q_commerce_only}
+          />
+        </div>
+      )})}
+    </div>
+
+    <div id="no-products" class="hidden text-center ">
+      <div class="text-5xl mb-4 text-primary/40 flex justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </div>
+      <p class="text-secondary/60 text-lg font-medium">No products found in this category.</p>
+      <button class="category-btn mt-4 text-primary underline underline-offset-4" data-category="all">View all products</button>
+    </div>
+<script is:inline define:vars={{ parentChildSlugMap }} data-astro-rerun>
+  function initProductsPage() {
+    var categoryBtns = document.querySelectorAll('.category-btn');
+    var products     = document.querySelectorAll('.product-wrapper');
+    var noProductsEl = document.getElementById('no-products');
+    var resultsCount = document.getElementById('results-count');
+    var grid         = document.getElementById('product-grid');
+    var filterPrice  = document.getElementById('filter-price');
+    var sortBy       = document.getElementById('sort-by');
+    if (!products.length || !grid) return; // Not on products page
+
+    // Store original order for 'default' sort
+    var originalOrder = Array.from(products);
+
+    // subcategory filter state — scoped outside applyFiltersAndSort so pill clicks can change it
+    var activeSubcategory = 'all';
+
+    function applyFiltersAndSort() {
+      var category = new URLSearchParams(window.location.search).get('category') || 'all';
+      var priceRange = filterPrice ? filterPrice.value : 'all';
+      var sortMode = sortBy ? sortBy.value : 'default';
+
+      var visible = 0;
+      var currentProducts = Array.from(products);
+
+      // Filtering — include parent + child category slugs
+      currentProducts.forEach(function(p) {
+        var slugsForCategory = parentChildSlugMap[category] || [category];
+        var matchCat = category === 'all' || slugsForCategory.indexOf(p.dataset.category) !== -1;
+        // If subcategory is active, narrow further
+        if (matchCat && activeSubcategory !== 'all') {
+          matchCat = p.dataset.category === activeSubcategory;
+        }
+        var price = parseFloat(p.dataset.price || '0');
+        var matchPrice = true;
+        if (priceRange === 'under500') matchPrice = price < 500;
+        else if (priceRange === '500-1000') matchPrice = price >= 500 && price <= 1000;
+        else if (priceRange === 'over1000') matchPrice = price > 1000;
+
+        var match = matchCat && matchPrice;
+        p.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+
+      // Sorting
+      var sortedArray = currentProducts;
+      if (sortMode !== 'default') {
+        sortedArray = currentProducts.slice().sort(function(a, b) {
+          if (sortMode === 'price-asc') {
+            return parseFloat(a.dataset.price) - parseFloat(b.dataset.price);
+          } else if (sortMode === 'price-desc') {
+            return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
+          } else if (sortMode === 'rating-desc') {
+            return parseFloat(b.dataset.rating) - parseFloat(a.dataset.rating);
+          } else if (sortMode === 'name-asc') {
+            return a.dataset.name.localeCompare(b.dataset.name);
+          }
+          return 0;
+        });
+      } else {
+        sortedArray = originalOrder;
+      }
+
+      // Re-append to grid in new order
+      sortedArray.forEach(function(p) {
+        grid.appendChild(p);
+      });
+
+      if (noProductsEl) noProductsEl.style.display = visible === 0 ? 'block' : 'none';
+      if (resultsCount) {
+        resultsCount.textContent = category === 'all' && priceRange === 'all'
+          ? 'Showing all ' + visible + ' products'
+          : 'Showing ' + visible + ' product' + (visible !== 1 ? 's' : '');
+      }
+
+      categoryBtns.forEach(function(b) {
+        b.classList.toggle('active-category', b.dataset.category === category || (category === 'all' && b.dataset.category === 'all'));
+      });
+    }
+
+    // Apply URL param on load
+    applyFiltersAndSort();
+
+    // Click handlers — clone to avoid duplicate listeners
+    categoryBtns.forEach(function(btn) {
+      var newBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function() {
+        var cat = newBtn.dataset.category || 'all';
+        var newUrl = new URL(window.location.href);
+        if (cat === 'all') newUrl.searchParams.delete('category');
+        else newUrl.searchParams.set('category', cat);
+        // Reset subcategory when switching parent category
+        activeSubcategory = 'all';
+        window.history.pushState({}, '', newUrl);
+        window.location.href = newUrl.toString();
+      });
+    });
+
+    if (filterPrice) {
+      var newFilter = filterPrice.cloneNode(true);
+      filterPrice.parentNode.replaceChild(newFilter, filterPrice);
+      newFilter.addEventListener('change', applyFiltersAndSort);
+      filterPrice = newFilter;
+    }
+
+    if (sortBy) {
+      var newSort = sortBy.cloneNode(true);
+      sortBy.parentNode.replaceChild(newSort, sortBy);
+      newSort.addEventListener('change', applyFiltersAndSort);
+      sortBy = newSort;
+    }
+
+    // Subcategory pill click handlers
+    var subBtns = document.querySelectorAll('.subcategory-btn');
+    subBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        activeSubcategory = btn.dataset.subcategory || 'all';
+        // Update pill styles
+        subBtns.forEach(function(b) {
+          if (b.dataset.subcategory === activeSubcategory) {
+            b.className = b.className.replace('bg-white text-secondary border-gray-200', 'bg-primary text-surface border-primary');
+            if (b.className.indexOf('bg-primary') === -1) b.className += ' bg-primary text-surface border-primary';
+            b.className = b.className.replace('hover:border-primary hover:text-primary', '');
+          } else {
+            b.className = b.className.replace('bg-primary text-surface border-primary', 'bg-white text-secondary border-gray-200 hover:border-primary hover:text-primary');
+          }
+        });
+        applyFiltersAndSort();
+      });
+    });
+
+    // Grid Toggle
+    var grid = document.getElementById('product-grid');
+    var btn1 = document.getElementById('grid-1col');
+    var btn2 = document.getElementById('grid-2col');
+    var GRID_KEY = `vyaparpe-grid-cols-${window.location.hostname}`;
+
+    function setGrid(cols) {
+      if (!grid) return;
+      if (cols === 1) {
+        grid.classList.remove('grid-cols-2');
+        grid.classList.add('grid-cols-1');
+        if (btn1) { btn1.classList.add('bg-white', 'shadow-sm', 'text-primary'); btn1.classList.remove('text-secondary/50'); }
+        if (btn2) { btn2.classList.remove('bg-white', 'shadow-sm', 'text-primary'); btn2.classList.add('text-secondary/50'); }
+      } else {
+        grid.classList.add('grid-cols-2');
+        grid.classList.remove('grid-cols-1');
+        if (btn2) { btn2.classList.add('bg-white', 'shadow-sm', 'text-primary'); btn2.classList.remove('text-secondary/50'); }
+        if (btn1) { btn1.classList.remove('bg-white', 'shadow-sm', 'text-primary'); btn1.classList.add('text-secondary/50'); }
+      }
+      try { localStorage.setItem(GRID_KEY, String(cols)); } catch(e) {}
+    }
+
+    var savedCols = 2;
+    try { savedCols = parseInt(localStorage.getItem(GRID_KEY) || '2'); } catch(e) {}
+    setGrid(savedCols);
+
+    if (btn1) { var nb1 = btn1.cloneNode(true); btn1.parentNode.replaceChild(nb1, btn1); nb1.addEventListener('click', function() { setGrid(1); }); }
+    if (btn2) { var nb2 = btn2.cloneNode(true); btn2.parentNode.replaceChild(nb2, btn2); nb2.addEventListener('click', function() { setGrid(2); }); }
+  }
+
+  initProductsPage();
+</script>
+
+</Layout>

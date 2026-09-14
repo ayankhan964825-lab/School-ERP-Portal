@@ -1,0 +1,316 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "super_admin")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getOrders, getProducts, getSettings } from '../../lib/database';
+
+const orders = await getOrders(Astro.locals?.storeId);
+const products = await getProducts(Astro.locals?.storeId);
+const settings = await getSettings();
+const brandName = settings?.brand_name || 'store';
+
+const totalRevenue = orders.filter((o: any) => !['cancelled', 'returned', 'failed'].includes(o.status)).reduce((s: number, o: any) => s + (o.amount || 0), 0);
+const totalOrders = orders.length;
+const deliveredOrders = orders.filter((o: any) => o.status === 'delivered').length;
+const cancelledOrders = orders.filter((o: any) => ['cancelled', 'returned', 'failed'].includes(o.status)).length;
+const avgOrderValue = (totalOrders - cancelledOrders) > 0 ? Math.round(totalRevenue / (totalOrders - cancelledOrders)) : 0;
+
+// Product frequency from orders
+const productFreq: { [key: string]: { name: string; qty: number; revenue: number } } = {};
+orders.forEach((order: any) => {
+  (order.items || []).forEach((item: any) => {
+    const key = item.name;
+    if (!productFreq[key]) productFreq[key] = { name: key, qty: 0, revenue: 0 };
+    productFreq[key].qty += (item.quantity || 1);
+    productFreq[key].revenue += (item.price || 0) * (item.quantity || 1);
+  });
+});
+const bestsellers = Object.values(productFreq).sort((a: any, b: any) => b.qty - a.qty).slice(0, 4);
+
+// Payment method breakdown
+const paymentBreakdown: { [key: string]: number } = {};
+orders.forEach((o: any) => {
+  const m = (o.paymentMethod || o.payment_method || 'cod').toLowerCase();
+  paymentBreakdown[m] = (paymentBreakdown[m] || 0) + 1;
+});
+
+// Revenue by day (last 7)
+const revenueByDay: { [key: string]: number } = {};
+const today = new Date();
+for (let i = 6; i >= 0; i--) {
+  const d = new Date(today);
+  d.setDate(today.getDate() - i);
+  const key = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  revenueByDay[key] = 0;
+}
+orders.filter((o: any) => !['cancelled', 'returned', 'failed'].includes(o.status)).forEach((o: any) => {
+  const d = new Date(o.createdAt);
+  const key = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  if (revenueByDay[key] !== undefined) revenueByDay[key] += (o.amount || 0);
+});
+
+const chartLabels = JSON.stringify(Object.keys(revenueByDay));
+const chartData = JSON.stringify(Object.values(revenueByDay));
+const bestsellerNames = JSON.stringify(bestsellers.map((b: any) => b.name));
+const bestsellerQty = JSON.stringify(bestsellers.map((b: any) => b.qty));
+const paymentLabels = JSON.stringify(Object.keys(paymentBreakdown).map(k => k.toUpperCase()));
+const paymentValues = JSON.stringify(Object.values(paymentBreakdown));
+
+const reportsForAI = JSON.stringify({
+  totalRevenue,
+  pendingOrders: orders.filter((o: any) => o.status === 'pending').length,
+  deliveredOrders,
+  avgOrderValue,
+  bestsellerNames: bestsellers.map((b: any) => b.name),
+  bestsellerQty: bestsellers.map((b: any) => b.qty)
+});
+---
+
+<AdminLayout title="Reports & Analytics | Admin Panel" description="Track sales performance.">
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Reports & Analytics</h1>
+      <p class="text-sm text-secondary/60 mt-1">Track sales performance and top products.</p>
+    </div>
+    <button id="btn-export" class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-secondary font-semibold text-sm rounded-xl hover:bg-gray-50 transition-colors shadow-sm w-full sm:w-auto justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+      Export CSV
+    </button>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="reports"
+    title="Reports Assistant"
+    pageDataJson={reportsForAI}
+    guideTitleEn="Reports Guide"
+    guideTitleHi="Reports Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Sales Data:</strong> View total revenue, orders, and averages.</li>
+      <li><strong>Exporting:</strong> Click "Export CSV" to download bestseller data.</li>
+      <li><strong>Charts:</strong> Analyze revenue trends over 7 days and payment method breakdown.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Sales Data:</strong> Total revenue, orders aur averages dekhein.</li>
+      <li><strong>Exporting:</strong> "Export CSV" pe click karke bestsellers ka data download karein.</li>
+      <li><strong>Charts:</strong> Pichle 7 din ka revenue aur payment methods (COD vs Prepaid) ka chart dekhein.</li>
+    </ul>`}
+    quickActions={[
+      { label: '📊 Total revenue', query: 'total revenue kitna hai' },
+      { label: '🏆 Bestsellers', query: 'sabse zyada bikne wala product kaun sa hai' },
+      { label: '📦 Delivered count', query: 'delivered orders kitne hain' },
+      { label: '⬇️ CSV Export', query: 'report csv export karo' }
+    ]}
+  />
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+    {[
+      { label: 'Total Revenue', value: '₹' + totalRevenue.toLocaleString('en-IN'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10"/></svg>', color: 'from-green-50 to-emerald-50 border-green-100', text: 'text-green-700' },
+      { label: 'Total Orders', value: totalOrders, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>', color: 'from-blue-50 to-cyan-50 border-blue-100', text: 'text-blue-700' },
+      { label: 'Delivered', value: deliveredOrders, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>', color: 'from-purple-50 to-violet-50 border-purple-100', text: 'text-purple-700' },
+      { label: 'Cancelled', value: cancelledOrders, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>', color: 'from-red-50 to-rose-50 border-red-100', text: 'text-red-600' },
+      { label: 'Avg Order', value: '₹' + avgOrderValue.toLocaleString('en-IN'), icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>', color: 'from-amber-50 to-yellow-50 border-amber-100', text: 'text-amber-700' },
+    ].map(kpi => (
+      <div class={`bg-gradient-to-br ${kpi.color} border rounded-2xl p-5`}>
+        <div class="mb-2 text-secondary/60" set:html={kpi.icon} />
+        <div class={`text-xl font-bold ${kpi.text}`}>{kpi.value}</div>
+        <div class="text-xs text-secondary/60 mt-1">{kpi.label}</div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Charts Row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <h2 class="font-bold text-secondary mb-1">Revenue — Last 7 Days</h2>
+      <p class="text-xs text-secondary/50 mb-4">Daily order revenue (excluding cancelled)</p>
+      <canvas id="revenue-chart" height="200"></canvas>
+    </div>
+
+    <!-- Payment Breakdown -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <h2 class="font-bold text-secondary mb-1">Payment Methods</h2>
+      <p class="text-xs text-secondary/50 mb-4">Order count by payment type</p>
+      <canvas id="payment-chart" height="200"></canvas>
+      <div id="payment-legend" class="mt-4 space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- Bestsellers + Order Status -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <!-- Bestsellers Bar Chart -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <h2 class="font-bold text-secondary mb-1">Bestselling Products</h2>
+      <p class="text-xs text-secondary/50 mb-4">By units sold across all orders</p>
+      <canvas id="bestseller-chart" height="220"></canvas>
+    </div>
+
+    <!-- Bestseller Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="font-bold text-secondary">Top Products by Revenue</h2>
+      </div>
+      <div class="divide-y divide-gray-50">
+        {bestsellers.map((p, i) => (
+          <div class="flex items-center justify-between px-6 py-3.5">
+            <div class="flex items-center gap-3">
+              <div class={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-gray-200 text-secondary' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'}`}>
+                {i + 1}
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-secondary">{p.name}</p>
+                <p class="text-xs text-secondary/50">{p.qty} units sold</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <p class="text-sm font-bold text-secondary">₹{p.revenue.toLocaleString('en-IN')}</p>
+              <p class="text-xs text-secondary/40">revenue</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Status Breakdown Table -->
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+      <h2 class="font-bold text-secondary">Order Status Breakdown</h2>
+    </div>
+    <div class="overflow-x-auto w-full">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs text-secondary/60 uppercase bg-gray-50/80 border-b border-gray-100">
+          <tr>
+            <th class="px-6 py-3 text-left font-semibold">Status</th>
+            <th class="px-6 py-3 text-left font-semibold">Count</th>
+            <th class="px-6 py-3 text-left font-semibold">Revenue</th>
+            <th class="px-6 py-3 text-left font-semibold">% of Total</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {(() => {
+            const knownStatuses = ['pending','confirmed','shipped','delivered','cancelled'];
+            const knownSynonyms = ['placed','processing','dispatched','returned','failed'];
+            const otherOrders = orders.filter((o: any) => !knownStatuses.includes(o.status) && !knownSynonyms.includes(o.status));
+            const allStatuses = otherOrders.length > 0 ? [...knownStatuses, 'other'] : knownStatuses;
+
+            return allStatuses.map(status => {
+              const filtered = orders.filter((o: any) => {
+                if (status === 'pending') return o.status === 'pending' || o.status === 'placed';
+                if (status === 'shipped') return o.status === 'shipped' || o.status === 'dispatched';
+                if (status === 'confirmed') return o.status === 'confirmed' || o.status === 'processing';
+                if (status === 'cancelled') return ['cancelled', 'returned', 'failed'].includes(o.status);
+                if (status === 'other') return !knownStatuses.includes(o.status) && !knownSynonyms.includes(o.status);
+                return o.status === status;
+              });
+              const count = filtered.length;
+              const rev = filtered.reduce((s: number, o: any) => s + (o.amount || 0), 0);
+              const pct = totalOrders > 0 ? ((count / totalOrders) * 100).toFixed(1) : '0';
+              const isCancelled = status === 'cancelled';
+              const colors: { [key: string]: string } = { pending:'bg-yellow-100 text-yellow-800', confirmed:'bg-blue-100 text-blue-800', shipped:'bg-purple-100 text-purple-800', delivered:'bg-green-100 text-green-800', cancelled:'bg-red-100 text-red-800', other:'bg-gray-100 text-gray-700' };
+              const barColors: { [key: string]: string } = { pending:'bg-yellow-500', confirmed:'bg-blue-500', shipped:'bg-purple-500', delivered:'bg-green-500', cancelled:'bg-red-500', other:'bg-gray-400' };
+              return (
+                <tr class="hover:bg-gray-50/50">
+                  <td class="px-6 py-3.5">
+                    <span class={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${colors[status]}`}>{status}</span>
+                  </td>
+                  <td class="px-6 py-3.5 font-bold text-secondary">{count}</td>
+                  <td class="px-6 py-3.5">
+                    {isCancelled ? (
+                      <div>
+                        <span class="text-red-600 font-semibold line-through">₹{rev.toLocaleString('en-IN')}</span>
+                        <span class="text-[10px] text-red-400 ml-1 font-bold">LOST</span>
+                      </div>
+                    ) : (
+                      <span class="text-secondary">₹{rev.toLocaleString('en-IN')}</span>
+                    )}
+                  </td>
+                  <td class="px-6 py-3.5">
+                    <div class="flex items-center gap-2">
+                      <div class="flex-1 bg-gray-100 rounded-full h-1.5 max-w-[80px]">
+                        <div class={`${barColors[status]} rounded-full h-1.5`} style={`width: ${pct}%`}></div>
+                      </div>
+                      <span class="text-xs text-secondary/60">{pct}%</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            });
+          })()}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" is:inline data-astro-rerun></script>
+<script define:vars={{ chartLabels, chartData, bestsellerNames, bestsellerQty, paymentLabels, paymentValues, brandName }} data-astro-rerun>
+  Chart.defaults.font.family = "'Inter', sans-serif";
+
+  // Revenue Line Chart
+  new Chart(document.getElementById('revenue-chart'), {
+    type: 'line',
+    data: {
+      labels: JSON.parse(chartLabels),
+      datasets: [{ label: 'Revenue (₹)', data: JSON.parse(chartData), borderColor: '#2d4a1e', backgroundColor: 'rgba(45,74,30,0.08)', fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#2d4a1e' }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } }
+  });
+
+  // Payment Donut
+  const payColors = ['#2d4a1e','#f59e0b','#6366f1','#10b981'];
+  const pLabels = JSON.parse(paymentLabels);
+  const pVals = JSON.parse(paymentValues);
+  new Chart(document.getElementById('payment-chart'), {
+    type: 'doughnut',
+    data: { labels: pLabels, datasets: [{ data: pVals, backgroundColor: payColors, borderWidth: 0 }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, cutout: '70%' }
+  });
+  const legend = document.getElementById('payment-legend');
+  pLabels.forEach((label, i) => {
+    if (legend) legend.innerHTML += `<div class="flex items-center justify-between text-xs"><div class="flex items-center gap-2"><div class="w-2.5 h-2.5 rounded-full" style="background:${payColors[i]}"></div><span class="text-secondary/70">${label}</span></div><span class="font-bold text-secondary">${pVals[i]}</span></div>`;
+  });
+
+  // Bestsellers Bar Chart
+  new Chart(document.getElementById('bestseller-chart'), {
+    type: 'bar',
+    data: {
+      labels: JSON.parse(bestsellerNames),
+      datasets: [{ label: 'Units Sold', data: JSON.parse(bestsellerQty), backgroundColor: 'rgba(45,74,30,0.8)', borderRadius: 6 }]
+    },
+    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } } }
+  });
+
+  // Export CSV
+  document.getElementById('btn-export')?.addEventListener('click', () => {
+    const rows = [['Product', 'Units Sold', 'Revenue (₹)'], ...JSON.parse(bestsellerQty).map((qty, i) => [JSON.parse(bestsellerNames)[i], qty, ''])];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${brandName}-report.csv`; a.click();
+    alert('CSV exported successfully!');
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'export_csv') {
+      document.getElementById('btn-export')?.click();
+    }
+    else if (action === 'scroll_to') {
+      var section = params.section;
+      if (section === 'revenue') document.querySelector('#revenue-chart')?.closest('div')?.scrollIntoView({ behavior: 'smooth' });
+      else if (section === 'bestsellers') document.querySelector('#bestseller-chart')?.closest('div')?.scrollIntoView({ behavior: 'smooth' });
+      else if (section === 'payments') document.querySelector('#payment-chart')?.closest('div')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+</script>
+
+</AdminLayout>

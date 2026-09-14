@@ -1,0 +1,451 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!ctx.adminRole || ctx.adminRole === 'guest') {
+  return Astro.redirect('/admin/login');
+}
+if (!canViewSection(ctx, 'website_themes')) {
+  return Astro.redirect('/admin');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+
+let webConfig: any = {};
+if (settings?.website_configuration) {
+  try {
+    webConfig = typeof settings.website_configuration === 'string' 
+      ? JSON.parse(settings.website_configuration) 
+      : settings.website_configuration;
+  } catch (e) {}
+}
+const isQCommerce = webConfig?.theme === 'qcommerce';
+let themeConfig = {
+  active_preset: 'warpdeal',
+  custom_colors: null as Record<string, string> | null,
+};
+
+try {
+  if (settings?.website_theme) {
+    const parsed = typeof settings.website_theme === 'string' 
+      ? JSON.parse(settings.website_theme) 
+      : settings.website_theme;
+    themeConfig = { ...themeConfig, ...parsed };
+  }
+} catch (e) {
+  console.error("Failed to parse website theme", e);
+}
+
+const presets = [
+  { id: 'warpdeal', name: 'Warp Deal', niche: 'Premium E-commerce', desc: 'Exact Warp Deal brand colors — Forest Green with Bright Yellow. Clean white base for maximum product visibility.', colors: ['#2C713A','#F5C525','#FFFFFF','#245C30'] },
+  { id: 'original', name: 'Your Brand Original', niche: 'Original Brand Identity', desc: 'The original color palette featuring deep green, gold accents, and warm backgrounds.', colors: ['#234B34','#C9A15B','#F6F2E8','#D97A1E'] },
+  { id: 'quiet_luxury', name: 'Quiet Luxury', niche: 'Fashion · Minimalist · Elegant', desc: 'Soft bone white with deep charcoal. High-end, serene, and spacious.', colors: ['#18181B','#B68A45','#FAF8F3','#D4A85C'] },
+  { id: 'nordic_earth', name: 'Nordic Earth', niche: 'Home Goods · Sustainable', desc: 'Desaturated sage and terracotta. Organic, grounded, and modern.', colors: ['#4B5D43','#C96E47','#F7F4ED','#D98662'] },
+  { id: 'clubroom', name: 'Clubroom Opulence', niche: 'Luxury · Premium Tech', desc: 'Graphite black with rich gold. Bold, exclusive, and aspirational.', colors: ['#111111','#D4AF37','#090909','#F0C75E'] },
+  { id: 'apothecary', name: 'Modern Apothecary', niche: 'Health Tech · Wellness', desc: 'Deep indigo with soft peach. Clean, trusting, and scientifically precise.', colors: ['#1E3A5F','#4F8A43','#F8FAFC','#6AA85D'] },
+  { id: 'terracotta', name: 'Terracotta Sunset', niche: 'Spices · Artisanal Food', desc: 'Warm rust and burnt orange. Energetic, spicy, and appetizing.', colors: ['#7A322C','#E28A26','#FFF8F1','#F0A243'] },
+  { id: 'oceanic', name: 'Oceanic Premium', niche: 'Corporate B2B · Trust', desc: 'Transformative teal with aqua. Intelligent, stable, and refreshing.', colors: ['#0C4A5A','#F0A83A','#F4F8F8','#FFC15A'] },
+  { id: 'blush', name: 'Blush Elegance', niche: 'Cosmetics · Perfume', desc: 'Deep burgundy with rose gold. Romantic, soft, and highly premium.', colors: ['#5A2740','#C89B52','#FCF7F3','#DDB36C'] },
+];
+
+if (isQCommerce) {
+  presets.unshift({ id: 'qcommerce', name: 'Q-Commerce (Active)', niche: 'Quick Commerce UI', desc: 'Blinkit style UI with ultra-fast UX.', colors: ['#0c831f','#ffdb00','#ffffff','#f4f6f9'] });
+  themeConfig.active_preset = 'qcommerce';
+}
+
+const savedCustom = themeConfig.custom_colors || {
+  primary: '#1B4332',
+  accent: '#D4A373',
+  background: '#FDFBF7',
+  surface: '#FFFFFF',
+  text: '#1A1A2E',
+};
+---
+
+<AdminLayout title="Global Themes | Admin Panel" description="Select the core color palette and brand identity for your storefront.">
+  <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Global Themes</h1>
+      <p class="text-sm text-secondary/60 mt-1">Select the core color palette and brand identity for your storefront.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="save-theme-btn" class="btn-primary !px-6 !py-2.5 !rounded-xl text-sm font-bold flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+        Save Theme
+      </button>
+    </div>
+  </div>
+
+  {isQCommerce && (
+    <div class="mb-6 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+      <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+      <div>
+        <p class="font-bold text-amber-800">Q-Commerce Theme is Active</p>
+        <p class="text-amber-700 text-sm mt-1">Your store is currently using the dedicated Quick Commerce layout. If you select and save any standard theme below, your store will <strong>automatically revert to the Standard E-commerce UI</strong> to prevent visual breakage.</p>
+      </div>
+    </div>
+  )}
+
+  <!-- Preset Grid -->
+  <h2 class="text-lg font-bold text-secondary mb-3">Presets</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-8">
+    {presets.map(preset => (
+      <label class={`theme-card cursor-pointer border-2 rounded-2xl p-4 flex flex-col gap-3 transition-all relative overflow-hidden ${themeConfig.active_preset === preset.id ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+        <input type="radio" name="theme_preset" value={preset.id} class="peer sr-only" checked={themeConfig.active_preset === preset.id} />
+        
+        <!-- 4-Swatch Palette Preview -->
+        <div class="flex gap-1 h-10 rounded-lg overflow-hidden shadow-sm border border-black/5">
+          {preset.colors.map(c => (
+            <div class="flex-1" style={`background-color: ${c}`}></div>
+          ))}
+        </div>
+
+        <div>
+          <h3 class="font-bold text-secondary text-sm">{preset.name}</h3>
+          <span class="text-[10px] uppercase tracking-wider text-primary/70 font-semibold">{preset.niche}</span>
+          <p class="text-xs text-secondary/50 mt-1 line-clamp-2">{preset.desc}</p>
+        </div>
+
+        <div class="absolute top-3 right-3 text-primary opacity-0 peer-checked:opacity-100 transition-opacity">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+        </div>
+      </label>
+    ))}
+  </div>
+
+  <!-- Custom Theme Builder -->
+  <label class={`theme-card cursor-pointer border-2 rounded-2xl p-5 flex items-center gap-4 transition-all relative overflow-hidden mb-6 ${themeConfig.active_preset === 'custom' ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+    <input type="radio" name="theme_preset" value="custom" class="peer sr-only" checked={themeConfig.active_preset === 'custom'} />
+    
+    <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-rose-400 via-violet-400 to-cyan-400 shadow-sm flex-shrink-0">
+      <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+    </div>
+
+    <div class="flex-1">
+      <h3 class="font-bold text-secondary">🎨 Custom Theme</h3>
+      <p class="text-xs text-secondary/60 mt-0.5">Pick your own brand colors. We auto-generate the perfect palette.</p>
+    </div>
+
+    <div class="absolute top-4 right-4 text-primary opacity-0 peer-checked:opacity-100 transition-opacity">
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+    </div>
+  </label>
+
+  <!-- Custom Theme Color Pickers (hidden unless custom is selected) -->
+  <div id="custom-builder" class={`${themeConfig.active_preset === 'custom' ? '' : 'hidden'} bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-8`}>
+    <div class="p-5 border-b border-gray-100 bg-gray-50/50">
+      <h2 class="font-bold text-secondary flex items-center gap-2">
+        <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+        Build Your Palette
+      </h2>
+      <p class="text-xs text-secondary/50 mt-1">Pick 5 seed colors — we'll auto-generate the rest (hover states, borders, shadows, etc.)</p>
+    </div>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
+      <!-- Left: Color Pickers -->
+      <div class="p-6 space-y-5 border-r border-gray-100">
+        <div class="flex items-center gap-4">
+          <input type="color" id="custom_primary" value={savedCustom.primary} class="w-12 h-12 rounded-xl cursor-pointer border-2 border-gray-200 p-1" />
+          <div>
+            <label for="custom_primary" class="text-sm font-semibold text-secondary block">Primary / Brand</label>
+            <p class="text-xs text-secondary/50">Navbar, Footer, buttons, links</p>
+            <input type="text" id="custom_primary_hex" value={savedCustom.primary} class="mt-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 w-24 uppercase" />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <input type="color" id="custom_accent" value={savedCustom.accent} class="w-12 h-12 rounded-xl cursor-pointer border-2 border-gray-200 p-1" />
+          <div>
+            <label for="custom_accent" class="text-sm font-semibold text-secondary block">Accent / CTA</label>
+            <p class="text-xs text-secondary/50">Add-to-Cart, badges, sale tags</p>
+            <input type="text" id="custom_accent_hex" value={savedCustom.accent} class="mt-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 w-24 uppercase" />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <input type="color" id="custom_background" value={savedCustom.background} class="w-12 h-12 rounded-xl cursor-pointer border-2 border-gray-200 p-1" />
+          <div>
+            <label for="custom_background" class="text-sm font-semibold text-secondary block">Background</label>
+            <p class="text-xs text-secondary/50">Page background color</p>
+            <input type="text" id="custom_background_hex" value={savedCustom.background} class="mt-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 w-24 uppercase" />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <input type="color" id="custom_surface" value={savedCustom.surface} class="w-12 h-12 rounded-xl cursor-pointer border-2 border-gray-200 p-1" />
+          <div>
+            <label for="custom_surface" class="text-sm font-semibold text-secondary block">Surface / Cards</label>
+            <p class="text-xs text-secondary/50">Product cards, modals, drawers</p>
+            <input type="text" id="custom_surface_hex" value={savedCustom.surface} class="mt-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 w-24 uppercase" />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <input type="color" id="custom_text" value={savedCustom.text} class="w-12 h-12 rounded-xl cursor-pointer border-2 border-gray-200 p-1" />
+          <div>
+            <label for="custom_text" class="text-sm font-semibold text-secondary block">Text</label>
+            <p class="text-xs text-secondary/50">Body text, headings</p>
+            <input type="text" id="custom_text_hex" value={savedCustom.text} class="mt-1 text-xs font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 w-24 uppercase" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Live Preview -->
+      <div class="p-6">
+        <p class="text-xs font-semibold text-secondary/60 uppercase tracking-wider mb-3">Live Preview</p>
+        <div id="live-preview" class="rounded-xl overflow-hidden border border-gray-200 shadow-sm" style={`background-color: ${savedCustom.background}`}>
+          <!-- Mini Navbar -->
+          <div class="h-8 flex items-center px-3 text-xs font-bold" style={`background-color: ${savedCustom.primary}; color: ${savedCustom.surface}`}>
+            <span>🏪 Your Store</span>
+            <span class="ml-auto text-[10px] opacity-70">Home · Products · Contact</span>
+          </div>
+          <!-- Mini Hero -->
+          <div class="px-4 py-5" style={`color: ${savedCustom.text}`}>
+            <p class="text-sm font-bold font-serif">Premium Products</p>
+            <p class="text-[10px] mt-0.5 opacity-60">Discover our curated collection</p>
+            <div class="flex gap-2 mt-2">
+              <span class="text-[10px] font-bold px-3 py-1 rounded-full" style={`background-color: ${savedCustom.primary}; color: ${savedCustom.surface}`}>Shop Now</span>
+              <span class="text-[10px] font-bold px-3 py-1 rounded-full" style={`background-color: ${savedCustom.accent}; color: #fff`}>Sale 🔥</span>
+            </div>
+          </div>
+          <!-- Mini Cards -->
+          <div class="flex gap-2 px-4 pb-4">
+            <div class="flex-1 rounded-lg p-2 border" style={`background-color: ${savedCustom.surface}; border-color: ${savedCustom.background}`}>
+              <div class="h-10 rounded bg-gray-200/50 mb-1"></div>
+              <p class="text-[9px] font-semibold" style={`color: ${savedCustom.text}`}>Product A</p>
+              <p class="text-[9px] font-bold" style={`color: ${savedCustom.accent}`}>₹499</p>
+            </div>
+            <div class="flex-1 rounded-lg p-2 border" style={`background-color: ${savedCustom.surface}; border-color: ${savedCustom.background}`}>
+              <div class="h-10 rounded bg-gray-200/50 mb-1"></div>
+              <p class="text-[9px] font-semibold" style={`color: ${savedCustom.text}`}>Product B</p>
+              <p class="text-[9px] font-bold" style={`color: ${savedCustom.accent}`}>₹799</p>
+            </div>
+          </div>
+          <!-- Mini Footer -->
+          <div class="h-6 flex items-center justify-center text-[8px] font-medium" style={`background-color: ${savedCustom.primary}; color: ${savedCustom.surface}`}>
+            © 2026 Your Store · All rights reserved
+          </div>
+        </div>
+        <!-- Contrast Check -->
+        <div id="contrast-check" class="mt-3 flex items-center gap-2 text-xs">
+          <span id="contrast-icon">✅</span>
+          <span id="contrast-msg" class="text-secondary/60">Text contrast looks good</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="themes-data" data-webconfig={JSON.stringify(webConfig)} class="hidden"></div>
+
+<script is:inline data-astro-rerun>
+  (function() {
+    const dataEl = document.getElementById('themes-data');
+    if (dataEl && dataEl.dataset.webconfig) {
+      try {
+        window.__currentWebConfig = JSON.parse(dataEl.dataset.webconfig);
+      } catch(e) {}
+    }
+
+    // ── Preset card highlighting ──
+    document.querySelectorAll('input[name="theme_preset"]').forEach(radio => {
+      radio.onchange = (e) => {
+        document.querySelectorAll('.theme-card').forEach(card => {
+          card.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+          card.classList.add('border-gray-100', 'bg-white');
+        });
+        const parent = e.target.closest('.theme-card');
+        if(parent) {
+          parent.classList.remove('border-gray-100', 'bg-white');
+          parent.classList.add('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+        }
+        // Show/hide custom builder
+        const builder = document.getElementById('custom-builder');
+        if (builder) {
+          builder.classList.toggle('hidden', e.target.value !== 'custom');
+        }
+      };
+    });
+
+    // ── Custom color picker sync ──
+    const colorFields = ['primary', 'accent', 'background', 'surface', 'text'];
+
+    colorFields.forEach(field => {
+      const picker = document.getElementById(`custom_${field}`);
+      const hex = document.getElementById(`custom_${field}_hex`);
+      if (!picker || !hex) return;
+
+      picker.oninput = () => {
+        hex.value = picker.value.toUpperCase();
+        updatePreview();
+      };
+      hex.oninput = () => {
+        const v = hex.value.startsWith('#') ? hex.value : `#${hex.value}`;
+        if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+          picker.value = v;
+          updatePreview();
+        }
+      };
+    });
+
+    // ── Save ──
+    const saveBtn = document.getElementById('save-theme-btn');
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        saveBtn.innerHTML = 'Saving...';
+        saveBtn.disabled = true;
+        
+        const active_preset = document.querySelector('input[name="theme_preset"]:checked')?.value || 'classic';
+        
+        const payload = { active_preset };
+        
+        if (active_preset === 'custom') {
+          payload.custom_colors = getCustomValues();
+        }
+        
+        const currentWebConfig = window.__currentWebConfig || {};
+        let updatedWebConfig = currentWebConfig;
+        if (active_preset !== 'qcommerce') {
+          updatedWebConfig = { ...currentWebConfig, theme: 'standard' };
+        }
+
+        let success = false;
+        try {
+          const res = await fetch('/api/admin/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'update', 
+              settings: { 
+                website_theme: JSON.stringify(payload),
+                website_configuration: JSON.stringify(updatedWebConfig)
+              } 
+            })
+          });
+          const data = await res.json();
+          if(data.success) {
+            success = true;
+            saveBtn.innerHTML = '✅ Theme Saved!';
+            saveBtn.style.backgroundColor = '#16a34a';
+            saveBtn.style.borderColor = '#16a34a';
+            saveBtn.style.color = '#fff';
+            setTimeout(() => {
+              saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Save Theme`; 
+              saveBtn.style.backgroundColor = '';
+              saveBtn.style.borderColor = '';
+              saveBtn.style.color = '';
+              saveBtn.disabled = false;
+            }, 2000);
+          } else {
+            alert('Error saving theme: ' + data.error);
+          }
+        } catch(err) {
+          alert('Network error while saving.');
+        }
+        
+        if (!success) {
+          saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Save Theme`; 
+          saveBtn.disabled = false; 
+        }
+      };
+    }
+
+    const initPreset = document.querySelector('input[name="theme_preset"]:checked')?.value;
+    if (initPreset === 'custom') {
+      updatePreview();
+    }
+
+    function getCustomValues() {
+      return {
+        primary: document.getElementById('custom_primary')?.value || '#1B4332',
+        accent: document.getElementById('custom_accent')?.value || '#D4A373',
+        background: document.getElementById('custom_background')?.value || '#FDFBF7',
+        surface: document.getElementById('custom_surface')?.value || '#FFFFFF',
+        text: document.getElementById('custom_text')?.value || '#1A1A2E',
+      };
+    }
+
+    function updatePreview() {
+      const c = getCustomValues();
+      const preview = document.getElementById('live-preview');
+      if (!preview) return;
+
+      const topBar = preview.children[0];
+      const hero = preview.children[1];
+      const c1 = preview.children[2].children[0];
+      const c2 = preview.children[2].children[1];
+      const footer = preview.children[3];
+
+      preview.style.backgroundColor = c.background;
+      
+      topBar.style.backgroundColor = c.primary;
+      topBar.style.color = c.surface;
+      
+      hero.style.color = c.text;
+      const btns = hero.querySelectorAll('span');
+      if(btns.length >= 2) {
+        btns[0].style.backgroundColor = c.primary;
+        btns[0].style.color = c.surface;
+        btns[1].style.backgroundColor = c.accent;
+        btns[1].style.color = '#fff';
+      }
+
+      [c1, c2].forEach(card => {
+        card.style.backgroundColor = c.surface;
+        card.style.borderColor = c.background;
+        card.querySelectorAll('p')[0].style.color = c.text;
+        card.querySelectorAll('p')[1].style.color = c.accent;
+      });
+
+      footer.style.backgroundColor = c.primary;
+      footer.style.color = c.surface;
+
+      checkContrast(c.text, c.background);
+    }
+
+    function hexToRgb(hex) {
+      const r = parseInt(hex.slice(1,3),16);
+      const g = parseInt(hex.slice(3,5),16);
+      const b = parseInt(hex.slice(5,7),16);
+      return { r, g, b };
+    }
+
+    function luminance(r, g, b) {
+      const a = [r,g,b].map(v => { v /= 255; return v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); });
+      return 0.2126*a[0] + 0.7152*a[1] + 0.0722*a[2];
+    }
+
+    function checkContrast(textHex, bgHex) {
+      const t = hexToRgb(textHex);
+      const b = hexToRgb(bgHex);
+      const l1 = luminance(t.r, t.g, t.b);
+      const l2 = luminance(b.r, b.g, b.b);
+      const ratio = (Math.max(l1,l2) + 0.05) / (Math.min(l1,l2) + 0.05);
+      
+      const icon = document.getElementById('contrast-icon');
+      const msg = document.getElementById('contrast-msg');
+      if (!icon || !msg) return;
+
+      if (ratio >= 7) {
+        icon.textContent = '✅';
+        msg.textContent = `AAA — Excellent contrast (${ratio.toFixed(1)}:1)`;
+        msg.className = 'text-green-600';
+      } else if (ratio >= 4.5) {
+        icon.textContent = '✅';
+        msg.textContent = `AA — Good contrast (${ratio.toFixed(1)}:1)`;
+        msg.className = 'text-green-600';
+      } else if (ratio >= 3) {
+        icon.textContent = '⚠️';
+        msg.textContent = `Low contrast (${ratio.toFixed(1)}:1) — text may be hard to read`;
+        msg.className = 'text-amber-600';
+      } else {
+        icon.textContent = '❌';
+        msg.textContent = `Poor contrast (${ratio.toFixed(1)}:1) — fails accessibility standards`;
+        msg.className = 'text-red-600';
+      }
+    }
+  })();
+</script>
+
+</AdminLayout>

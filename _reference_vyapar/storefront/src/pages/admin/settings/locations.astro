@@ -1,0 +1,768 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin, isSupabase, getSettings } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canViewSection(ctx, 'settings')) return Astro.redirect('/admin');
+
+const storeId = Astro.locals.storeId;
+if (!storeId) return Astro.redirect('/login');
+
+const settings = await getSettings(storeId);
+const googleMapsApiKey = settings?.google_maps_api_key;
+
+let locations: any[] = [];
+if (isSupabase && supabaseAdmin) {
+  const { data } = await supabaseAdmin
+    .from('locations')
+    .select('*')
+    .eq('store_id', storeId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+  if (data) locations = data;
+}
+---
+
+{googleMapsApiKey ? (
+  <script src={`https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`} is:inline data-astro-rerun></script>
+) : (
+  <>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" is:inline data-astro-rerun></script>
+  </>
+)}
+
+<AdminLayout title="Locations & Fulfillments" description="Manage your warehouses, dark stores, and Q-Commerce delivery zones">
+  <div class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Locations & Fulfillments</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage physical warehouses and local delivery zones.</p>
+    </div>
+    <button onclick="openLocationModal()" class="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-primary/90 transition shadow-sm flex items-center gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+      Add Location
+    </button>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    {locations.length === 0 ? (
+      <div class="p-8 text-center">
+        <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        </div>
+        <h3 class="text-lg font-bold text-secondary mb-1">No locations added yet</h3>
+        <p class="text-sm text-secondary/60 mb-6">Create a warehouse or dark store to manage inventory per location.</p>
+        <button onclick="openLocationModal()" class="inline-block bg-primary text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-primary/90 transition shadow-sm">Add First Location</button>
+      </div>
+    ) : (
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-secondary/60">
+              <th class="p-4 font-semibold">Location Name</th>
+              <th class="p-4 font-semibold">Address</th>
+              <th class="p-4 font-semibold">Q-Commerce</th>
+              <th class="p-4 font-semibold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {locations.map((loc) => (
+              <tr class="hover:bg-gray-50/50 transition group">
+                <td class="p-4">
+                  <div class="flex items-center gap-2">
+                    <span class="font-semibold text-sm text-secondary">{loc.name}</span>
+                    {loc.is_default && <span class="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">Default</span>}
+                  </div>
+                  <p class="text-xs text-secondary/60 mt-0.5">{loc.contact_name ? `${loc.contact_name} - ${loc.contact_phone || ''}` : 'No contact info'}</p>
+                </td>
+                <td class="p-4">
+                  <p class="text-sm text-secondary">{loc.city || '-'}, {loc.state || '-'}</p>
+                  <p class="text-xs text-secondary/60 mt-0.5">{loc.pincode || 'No Pincode'}</p>
+                </td>
+                <td class="p-4">
+                  {loc.q_commerce_enabled ? (
+                    <div>
+                      <span class="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Enabled</span>
+                      <p class="text-xs text-secondary/60 mt-1 capitalize">{loc.zone_type}: {loc.zone_type === 'radius' ? `${loc.delivery_radius_km}km` : (loc.delivery_pincodes?.length || 0) + ' pincodes'}</p>
+                    </div>
+                  ) : (
+                    <span class="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Disabled</span>
+                  )}
+                </td>
+                <td class="p-4 text-right">
+                  <button type="button" class="text-primary hover:text-primary-light text-sm font-medium mr-3 edit-loc-btn" data-loc={JSON.stringify(loc)}>Edit</button>
+                  <button type="button" onclick={`deleteLocation('${loc.id}')`} class="text-red-500 hover:text-red-700 text-sm font-medium">Remove</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- Location Modal -->
+  <div id="location-modal" class="fixed inset-0 bg-secondary/40 backdrop-blur-sm z-50 hidden items-center justify-center p-4 sm:p-6 pb-24 sm:pb-6">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[85vh] sm:max-h-[90vh]" onclick="event.stopPropagation()">
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 flex-shrink-0">
+        <h3 class="font-serif font-bold text-secondary text-lg" id="modal-title">Add Location</h3>
+        <button type="button" onclick="closeLocationModal()" class="text-secondary/40 hover:text-secondary transition p-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      
+      <form id="location-form" class="flex flex-col flex-1 overflow-hidden">
+        <div class="p-6 overflow-y-auto">
+          <input type="hidden" id="loc_id" name="id">
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-bold text-secondary uppercase tracking-wider mb-2">Location Details</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-secondary mb-1">Location Name *</label>
+                <input type="text" id="loc_name" name="name" required placeholder="e.g. Warehouse 1, Dark Store Hub" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div class="flex items-end pb-2">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="loc_is_default" name="is_default" class="rounded text-primary focus:ring-primary h-4 w-4">
+                  <span class="text-sm font-medium text-secondary">Set as Default Location</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="md:col-span-2 border-t border-gray-100 pt-6">
+            <label class="block text-xs font-bold text-secondary uppercase tracking-wider mb-2">Address</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="md:col-span-2">
+                <input type="text" id="loc_address_line1" name="address_line1" placeholder="Address Line 1" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none mb-2">
+                <input type="text" id="loc_address_line2" name="address_line2" placeholder="Address Line 2 (Optional)" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div>
+                <input type="text" id="loc_city" name="city" placeholder="City" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div>
+                <input type="text" id="loc_state" name="state" placeholder="State" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div>
+                <input type="text" id="loc_pincode" name="pincode" placeholder="Pincode" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div>
+                <input type="text" id="loc_country" name="country" placeholder="Country" value="India" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+            </div>
+          </div>
+
+          <div class="md:col-span-2 border-t border-gray-100 pt-6">
+            <label class="block text-xs font-bold text-secondary uppercase tracking-wider mb-2">Contact Person</label>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <input type="text" id="loc_contact_name" name="contact_name" placeholder="Name" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div>
+                <input type="text" id="loc_contact_phone" name="contact_phone" placeholder="Phone" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+              <div>
+                <input type="email" id="loc_contact_email" name="contact_email" placeholder="Email" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none">
+              </div>
+            </div>
+          </div>
+
+          <div class="md:col-span-2 border-t border-gray-100 pt-6 bg-purple-50/50 -mx-6 px-6 pb-6">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <label class="block text-xs font-bold text-purple-700 uppercase tracking-wider mb-0.5">Quick Commerce Settings</label>
+                <p class="text-xs text-secondary/60">Enable 10-minute/local delivery for this location</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="loc_q_commerce_enabled" name="q_commerce_enabled" class="sr-only peer" onchange="toggleQCommerceFields()">
+                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+            
+            <div id="q_commerce_fields" class="hidden grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-purple-100">
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-secondary mb-1">Delivery Promise (SLA)</label>
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <select id="eta_format" class="w-full sm:w-1/3 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 outline-none" onchange="updateEtaBuilderUI()">
+                    <option value="range">Range (e.g. 10 to 30)</option>
+                    <option value="within">Within (e.g. Within 2)</option>
+                    <option value="sameday">Same Day</option>
+                  </select>
+                  <input type="number" id="eta_min" placeholder="Min" class="w-full sm:w-1/4 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 outline-none" oninput="updateEtaBuilderUI()">
+                  <input type="number" id="eta_max" placeholder="Max" class="w-full sm:w-1/4 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 outline-none" oninput="updateEtaBuilderUI()">
+                  <select id="eta_unit" class="w-full sm:w-1/4 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 outline-none" onchange="updateEtaBuilderUI()">
+                    <option value="mins">Minutes</option>
+                    <option value="hours">Hours</option>
+                  </select>
+                </div>
+                <p id="eta_preview" class="text-xs text-green-600 mt-1 font-medium">Preview: Delivery in 10-30 Mins</p>
+                <p id="eta_error" class="text-xs text-red-600 mt-1 font-medium hidden">Error: Quick Commerce cannot exceed 24 hours.</p>
+                <input type="hidden" id="loc_q_commerce_eta" name="q_commerce_eta">
+                <input type="hidden" id="loc_q_commerce_sla_mins" name="q_commerce_sla_mins">
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium text-secondary mb-1">Zone Type</label>
+                <select id="loc_zone_type" name="zone_type" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none" onchange="toggleZoneInputs()">
+                  <option value="none">None</option>
+                  <option value="radius">Radius Based</option>
+                  <option value="pincode">Pincode Based</option>
+                </select>
+              </div>
+
+              <div class="md:col-span-2 flex items-center justify-between p-3 bg-purple-50/50 rounded-xl border border-purple-100 mt-2">
+                <div>
+                  <label class="block text-sm font-bold text-purple-700">Auto-Assign Riders</label>
+                  <p class="text-xs text-secondary/60">Automatically assign the nearest online rider when an order is ready.</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" id="loc_auto_assign_riders" name="auto_assign_riders" class="sr-only peer" checked>
+                  <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+              
+              <div id="field_radius" class="hidden md:col-span-2">
+                <label class="block text-sm font-medium text-secondary mb-1">Delivery Radius (km)</label>
+                <input type="number" id="loc_delivery_radius_km" name="delivery_radius_km" placeholder="e.g. 5" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none mb-3">
+                
+                <!-- Hidden inputs for coordinates -->
+                <input type="hidden" id="loc_latitude" name="latitude" value="">
+                <input type="hidden" id="loc_longitude" name="longitude" value="">
+
+                <label class="block text-sm font-medium text-secondary mb-1">Search Map Location</label>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-1 gap-2">
+                  <input type="text" id="map_search_input" placeholder="Search area, landmark or city (e.g. Connaught Place, New Delhi)..." class="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none" onkeydown="if(event.key === 'Enter') { event.preventDefault(); document.getElementById('btn-geocode-address').click(); }">
+                  <button type="button" id="btn-geocode-address" class="text-sm bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition font-medium flex items-center gap-1.5 whitespace-nowrap">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    Search Map
+                  </button>
+                </div>
+                <div id="address-suggestions" class="hidden flex-col gap-2 mb-3 bg-gray-50 p-2 rounded-lg border border-gray-100 max-h-48 overflow-y-auto"></div>
+                <p class="text-xs text-gray-500 mb-2">Click on the map to set the store location manually. The purple circle shows your delivery radius.</p>
+                <div id="radius-map" style="height: 300px; width: 100%; border-radius: 8px; z-index: 10;"></div>
+              </div>
+              
+              <div id="field_pincodes" class="hidden md:col-span-2">
+                <label class="block text-sm font-medium text-secondary mb-1">Delivery Pincodes (Comma separated)</label>
+                <input type="text" id="loc_delivery_pincodes" name="delivery_pincodes" placeholder="e.g. 110001, 110002" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none">
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <div class="flex justify-end gap-3 p-4 border-t border-gray-100 flex-shrink-0 bg-white">
+          <button type="button" onclick="closeLocationModal()" class="px-4 py-2 text-sm font-semibold text-secondary bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
+          <button type="submit" id="save-location-btn" class="px-6 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-light rounded-xl transition shadow-sm flex items-center gap-2">
+            Save Location
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script define:vars={{ googleMapsApiKey }} data-astro-rerun>
+    window.GOOGLE_MAPS_API_KEY = googleMapsApiKey || null;
+  </script>
+  <script is:inline data-astro-rerun>
+    const HAS_GOOGLE_MAPS = !!window.GOOGLE_MAPS_API_KEY;
+    const modal = document.getElementById('location-modal');
+    const form = document.getElementById('location-form');
+
+    function openLocationModal(loc = null) {
+      form.reset();
+      document.getElementById('modal-title').innerText = loc ? 'Edit Location' : 'Add Location';
+      document.getElementById('loc_id').value = loc ? loc.id : '';
+      
+      if (loc) {
+        document.getElementById('loc_name').value = loc.name || '';
+        document.getElementById('loc_is_default').checked = loc.is_default;
+        document.getElementById('loc_address_line1').value = loc.address_line1 || '';
+        document.getElementById('loc_address_line2').value = loc.address_line2 || '';
+        document.getElementById('loc_city').value = loc.city || '';
+        document.getElementById('loc_state').value = loc.state || '';
+        document.getElementById('loc_pincode').value = loc.pincode || '';
+        document.getElementById('loc_country').value = loc.country || 'India';
+        document.getElementById('loc_contact_name').value = loc.contact_name || '';
+        document.getElementById('loc_contact_phone').value = loc.contact_phone || '';
+        document.getElementById('loc_contact_email').value = loc.contact_email || '';
+        
+        document.getElementById('loc_q_commerce_enabled').checked = loc.q_commerce_enabled;
+        document.getElementById('loc_auto_assign_riders').checked = loc.auto_assign_riders !== false; // Default true if undefined
+        
+        // Reverse-engineer ETA format from display string if possible, or just default to stored SLA
+        let slaMins = loc.q_commerce_sla_mins || 30;
+        let displayStr = loc.q_commerce_eta || 'Delivery in 10-30 Mins';
+        
+        document.getElementById('loc_q_commerce_eta').value = displayStr;
+        document.getElementById('loc_q_commerce_sla_mins').value = slaMins;
+        
+        if (displayStr.toLowerCase().includes('same day')) {
+            document.getElementById('eta_format').value = 'sameday';
+            document.getElementById('eta_max').value = slaMins > 60 ? (slaMins / 60) : slaMins;
+            document.getElementById('eta_unit').value = slaMins > 60 ? 'hours' : 'mins';
+        } else if (displayStr.toLowerCase().includes('within')) {
+            document.getElementById('eta_format').value = 'within';
+            document.getElementById('eta_max').value = slaMins > 60 && slaMins % 60 === 0 ? (slaMins / 60) : slaMins;
+            document.getElementById('eta_unit').value = slaMins > 60 && slaMins % 60 === 0 ? 'hours' : 'mins';
+        } else {
+            document.getElementById('eta_format').value = 'range';
+            document.getElementById('eta_max').value = slaMins > 60 && slaMins % 60 === 0 ? (slaMins / 60) : slaMins;
+            document.getElementById('eta_unit').value = slaMins > 60 && slaMins % 60 === 0 ? 'hours' : 'mins';
+            document.getElementById('eta_min').value = Math.max(1, (document.getElementById('eta_max').value / 2).toFixed(0));
+        }
+        updateEtaBuilderUI();
+
+        document.getElementById('loc_latitude').value = loc.latitude || '';
+        document.getElementById('loc_longitude').value = loc.longitude || '';
+        document.getElementById('loc_zone_type').value = loc.zone_type || 'none';
+        document.getElementById('loc_delivery_radius_km').value = loc.delivery_radius_km || '';
+        document.getElementById('loc_delivery_pincodes').value = (loc.delivery_pincodes || []).join(', ');
+      } else {
+        document.getElementById('loc_q_commerce_eta').value = 'Delivery in 10-30 Mins';
+        document.getElementById('loc_q_commerce_sla_mins').value = '30';
+        document.getElementById('eta_format').value = 'range';
+        document.getElementById('eta_min').value = '10';
+        document.getElementById('eta_max').value = '30';
+        document.getElementById('eta_unit').value = 'mins';
+        updateEtaBuilderUI();
+        
+        document.getElementById('loc_auto_assign_riders').checked = true;
+        document.getElementById('loc_latitude').value = '';
+        document.getElementById('loc_longitude').value = '';
+      }
+      
+      toggleQCommerceFields();
+      toggleZoneInputs();
+      
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    document.querySelectorAll('.edit-loc-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        try {
+          const locStr = e.currentTarget.getAttribute('data-loc');
+          const loc = JSON.parse(locStr);
+          openLocationModal(loc);
+        } catch(err) {
+          console.error("Failed to parse location data:", err);
+          alert("Error opening location editor. Please refresh the page.");
+        }
+      });
+    });
+
+    function closeLocationModal() {
+      modal.classList.remove('flex');
+      modal.classList.add('hidden');
+    }
+
+    function toggleQCommerceFields() {
+      const isEnabled = document.getElementById('loc_q_commerce_enabled').checked;
+      const fields = document.getElementById('q_commerce_fields');
+      if (isEnabled) {
+        fields.classList.remove('hidden');
+        fields.classList.add('grid');
+      } else {
+        fields.classList.add('hidden');
+        fields.classList.remove('grid');
+      }
+      updateEtaBuilderUI();
+    }
+
+    function updateEtaBuilderUI() {
+        const format = document.getElementById('eta_format').value;
+        const minInput = document.getElementById('eta_min');
+        const maxInput = document.getElementById('eta_max');
+        const unitInput = document.getElementById('eta_unit');
+        const preview = document.getElementById('eta_preview');
+        const errorMsg = document.getElementById('eta_error');
+        const isQcEnabled = document.getElementById('loc_q_commerce_enabled').checked;
+        const btnSave = document.getElementById('btnSaveLocation');
+        
+        let minVal = parseInt(minInput.value) || 0;
+        let maxVal = parseInt(maxInput.value) || 0;
+        let unit = unitInput.value; // 'mins' or 'hours'
+        
+        let displayStr = "";
+        let slaMins = 0;
+        
+        if (format === 'range') {
+            minInput.style.display = 'block';
+            maxInput.style.display = 'block';
+            unitInput.style.display = 'block';
+            displayStr = `Delivery in ${minVal}-${maxVal} ${unit === 'hours' ? 'Hours' : 'Mins'}`;
+            slaMins = unit === 'hours' ? maxVal * 60 : maxVal;
+        } else if (format === 'within') {
+            minInput.style.display = 'none';
+            maxInput.style.display = 'block';
+            unitInput.style.display = 'block';
+            displayStr = `Delivery within ${maxVal} ${unit === 'hours' ? 'Hours' : 'Mins'}`;
+            slaMins = unit === 'hours' ? maxVal * 60 : maxVal;
+        } else if (format === 'sameday') {
+            minInput.style.display = 'none';
+            maxInput.style.display = 'none';
+            unitInput.style.display = 'none';
+            displayStr = `Same Day Delivery`;
+            slaMins = 1440; // 24 hours
+        }
+        
+        preview.innerText = "Preview: " + displayStr;
+        document.getElementById('loc_q_commerce_eta').value = displayStr;
+        document.getElementById('loc_q_commerce_sla_mins').value = slaMins;
+        
+        // Validation: QC cannot exceed 24 hours (1440 mins)
+        if (isQcEnabled && slaMins > 1440) {
+            errorMsg.classList.remove('hidden');
+            if(btnSave) btnSave.disabled = true;
+        } else {
+            errorMsg.classList.add('hidden');
+            if(btnSave) btnSave.disabled = false;
+        }
+    }
+
+    function toggleZoneInputs() {
+      const type = document.getElementById('loc_zone_type').value;
+      document.getElementById('field_radius').classList.toggle('hidden', type !== 'radius');
+      document.getElementById('field_pincodes').classList.toggle('hidden', type !== 'pincode');
+      
+      if (type === 'radius') {
+        const lat = parseFloat(document.getElementById('loc_latitude').value) || null;
+        const lng = parseFloat(document.getElementById('loc_longitude').value) || null;
+        let radius = parseFloat(document.getElementById('loc_delivery_radius_km').value);
+        if (!radius || isNaN(radius) || radius <= 0) {
+          radius = 10;
+          document.getElementById('loc_delivery_radius_km').value = 10;
+        }
+        
+        if (!lat || !lng) {
+          const pin = document.getElementById('loc_pincode').value.trim();
+          if (pin.length === 6) {
+            setTimeout(() => geocodeAddress(false), 200);
+            return;
+          }
+        }
+        setTimeout(() => initMap(lat, lng, radius), 200);
+      }
+    }
+
+    let map = null;
+    let marker = null;
+    let circle = null;
+
+    function initMap(lat, lng, radiusKm) {
+      if (HAS_GOOGLE_MAPS) {
+        if (!map) {
+          map = new google.maps.Map(document.getElementById('radius-map'), {
+            center: { lat: lat || 20.5937, lng: lng || 78.9629 },
+            zoom: lat ? 13 : 5,
+            mapTypeControl: false,
+            streetViewControl: false
+          });
+          map.addListener('click', (e) => {
+            setMapPin(e.latLng.lat(), e.latLng.lng());
+          });
+        } else {
+          map.setCenter({ lat: lat || 20.5937, lng: lng || 78.9629 });
+          map.setZoom(lat ? 13 : 5);
+        }
+      } else {
+        if (!map) {
+          map = L.map('radius-map').setView([lat || 20.5937, lng || 78.9629], lat ? 13 : 5);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+          }).addTo(map);
+
+          map.on('click', function(e) {
+            setMapPin(e.latlng.lat, e.latlng.lng);
+          });
+        } else {
+          map.setView([lat || 20.5937, lng || 78.9629], lat ? 13 : 5);
+        }
+      }
+
+      setMapPin(lat, lng, radiusKm, false);
+      
+      // Fix rendering issues in hidden modals
+      setTimeout(() => {
+        if (HAS_GOOGLE_MAPS) {
+           google.maps.event.trigger(map, 'resize');
+        } else {
+           map.invalidateSize();
+        }
+      }, 100);
+    }
+
+    function setMapPin(lat, lng, radiusKm = null, recenter = true) {
+      if (!lat || !lng) {
+        if (HAS_GOOGLE_MAPS) {
+          if (marker) marker.setMap(null);
+          if (circle) circle.setMap(null);
+        } else {
+          if (marker) map.removeLayer(marker);
+          if (circle) map.removeLayer(circle);
+        }
+        marker = null;
+        circle = null;
+        return;
+      }
+
+      if (HAS_GOOGLE_MAPS) {
+        if (!marker) {
+          marker = new google.maps.Marker({
+            position: { lat, lng },
+            map: map
+          });
+        } else {
+          marker.setPosition({ lat, lng });
+        }
+      } else {
+        if (!marker) {
+          marker = L.marker([lat, lng]).addTo(map);
+        } else {
+          marker.setLatLng([lat, lng]);
+        }
+      }
+
+      document.getElementById('loc_latitude').value = lat;
+      document.getElementById('loc_longitude').value = lng;
+
+      if (recenter) {
+        if (HAS_GOOGLE_MAPS) {
+          map.setCenter({ lat, lng });
+          map.setZoom(13);
+        } else {
+          map.setView([lat, lng], 13);
+        }
+      }
+
+      updateMapRadius(radiusKm);
+    }
+
+    function updateMapRadius(radiusKm = null) {
+      if (!map || !marker) return;
+      
+      const r = radiusKm || parseFloat(document.getElementById('loc_delivery_radius_km').value) || 0;
+      
+      if (r > 0) {
+        if (HAS_GOOGLE_MAPS) {
+          if (!circle) {
+            circle = new google.maps.Circle({
+              strokeColor: '#9333ea',
+              strokeOpacity: 0.8,
+              strokeWeight: 2,
+              fillColor: '#9333ea',
+              fillOpacity: 0.2,
+              map,
+              center: marker.getPosition(),
+              radius: r * 1000
+            });
+          } else {
+            circle.setCenter(marker.getPosition());
+            circle.setRadius(r * 1000);
+          }
+        } else {
+          if (!circle) {
+            circle = L.circle(marker.getLatLng(), {
+              color: '#9333ea',
+              fillColor: '#9333ea',
+              fillOpacity: 0.2,
+              radius: r * 1000 // Convert km to meters
+            }).addTo(map);
+          } else {
+            circle.setLatLng(marker.getLatLng());
+            circle.setRadius(r * 1000);
+          }
+        }
+      } else if (circle) {
+        if (HAS_GOOGLE_MAPS) {
+           circle.setMap(null);
+        } else {
+           map.removeLayer(circle);
+        }
+        circle = null;
+      }
+    }
+
+    document.getElementById('loc_delivery_radius_km').addEventListener('input', (e) => {
+      updateMapRadius(e.target.value);
+    });
+
+    async function geocodeAddress(showAlert = false) {
+      if (document.getElementById('loc_zone_type').value !== 'radius') return;
+      
+      let queryStr = '';
+      const searchInput = document.getElementById('map_search_input').value.trim();
+      const pin = document.getElementById('loc_pincode').value.trim();
+      
+      if (showAlert) {
+        if (!searchInput) {
+          alert("Please type an area or landmark to search on the map.");
+          return;
+        }
+        queryStr = searchInput + ', India';
+      } else {
+        const city = document.getElementById('loc_city').value.trim();
+        if (!pin && !city) return;
+        
+        let q = [];
+        if (city) q.push(city);
+        if (pin) q.push(pin);
+        q.push('India');
+        queryStr = q.join(', ');
+      }
+      
+      const btn = document.getElementById('btn-geocode-address');
+      if (btn && showAlert) btn.innerHTML = 'Searching...';
+
+      let suggestions = [];
+        
+      if (HAS_GOOGLE_MAPS) {
+        try {
+          const geocoder = new google.maps.Geocoder();
+          const res = await geocoder.geocode({ address: queryStr });
+          if (res.results && res.results.length > 0) {
+            suggestions = res.results.map(r => ({
+              geometry: { coordinates: [r.geometry.location.lng(), r.geometry.location.lat()] },
+              properties: { name: r.formatted_address, city: '', state: '' }
+            }));
+          }
+        } catch(e) {
+          console.warn("Google Geocode error:", e);
+        }
+      } else {
+        try {
+          const query = encodeURIComponent(queryStr);
+          const res = await fetch(`https://photon.komoot.io/api/?q=${query}&limit=5`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.features && data.features.length > 0) {
+              suggestions = data.features;
+            }
+          }
+        } catch (e) {
+          console.warn("Full address geocode error:", e);
+        }
+          
+        if (suggestions.length === 0 && pin) {
+          try {
+            const pinRes = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${pin}&country=India&format=json&limit=5`);
+            if (pinRes.ok) {
+              const pinData = await pinRes.json();
+              if (pinData && pinData.length > 0) {
+                suggestions = pinData.map(p => ({
+                  geometry: { coordinates: [p.lon, p.lat] },
+                  properties: { name: p.display_name, city: '', state: '' }
+                }));
+              }
+            }
+          } catch (e) {
+            console.warn("Pincode geocode error:", e);
+          }
+        }
+      }
+      
+      const suggBox = document.getElementById('address-suggestions');
+      
+      if (suggestions.length > 0) {
+        if (showAlert) {
+          // If clicked manually, show suggestions dropdown
+          suggBox.innerHTML = '<p class="text-xs font-semibold text-gray-600 mb-1 px-1">Select the most accurate location:</p>';
+          suggestions.forEach(s => {
+            const lon = parseFloat(s.geometry.coordinates[0]);
+            const lat = parseFloat(s.geometry.coordinates[1]);
+            const name = s.properties.name || '';
+            const street = s.properties.street || '';
+            const city = s.properties.city || '';
+            const state = s.properties.state || '';
+            
+            const displayName = [name, street, city, state].filter(Boolean).join(', ') || 'Unknown Location';
+            
+            const div = document.createElement('div');
+            div.className = 'cursor-pointer p-2 hover:bg-purple-100 rounded text-sm transition';
+            div.innerText = displayName;
+            div.onclick = () => {
+              let radius = parseFloat(document.getElementById('loc_delivery_radius_km').value) || 10;
+              document.getElementById('loc_delivery_radius_km').value = radius;
+              initMap(lat, lon, radius);
+              suggBox.classList.add('hidden');
+            };
+            suggBox.appendChild(div);
+          });
+          suggBox.classList.remove('hidden');
+          suggBox.classList.add('flex');
+          if (!map) initMap(null, null, null);
+        } else {
+          // If auto-blur, just take the first one
+          const lon = parseFloat(suggestions[0].geometry.coordinates[0]);
+          const lat = parseFloat(suggestions[0].geometry.coordinates[1]);
+          let radius = parseFloat(document.getElementById('loc_delivery_radius_km').value) || 10;
+          document.getElementById('loc_delivery_radius_km').value = radius;
+          initMap(lat, lon, radius);
+        }
+      } else {
+        if (!map) initMap(null, null, null);
+        if (showAlert) alert("Could not find exact address on map. Please click on the map to set the pin manually.");
+      }
+      
+      if (btn && showAlert) btn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg> Search Map';
+    }
+
+    document.getElementById('btn-geocode-address').addEventListener('click', () => geocodeAddress(true));
+
+    // Auto geocode on pincode blur
+    document.getElementById('loc_pincode').addEventListener('blur', () => geocodeAddress(false));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('save-location-btn');
+      btn.disabled = true;
+      btn.innerHTML = 'Saving...';
+      
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      data.is_default = document.getElementById('loc_is_default').checked;
+      data.q_commerce_enabled = document.getElementById('loc_q_commerce_enabled').checked;
+      
+      try {
+        const method = data.id ? 'PUT' : 'POST';
+        const res = await fetch('/api/admin/locations', {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to save location');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('An error occurred');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Save Location';
+      }
+    });
+
+    async function deleteLocation(id) {
+      if (!confirm('Are you sure you want to remove this location? Inventory tied to it will be lost.')) return;
+      try {
+        const res = await fetch('/api/admin/locations', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) window.location.reload();
+        else alert('Failed to delete location');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  </script>
+</AdminLayout>

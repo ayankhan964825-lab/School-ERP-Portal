@@ -1,0 +1,1067 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "settings")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getSettings } from '../../lib/database';
+
+const storeId = Astro.locals?.storeId;
+const isMasterAdmin = storeId === 'SUPER_ADMIN_BYPASS';
+const targetStoreId = isMasterAdmin ? Astro.url.searchParams.get('id') : storeId;
+
+const settings = await getSettings(targetStoreId);
+
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+
+const settingsForAI = JSON.stringify({
+  ...settings,
+  razorpay_key_secret: settings.razorpay_key_secret ? '[HIDDEN]' : '',
+  phonepe_salt_key: settings.phonepe_salt_key ? '[HIDDEN]' : '',
+  gemini_api_key: settings.gemini_api_key ? '[HIDDEN]' : '',
+  telegram_bot_token: settings.telegram_bot_token ? '[HIDDEN]' : '',
+  resend_api_key: settings.resend_api_key ? '[HIDDEN]' : '',
+  twilio_auth_token: settings.twilio_auth_token ? '[HIDDEN]' : '',
+  google_maps_api_key: settings.google_maps_api_key ? '[HIDDEN]' : ''
+});
+---
+
+<AdminLayout title="API Settings | Admin Panel" description="Manage API keys and integrations.">
+  <div class="max-w-4xl">
+    <div class="mb-4">
+      <h1 class="text-2xl font-serif font-bold text-secondary">API & Integrations</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage credentials for payment gateways, AI, and notifications.</p>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="settings"
+    title="Settings Assistant"
+      pageDataJson={settingsForAI}
+      guideTitleEn="Settings Guide"
+      guideTitleHi="Settings Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Payment:</strong> Enable or disable COD, Razorpay, or PhonePe and configure gateway API keys.</li>
+        <li><strong>Auth:</strong> Choose customer login mode (Phone OTP, Email OTP, or both).</li>
+        <li><strong>Integrations:</strong> Set up API keys for SMS, Email, Telegram, AI, and logistics partners.</li>
+        <li><strong>Note:</strong> Shipping rules & discount rules are in the Shipping and Store Details pages.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Payment:</strong> COD, Razorpay aur PhonePe ko yahan se chalu/band karein.</li>
+        <li><strong>Auth:</strong> Customer login mode yahan se set karein (Phone/Email OTP).</li>
+        <li><strong>Integrations:</strong> SMS, Email, Telegram aur AI ke API keys configure karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '💳 Payment', query: 'payment settings pe le chalo' },
+        { label: '🔐 Auth Mode', query: 'customer login mode kaise change karein' },
+        { label: '🚚 Courier', query: 'logistics aur courier settings pe scroll karo' },
+        { label: '🤖 AI', query: 'gemini api kaha hai' }
+      ]}
+    />
+
+    {success && (
+      <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+        Settings saved successfully.
+      </div>
+    )}
+    
+    {error && (
+      <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+        Failed to save settings. Please try again.
+      </div>
+    )}
+
+    <div class="space-y-6">
+      
+            <!-- Seller & Invoicing Details -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            📄 Store & Seller Details
+          </h2>
+          <p class="text-xs text-secondary/60">Manage details printed on customer invoices and shipping labels.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="store_name" class="block text-sm font-medium text-secondary mb-1">Store Name</label>
+              <input autocomplete="new-password" id="store_name" type="text" name="store_name" value={settings.store_name || 'Admin Panel'} placeholder="Admin Panel" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="gst_number" class="block text-sm font-medium text-secondary mb-1">GST Number</label>
+              <input autocomplete="new-password" id="gst_number" type="text" name="gst_number" value={settings.gst_number || '22AAAAA0000A1Z5'} placeholder="GSTIN..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="fssai_number" class="block text-sm font-medium text-secondary mb-1">FSSAI Number</label>
+              <input autocomplete="new-password" id="fssai_number" type="text" name="fssai_number" value={settings.fssai_number || '10000000000000'} placeholder="FSSAI..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div class="md:col-span-2">
+              <label for="store_address" class="block text-sm font-medium text-secondary mb-1">Store Address (For Invoices)</label>
+              <textarea id="store_address" name="store_address" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">{settings.store_address || '123 Demo Street, City, State, 123456'}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Seller Details</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Store Settings -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            Store Settings
+          </h2>
+          <p class="text-xs text-secondary/60">Control core store behaviour — payment methods, customer auth, OTP settings, and security limits.</p>
+        </div>
+        <div class="p-6 space-y-6">
+          <!-- Payment Method Toggles -->
+          <div>
+            <p class="text-sm font-semibold text-secondary mb-3">Active Payment Methods</p>
+            <div class="space-y-3">
+              <!-- COD Toggle -->
+              <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 text-lg font-bold">₹</div>
+                  <div>
+                    <p class="text-sm font-semibold text-secondary">Cash on Delivery (COD)</p>
+                    <p class="text-xs text-secondary/60">Customer pays at doorstep. Available for all pin codes.</p>
+                  </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" name="cod_enabled" id="cod-toggle" checked={settings.cod_enabled !== false && settings.cod_enabled !== 'false'} class="sr-only peer" />
+                  <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+                </label>
+              </div>
+              <!-- Razorpay Toggle -->
+              <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <svg class="h-5 w-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z"/></svg>
+                  </div>
+                  <div>
+                    <p class="text-sm font-semibold text-secondary">Razorpay — Online Payments</p>
+                    <p class="text-xs text-secondary/60">Cards, UPI, Net Banking, Wallets, EMI</p>
+                  </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" name="razorpay_enabled" id="razorpay-toggle" checked={settings.razorpay_enabled !== false && settings.razorpay_enabled !== 'false'} class="sr-only peer" />
+                  <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+                </label>
+              </div>
+              <!-- PhonePe Toggle -->
+              <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <svg class="h-5 w-5 text-purple-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+                  </div>
+                  <div>
+                    <p class="text-sm font-semibold text-secondary">PhonePe — UPI Payments</p>
+                    <p class="text-xs text-secondary/60">PhonePe, GPay, Paytm UPI, other UPI apps</p>
+                  </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" name="phonepe_enabled" id="phonepe-toggle" checked={settings.phonepe_enabled !== false && settings.phonepe_enabled !== 'false'} class="sr-only peer" />
+                  <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+                </label>
+              </div>
+            </div>
+
+            <!-- POS UPI ID -->
+            <div class="mt-4">
+              <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Merchant UPI ID (For POS QR)</label>
+              <input autocomplete="new-password" type="text" name="pos_upi_id" value={settings.pos_upi_id || ''} class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="e.g. merchant@upi" />
+              <p class="text-xs text-secondary/60 mt-1.5">This UPI ID will be used to generate payment QR codes for offline POS billing.</p>
+            </div>
+            </div>
+
+          <hr class="border-gray-100" />
+
+          <!-- Customer Login Mode -->
+          <div>
+            <p class="text-sm font-semibold text-secondary mb-1">Customer Login Mode</p>
+            <p class="text-xs text-secondary/50 mb-3">Choose how customers verify their identity. Options require corresponding API keys to be configured.</p>
+            <input type="hidden" name="auth_mode" id="auth-mode-input" value={settings.auth_mode || 'phone_only'} />
+            <div class="grid grid-cols-1 gap-3" id="auth-mode-cards">
+
+              <!-- Phone Only -->
+              <label id="auth-card-phone" data-mode="phone_only"
+                class={`auth-mode-card flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 select-none
+                  ${!(settings.twilio_account_sid && settings.twilio_auth_token)
+                    ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                    : (settings.auth_mode || 'phone_only') === 'phone_only'
+                      ? 'border-primary bg-primary/5 cursor-pointer'
+                      : 'border-gray-200 bg-white hover:border-primary/40 cursor-pointer'}`}
+              >
+                <input type="radio" name="auth_mode_radio" value="phone_only" class="sr-only"
+                  checked={(settings.auth_mode || 'phone_only') === 'phone_only'}
+                  disabled={!(settings.twilio_account_sid && settings.twilio_auth_token)} />
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${(settings.auth_mode || 'phone_only') === 'phone_only' ? 'bg-primary/10' : 'bg-gray-100'}`}>📱</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-secondary">Phone Only</p>
+                  <p class="text-xs text-secondary/60">SMS OTP via Twilio. Current default behaviour.</p>
+                  {!(settings.twilio_account_sid && settings.twilio_auth_token) && (
+                    <p class="text-xs text-amber-600 mt-0.5">⚠ Configure Twilio</p>
+                  )}
+                </div>
+                <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${(settings.auth_mode || 'phone_only') === 'phone_only' ? 'border-primary bg-primary' : 'border-gray-300'}`}>
+                  {(settings.auth_mode || 'phone_only') === 'phone_only' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                </div>
+              </label>
+
+              <!-- Email Only -->
+              <label id="auth-card-email" data-mode="email_only"
+                class={`auth-mode-card flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 select-none
+                  ${!settings.resend_api_key
+                    ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                    : settings.auth_mode === 'email_only'
+                      ? 'border-primary bg-primary/5 cursor-pointer'
+                      : 'border-gray-200 bg-white hover:border-primary/40 cursor-pointer'}`}
+              >
+                <input type="radio" name="auth_mode_radio" value="email_only" class="sr-only"
+                  checked={settings.auth_mode === 'email_only'}
+                  disabled={!settings.resend_api_key} />
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${settings.auth_mode === 'email_only' ? 'bg-primary/10' : 'bg-gray-100'}`}>📧</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-secondary">Email Only</p>
+                  <p class="text-xs text-secondary/60">Email OTP via Resend. Users login with email address.</p>
+                  {!settings.resend_api_key && <p class="text-xs text-amber-600 mt-0.5">⚠ Configure Resend API key first</p>}
+                </div>
+                <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${settings.auth_mode === 'email_only' ? 'border-primary bg-primary' : 'border-gray-300'}`}>
+                  {settings.auth_mode === 'email_only' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                </div>
+              </label>
+
+              <!-- Both -->
+              <label id="auth-card-both" data-mode="both"
+                class={`auth-mode-card flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 select-none
+                  ${!((settings.twilio_account_sid && settings.twilio_auth_token)) || !(settings.resend_api_key)
+                    ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                    : settings.auth_mode === 'both'
+                      ? 'border-primary bg-primary/5 cursor-pointer'
+                      : 'border-gray-200 bg-white hover:border-primary/40 cursor-pointer'}`}
+              >
+                <input type="radio" name="auth_mode_radio" value="both" class="sr-only"
+                  checked={settings.auth_mode === 'both'}
+                  disabled={!((settings.twilio_account_sid && settings.twilio_auth_token)) || !(settings.resend_api_key)} />
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${settings.auth_mode === 'both' ? 'bg-primary/10' : 'bg-gray-100'}`}>🔄</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-secondary">Phone + Email</p>
+                  <p class="text-xs text-secondary/60">New users → Phone OTP only. Returning users with verified email → Email OTP. Users can verify email from their profile.</p>
+                  {!settings.resend_api_key && <p class="text-xs text-amber-600 mt-0.5">⚠ Requires Twilio + Resend both configured</p>}
+                </div>
+                <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${settings.auth_mode === 'both' ? 'border-primary bg-primary' : 'border-gray-300'}`}>
+                  {settings.auth_mode === 'both' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                </div>
+              </label>
+
+            </div>
+          </div>
+
+          <hr class="border-gray-100" />
+
+          <!-- Storage Management -->
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m8 17 4 4 4-4"></path></svg>
+              <h2 class="text-lg font-bold text-secondary">Storage Management</h2>
+            </div>
+            <p class="text-sm text-secondary/60 mb-4">Clean up abandoned files that customers uploaded but never completed the order for.</p>
+            
+            <div class="p-4 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
+              <div>
+                <p class="text-sm font-semibold text-secondary">Clean Up Abandoned Uploads</p>
+                <p class="text-xs text-secondary/60 mt-0.5">Scans your Supabase 'products/customer-uploads' bucket and deletes files older than 24 hours that are not linked to any order.</p>
+                <p id="cleanup-result" class="text-xs font-medium mt-1 hidden"></p>
+              </div>
+              <button type="button" id="btn-cleanup-uploads" class="ml-4 whitespace-nowrap px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-secondary hover:bg-gray-50 rounded-lg transition-colors">
+                Clean Up Now
+              </button>
+            </div>
+          </div>
+
+          <hr class="border-gray-100" />
+
+          <!-- OTP Length -->
+          <div class="mt-8">
+            <p class="text-sm font-semibold text-secondary mb-3">OTP Length</p>
+            <div class="flex gap-4">
+              <label class={`flex-1 relative border rounded-2xl p-4 cursor-pointer transition-all ${settings.otp_length === '6' ? 'border-gray-200 bg-gray-50' : 'border-primary bg-primary/5 ring-1 ring-primary/20'}`}>
+                <input type="radio" name="otp_length" value="4" class="sr-only" checked={settings.otp_length !== '6'} />
+                <div class="flex items-center gap-3">
+                  <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${settings.otp_length !== '6' ? 'border-primary bg-primary' : 'border-gray-300'}`}>
+                    {settings.otp_length !== '6' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                  </div>
+                  <div>
+                    <p class="text-sm font-semibold text-secondary">4 Digits</p>
+                    <p class="text-xs text-secondary/60">Standard length (e.g. 1234)</p>
+                  </div>
+                </div>
+              </label>
+              
+              <label class={`flex-1 relative border rounded-2xl p-4 cursor-pointer transition-all ${settings.otp_length === '6' ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-gray-200 bg-gray-50'}`}>
+                <input type="radio" name="otp_length" value="6" class="sr-only" checked={settings.otp_length === '6' ? true : undefined} />
+                <div class="flex items-center gap-3">
+                  <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${settings.otp_length === '6' ? 'border-primary bg-primary' : 'border-gray-300'}`}>
+                    {settings.otp_length === '6' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                  </div>
+                  <div>
+                    <p class="text-sm font-semibold text-secondary">6 Digits</p>
+                    <p class="text-xs text-secondary/60">Higher security (e.g. 123456)</p>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <hr class="border-gray-100" />
+
+          <!-- Security & Rate Limits -->
+          <div>
+            <p class="text-sm font-semibold text-secondary mb-3">Security & Rate Limits</p>
+            <p class="text-xs text-secondary/60 mb-4">Set limits for OTP requests and failed attempts. Leave blank or 0 to disable (no limits).</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Phone Limits -->
+              <div class="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <h3 class="font-semibold text-sm text-secondary mb-3 flex items-center gap-2">📱 Phone OTP Limits</h3>
+                <div class="space-y-3">
+                  <div>
+                    <label for="rate_limit_phone_otp_requests" class="block text-xs font-medium text-secondary/80 mb-1">Max Requests</label>
+                    <input id="rate_limit_phone_otp_requests" type="number" name="rate_limit_phone_otp_requests" value={settings.rate_limit_phone_otp_requests || ''} placeholder="e.g. 3" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                  </div>
+                  <div>
+                    <label for="rate_limit_phone_otp_window_minutes" class="block text-xs font-medium text-secondary/80 mb-1">Time Window (Minutes)</label>
+                    <input id="rate_limit_phone_otp_window_minutes" type="number" name="rate_limit_phone_otp_window_minutes" value={settings.rate_limit_phone_otp_window_minutes || ''} placeholder="e.g. 60" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                  </div>
+                  <div>
+                    <label for="rate_limit_phone_otp_attempts" class="block text-xs font-medium text-secondary/80 mb-1">Max Failed Attempts (Brute-force protection)</label>
+                    <input id="rate_limit_phone_otp_attempts" type="number" name="rate_limit_phone_otp_attempts" value={settings.rate_limit_phone_otp_attempts || ''} placeholder="e.g. 5" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Email Limits -->
+              <div class="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <h3 class="font-semibold text-sm text-secondary mb-3 flex items-center gap-2">📧 Email OTP Limits</h3>
+                <div class="space-y-3">
+                  <div>
+                    <label for="rate_limit_email_otp_requests" class="block text-xs font-medium text-secondary/80 mb-1">Max Requests</label>
+                    <input id="rate_limit_email_otp_requests" type="number" name="rate_limit_email_otp_requests" value={settings.rate_limit_email_otp_requests || ''} placeholder="e.g. 5" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                  </div>
+                  <div>
+                    <label for="rate_limit_email_otp_window_minutes" class="block text-xs font-medium text-secondary/80 mb-1">Time Window (Minutes)</label>
+                    <input id="rate_limit_email_otp_window_minutes" type="number" name="rate_limit_email_otp_window_minutes" value={settings.rate_limit_email_otp_window_minutes || ''} placeholder="e.g. 60" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                  </div>
+                  <div>
+                    <label for="rate_limit_email_otp_attempts" class="block text-xs font-medium text-secondary/80 mb-1">Max Failed Attempts (Brute-force protection)</label>
+                    <input id="rate_limit_email_otp_attempts" type="number" name="rate_limit_email_otp_attempts" value={settings.rate_limit_email_otp_attempts || ''} placeholder="e.g. 5" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Store Settings</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+
+      <!-- Affiliate Program Settings -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            🤝 Affiliate Program
+          </h2>
+          <p class="text-xs text-secondary/60">Configure payout rules and thresholds for influencers.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="affiliate_payout_days" class="block text-sm font-medium text-secondary mb-1">Payout Delay (Days)</label>
+              <input id="affiliate_payout_days" type="number" name="affiliate_payout_days" value={settings.affiliate_payout_days || 30} min="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Earnings wait this many days before becoming available for withdrawal (to account for returns).</p>
+            </div>
+            <div>
+              <label for="affiliate_payout_threshold" class="block text-sm font-medium text-secondary mb-1">Minimum Payout Threshold (₹)</label>
+              <input id="affiliate_payout_threshold" type="number" name="affiliate_payout_threshold" value={settings.affiliate_payout_threshold || 100} min="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Minimum available balance required to process a payout.</p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Affiliate Settings</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Payment Gateways -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Payment Gateways</h2>
+          <p class="text-xs text-secondary/60">Configure Razorpay and PhonePe credentials.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="razorpay_key_id" class="block text-sm font-medium text-secondary mb-1">Razorpay Key ID</label>
+              <input autocomplete="new-password" id="razorpay_key_id" type="text" name="razorpay_key_id" value={settings.razorpay_key_id || ''} placeholder="rzp_live_..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="razorpay_key_secret" class="block text-sm font-medium text-secondary mb-1">Razorpay Key Secret</label>
+              <input autocomplete="new-password" id="razorpay_key_secret" type="password" name="razorpay_key_secret" value={settings.razorpay_key_secret ? '[HIDDEN]' : ''} placeholder="••••••••••••" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Found in Razorpay Dashboard > Settings > API Keys</p>
+            </div>
+            <div class="md:col-span-2">
+              <label for="razorpay_webhook_secret" class="block text-sm font-medium text-secondary mb-1">Razorpay Webhook Secret</label>
+              <input autocomplete="new-password" id="razorpay_webhook_secret" type="password" name="razorpay_webhook_secret" value={settings.razorpay_webhook_secret ? '[HIDDEN]' : ''} placeholder="••••••••••••" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Required for secure order verification. Set this in Razorpay Webhooks.</p>
+            </div>
+            
+            <div class="md:col-span-2 bg-blue-50/50 p-4 rounded-xl border border-blue-100 mt-2">
+              <label class="flex items-center gap-3 cursor-pointer">
+                <div class="relative">
+                  <input type="checkbox" name="razorpay_smart_collect_enabled" value="true" class="sr-only peer" checked={settings.razorpay_smart_collect_enabled === 'true' || settings.razorpay_smart_collect_enabled === true} />
+                  <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </div>
+                <div>
+                  <span class="block text-sm font-semibold text-secondary">Enable Razorpay Smart Collect / QR Codes API (KYC Approved)</span>
+                  <span class="block text-xs text-secondary/70 mt-0.5">Turn this ON only when Razorpay approves your account for offline QR Codes. It skips phone number entry and browser redirects in POS.</span>
+                </div>
+              </label>
+            </div>
+          </div>
+          <hr class="border-gray-100" />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="phonepe_merchant_id" class="block text-sm font-medium text-secondary mb-1">PhonePe Merchant ID</label>
+              <input autocomplete="new-password" id="phonepe_merchant_id" type="text" name="phonepe_merchant_id" value={settings.phonepe_merchant_id || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="phonepe_salt_key" class="block text-sm font-medium text-secondary mb-1">PhonePe Salt Key</label>
+              <input autocomplete="new-password" id="phonepe_salt_key" type="password" name="phonepe_salt_key" value={settings.phonepe_salt_key ? '[HIDDEN]' : ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Gateways</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- AI & Cloud -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">AI & Automation</h2>
+          <p class="text-xs text-secondary/60">Configure Gemini API for bulk catalog generation.</p>
+        </div>
+        <div class="p-6">
+          <div>
+            <label for="gemini_api_key" class="block text-sm font-medium text-secondary mb-1">Google Gemini API Key</label>
+            <div class="flex gap-2">
+              <input autocomplete="new-password" id="gemini_api_key" type="password" name="gemini_api_key" value={settings.gemini_api_key ? '[HIDDEN]' : ''} placeholder="AIza..." class="flex-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <button type="button" id="test-gemini-btn" class="px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 font-medium rounded-lg text-sm transition-colors border border-violet-200 flex items-center gap-2 whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Test API Key
+              </button>
+            </div>
+            <p id="gemini-test-result" class="text-sm mt-2 hidden font-medium"></p>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save AI Settings</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Logistics & Shipping API -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Logistics & Shipping Router</h2>
+          <p class="text-xs text-secondary/60">Configure your default and hyperlocal delivery partners for automated waybill generation.</p>
+        </div>
+        <div class="p-6 space-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label for="default_courier_partner" class="block text-sm font-medium text-secondary mb-1">Default Courier Partner</label>
+              <select id="default_courier_partner" name="default_courier_partner" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm bg-white" onchange="toggleCourierInputs()">
+                <option value="icarry" selected={settings.default_courier_partner === 'icarry' || (!settings.default_courier_partner && settings.icarry_api_token)}>iCarry.in</option>
+                <option value="shiprocket" selected={settings.default_courier_partner === 'shiprocket'}>Shiprocket</option>
+                <option value="delhivery" selected={settings.default_courier_partner === 'delhivery'}>Delhivery (Direct)</option>
+              </select>
+              <p class="text-xs text-secondary/60 mt-1">Used for standard nationwide shipments.</p>
+            </div>
+            <div>
+              <label for="hyperlocal_courier_partner" class="block text-sm font-medium text-secondary mb-1">Hyperlocal Partner (Q-Commerce)</label>
+              <select id="hyperlocal_courier_partner" name="hyperlocal_courier_partner" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm bg-white" onchange="toggleCourierInputs()">
+                <option value="none" selected={!settings.hyperlocal_courier_partner || settings.hyperlocal_courier_partner === 'none'}>Disabled (Use Default)</option>
+                <option value="porter" selected={settings.hyperlocal_courier_partner === 'porter'}>Porter</option>
+              </select>
+              <p class="text-xs text-secondary/60 mt-1">Used for express local deliveries.</p>
+            </div>
+            <div class="col-span-1 md:col-span-2">
+              <label for="max_rider_active_orders" class="block text-sm font-medium text-secondary mb-1">Max Active Orders per Rider (Q-Commerce Auto-Assign)</label>
+              <input id="max_rider_active_orders" type="number" name="max_rider_active_orders" value={settings.max_rider_active_orders || 5} min="1" max="100" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Maximum number of concurrent orders an in-house rider can be auto-assigned.</p>
+            </div>
+          </div>
+          
+          <hr class="border-gray-100" />
+
+          <div id="icarry-settings-group" class="courier-settings-group">
+            <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-primary"></span> iCarry Configuration
+            </h3>
+            <label for="icarry_api_token" class="block text-sm font-medium text-secondary mb-1">iCarry API Token</label>
+            <input autocomplete="new-password" id="icarry_api_token" type="password" name="icarry_api_token" value={settings.icarry_api_token ? '[HIDDEN]' : ''} placeholder="ey..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            <p class="text-xs text-secondary/60 mt-1 mb-4">Get this from your iCarry.in dashboard under API Integrations.</p>
+          </div>
+
+          <div id="shiprocket-settings-group" class="courier-settings-group hidden">
+            <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span> Shiprocket Configuration
+            </h3>
+            <label for="shiprocket_token" class="block text-sm font-medium text-secondary mb-1">Shiprocket API Token</label>
+            <input autocomplete="new-password" id="shiprocket_token" type="password" name="shiprocket_token" value={settings.shiprocket_token ? '[HIDDEN]' : ''} placeholder="Token..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+          </div>
+
+          <div id="porter-settings-group" class="courier-settings-group hidden">
+            <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2 mt-4">
+              <span class="w-2 h-2 rounded-full bg-blue-500"></span> Porter Configuration
+            </h3>
+            <label for="porter_api_key" class="block text-sm font-medium text-secondary mb-1">Porter API Key</label>
+            <input autocomplete="new-password" id="porter_api_key" type="password" name="porter_api_key" value={settings.porter_api_key ? '[HIDDEN]' : ''} placeholder="API Key..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+          </div>
+
+          <hr class="border-gray-100" />
+          
+          <div>
+            <label for="icarry_default_weight" class="block text-sm font-medium text-secondary mb-1">Default Package Weight (kg)</label>
+            <input id="icarry_default_weight" type="number" step="0.1" name="icarry_default_weight" value={settings.icarry_default_weight || '0.5'} placeholder="0.5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            <p class="text-xs text-secondary/60 mt-1">Used if product weight is not specified.</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Logistics Routing</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+      
+      <script is:inline data-astro-rerun>
+        function toggleCourierInputs() {
+          const defaultPartner = document.getElementById('default_courier_partner').value;
+          const hyperPartner = document.getElementById('hyperlocal_courier_partner').value;
+          
+          document.getElementById('icarry-settings-group').style.display = (defaultPartner === 'icarry') ? 'block' : 'none';
+          document.getElementById('shiprocket-settings-group').style.display = (defaultPartner === 'shiprocket') ? 'block' : 'none';
+          document.getElementById('porter-settings-group').style.display = (hyperPartner === 'porter') ? 'block' : 'none';
+        }
+        
+        // Run once on mount
+        document.addEventListener('DOMContentLoaded', toggleCourierInputs);
+      </script>
+
+      <!-- Notifications -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Notifications Hub</h2>
+          <p class="text-xs text-secondary/60">Configure Telegram Bot, Email (Resend), and SMS (Twilio) credentials.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="telegram_bot_token" class="block text-sm font-medium text-secondary mb-1">Telegram Bot Token</label>
+              <input autocomplete="new-password" id="telegram_bot_token" type="password" name="telegram_bot_token" value={settings.telegram_bot_token ? '[HIDDEN]' : ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="telegram_chat_id" class="block text-sm font-medium text-secondary mb-1">Telegram Chat ID</label>
+              <input autocomplete="new-password" id="telegram_chat_id" type="text" name="telegram_chat_id" value={settings.telegram_chat_id || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">For multiple people (e.g. manager, staff), add their Chat IDs separated by commas.</p>
+            </div>
+          </div>
+          <hr class="border-gray-100" />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="resend_api_key" class="block text-sm font-medium text-secondary mb-1">Resend API Key</label>
+              <input autocomplete="new-password" id="resend_api_key" type="password" name="resend_api_key" value={settings.resend_api_key ? '[HIDDEN]' : ''} placeholder="re_..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="admin_email" class="block text-sm font-medium text-secondary mb-1">Admin Email (for notifications)</label>
+              <input id="admin_email" type="email" name="admin_email" value={settings.admin_email || ''} placeholder="admin@yourstore.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+          </div>
+          <hr class="border-gray-100" />
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label for="twilio_account_sid" class="block text-sm font-medium text-secondary mb-1">Twilio Account SID</label>
+              <input autocomplete="new-password" id="twilio_account_sid" type="text" name="twilio_account_sid" value={settings.twilio_account_sid || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="twilio_auth_token" class="block text-sm font-medium text-secondary mb-1">Twilio Auth Token</label>
+              <input autocomplete="new-password" id="twilio_auth_token" type="password" name="twilio_auth_token" value={settings.twilio_auth_token ? '[HIDDEN]' : ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="twilio_phone_number" class="block text-sm font-medium text-secondary mb-1">Twilio Phone Number</label>
+              <input autocomplete="new-password" id="twilio_phone_number" type="text" name="twilio_phone_number" value={settings.twilio_phone_number || ''} placeholder="+1XXXXXXXXXX" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+          </div>
+          
+          <hr class="border-gray-100" />
+          <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-green-500"></span> WhatsApp Cloud API
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="whatsapp_api_token" class="block text-sm font-medium text-secondary mb-1">WhatsApp API Token</label>
+              <input autocomplete="new-password" id="whatsapp_api_token" type="password" name="whatsapp_api_token" value={settings.whatsapp_api_token ? '[HIDDEN]' : ''} placeholder="EAAD..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="whatsapp_phone_number_id" class="block text-sm font-medium text-secondary mb-1">WhatsApp Phone Number ID</label>
+              <input autocomplete="new-password" id="whatsapp_phone_number_id" type="text" name="whatsapp_phone_number_id" value={settings.whatsapp_phone_number_id || ''} placeholder="1040..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Notifications</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+
+      <!-- Ads & Tracking -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Ads & Tracking</h2>
+          <p class="text-xs text-secondary/60">Google Tag Manager, Meta Pixel, and Google Ads IDs.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label for="gtm_id" class="block text-sm font-medium text-secondary mb-1">GTM Container ID</label>
+              <input autocomplete="new-password" id="gtm_id" type="text" name="gtm_id" value={settings.gtm_id || ''} placeholder="GTM-XXXXXXX" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="meta_pixel_id" class="block text-sm font-medium text-secondary mb-1">Meta Pixel ID</label>
+              <input autocomplete="new-password" id="meta_pixel_id" type="text" name="meta_pixel_id" value={settings.meta_pixel_id || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="google_ads_id" class="block text-sm font-medium text-secondary mb-1">Google Ads ID</label>
+              <input autocomplete="new-password" id="google_ads_id" type="text" name="google_ads_id" value={settings.google_ads_id || ''} placeholder="AW-XXXXXXXXX" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+          </div>
+
+          <hr class="border-gray-100" />
+          
+          <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+            <h3 class="text-sm font-bold text-secondary mb-3">Server-Side Tracking (Meta CAPI)</h3>
+            <label for="meta_capi_token" class="block text-sm font-medium text-secondary mb-1">Meta Conversions API Token</label>
+            <input autocomplete="new-password" id="meta_capi_token" type="password" name="meta_capi_token" value={settings.meta_capi_token ? '[HIDDEN]' : ''} placeholder="EAAG..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            <p class="text-xs text-secondary/60 mt-1">Required for accurate purchase tracking, especially with iOS 14+ users.</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Tracking</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Maps & Geocoding -->
+      <form class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            🗺️ Maps & Geocoding
+          </h2>
+          <p class="text-xs text-secondary/60">Configure mapping APIs for precise delivery radiuses and address searches.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="md:col-span-2">
+              <label for="google_maps_api_key" class="block text-sm font-medium text-secondary mb-1">Google Maps API Key (Optional)</label>
+              <input autocomplete="new-password" id="google_maps_api_key" type="password" name="google_maps_api_key" value={settings.google_maps_api_key ? '[HIDDEN]' : ''} placeholder="AIzaSy..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">If provided, the admin panel and storefront will use Google Maps. If left blank, it defaults to the free OpenStreetMap/Photon fallback.</p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Maps Config</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+
+
+    </div>
+    
+    <!-- Toast notification -->
+    <div id="settings-toast" class="fixed bottom-6 right-6 z-50 hidden transform transition-all duration-300 translate-y-4 opacity-0">
+      <div id="settings-toast-inner" class="flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-white text-sm font-medium">
+        <span id="settings-toast-icon"></span>
+        <span id="settings-toast-msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    // ── Toast Helper ────────────────────────────────────────────────────
+    function showSettingsToast(msg, type) {
+      var toast = document.getElementById('settings-toast');
+      var inner = document.getElementById('settings-toast-inner');
+      var icon = document.getElementById('settings-toast-icon');
+      var msgEl = document.getElementById('settings-toast-msg');
+      if (!toast || !inner || !icon || !msgEl) return;
+
+      msgEl.textContent = msg;
+      icon.textContent = type === 'success' ? '✅' : '❌';
+      inner.className = 'flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-white text-sm font-medium ' +
+        (type === 'success' ? 'bg-green-600' : 'bg-red-600');
+
+      toast.classList.remove('hidden');
+      setTimeout(function() {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      }, 10);
+
+      setTimeout(function() {
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(function() { toast.classList.add('hidden'); }, 300);
+      }, 4000);
+    }
+
+    // ── Main Save Handler (Handles multiple forms) ────────────
+    var forms = document.querySelectorAll('.settings-section-form');
+    forms.forEach(function(form) {
+      form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        await handleSaveSettings(form);
+      });
+    });
+
+    async function handleSaveSettings(form) {
+      if (!form) return;
+      var saveBtn = form.querySelector('button[type="submit"]');
+      var saveBtnText = form.querySelector('.save-btn-text');
+      var saveBtnSpinner = form.querySelector('.save-btn-spinner');
+
+      // Payment method validation (only if submitting the Store Settings form)
+      var cod = form.querySelector('#cod-toggle');
+      var rzp = form.querySelector('#razorpay-toggle');
+      var pp = form.querySelector('#phonepe-toggle');
+      if (cod && rzp && pp && !cod.checked && !rzp.checked && !pp.checked) {
+        alert('At least one payment method (COD, Razorpay, or PhonePe) must be active.');
+        return;
+      }
+
+      // Show loading state
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.classList.add('opacity-70', 'cursor-not-allowed');
+      }
+      var originalText = saveBtnText ? saveBtnText.textContent : 'Saving...';
+      if (saveBtnText) saveBtnText.textContent = 'Saving...';
+      if (saveBtnSpinner) saveBtnSpinner.classList.remove('hidden');
+
+      // Collect all form data from this specific form
+      var data = {};
+      var inputs = form.querySelectorAll('input, textarea, select');
+      for (var i = 0; i < inputs.length; i++) {
+        var input = inputs[i];
+        var name = input.name;
+        if (!name) continue;
+
+        if (input.type === 'checkbox') {
+          data[name] = input.checked ? 'true' : 'false';
+        } else if (input.type === 'radio') {
+          if (input.checked) data[name] = input.value;
+        } else {
+          data[name] = input.value;
+        }
+      }
+
+      try {
+        var res = await fetch('/api/admin/update-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          credentials: 'include'
+        });
+
+        var result = await res.json();
+
+        if (res.ok && result.success) {
+          showSettingsToast(originalText.replace('Save ', '') + ' saved successfully!', 'success');
+        } else {
+          showSettingsToast('Error: ' + (result.error || 'Failed to save'), 'error');
+        }
+      } catch (err) {
+        showSettingsToast('Network error: ' + (err.message || 'Could not reach server'), 'error');
+      } finally {
+        // Reset button
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+        if (saveBtnText) saveBtnText.textContent = originalText;
+        if (saveBtnSpinner) saveBtnSpinner.classList.add('hidden');
+      }
+    }
+
+    // ── Auto-save Checkboxes ─────────────────────────────────────────
+    var autoSaveCheckboxes = document.querySelectorAll('.settings-section-form input[type="checkbox"]');
+    autoSaveCheckboxes.forEach(function(chk) {
+      chk.addEventListener('change', function(e) {
+        if (confirm('Are you sure you want to update this setting?')) {
+          var form = this.closest('.settings-section-form');
+          if (form && typeof handleSaveSettings === 'function') {
+            handleSaveSettings(form);
+          }
+        } else {
+          this.checked = !this.checked; // Revert
+        }
+      });
+    });
+
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'scroll_to_section') {
+        var section = params.section;
+        var el;
+        if (section === 'payment') el = document.getElementById('cod-toggle');
+        else if (section === 'shipping') el = document.getElementById('free_shipping_threshold');
+        else if (section === 'homepage') el = document.getElementById('trending-slider-toggle');
+        else if (section === 'ai') el = document.getElementById('gemini_api_key');
+        else if (section === 'notifications') el = document.getElementById('telegram_bot_token');
+        else if (section === 'ads') el = document.getElementById('gtm_id');
+        
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      else if (action === 'fill_settings') {
+        if (params.admin_email !== undefined) document.getElementById('admin_email').value = params.admin_email;
+        if (params.test_otp_mode_enabled !== undefined) document.getElementById('otp-toggle').checked = params.test_otp_mode_enabled === 'true' || params.test_otp_mode_enabled === true;
+        
+
+        var saveBtn2 = document.getElementById('save-settings-btn');
+        if (saveBtn2) {
+          var origText = document.getElementById('save-btn-text');
+          if (origText) origText.textContent = '✨ Review & Save';
+          saveBtn2.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(function() {
+            if (origText) origText.textContent = 'Save Settings';
+            saveBtn2.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+          }, 3000);
+        }
+      }
+      else if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      }
+    });
+
+    // ── Test Gemini API Key ─────────────────────────────────────────────
+    var testGeminiBtn = document.getElementById('test-gemini-btn');
+    var geminiInput = document.getElementById('gemini_api_key');
+    var geminiResult = document.getElementById('gemini-test-result');
+
+    if (testGeminiBtn && geminiInput && geminiResult) {
+      testGeminiBtn.addEventListener('click', async function() {
+        var apiKey = geminiInput.value.trim();
+        if (!apiKey) {
+          geminiResult.textContent = 'Please enter an API key first.';
+          geminiResult.className = 'text-sm mt-2 font-medium text-amber-600 block';
+          return;
+        }
+
+        var originalHtml = testGeminiBtn.innerHTML;
+        testGeminiBtn.innerHTML = '<span class="animate-spin inline-block mr-2">⟳</span> Testing...';
+        testGeminiBtn.disabled = true;
+        testGeminiBtn.classList.add('opacity-70', 'cursor-not-allowed');
+        geminiResult.classList.add('hidden');
+
+        try {
+          var res = await fetch('/api/admin/test-gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey: apiKey })
+          });
+          var data = await res.json();
+
+          geminiResult.classList.remove('hidden');
+          if (data.success) {
+            geminiResult.textContent = '✅ ' + data.message;
+            geminiResult.className = 'text-sm mt-2 font-medium text-green-600 block';
+          } else {
+            geminiResult.textContent = '❌ ' + (data.error || 'Invalid API Key');
+            geminiResult.className = 'text-sm mt-2 font-medium text-red-600 block';
+          }
+        } catch (err) {
+          geminiResult.classList.remove('hidden');
+          geminiResult.textContent = '❌ Network error. Could not test API key.';
+          geminiResult.className = 'text-sm mt-2 font-medium text-red-600 block';
+        } finally {
+          testGeminiBtn.innerHTML = originalHtml;
+          testGeminiBtn.disabled = false;
+          testGeminiBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+      });
+    }
+
+    // ── Cleanup Storage API ─────────────────────────────────────────────
+    var cleanupBtn = document.getElementById('btn-cleanup-uploads');
+    var cleanupResult = document.getElementById('cleanup-result');
+    if (cleanupBtn && cleanupResult) {
+      cleanupBtn.addEventListener('click', async function() {
+        var originalHtml = cleanupBtn.innerHTML;
+        cleanupBtn.innerHTML = '<span class="animate-spin inline-block mr-2">⟳</span> Cleaning...';
+        cleanupBtn.disabled = true;
+        cleanupBtn.classList.add('opacity-70', 'cursor-not-allowed');
+        cleanupResult.classList.add('hidden');
+
+        try {
+          var res = await fetch('/api/admin/cleanup-uploads', { method: 'POST' });
+          var data = await res.json();
+          cleanupResult.classList.remove('hidden');
+          if (res.ok && data.success) {
+            cleanupResult.textContent = '✅ ' + data.message;
+            cleanupResult.className = 'text-xs mt-1 font-medium text-green-600 block';
+          } else {
+            cleanupResult.textContent = '❌ ' + (data.error || 'Failed to clean up');
+            cleanupResult.className = 'text-xs mt-1 font-medium text-red-600 block';
+          }
+        } catch (err) {
+          cleanupResult.classList.remove('hidden');
+          cleanupResult.textContent = '❌ Network error.';
+          cleanupResult.className = 'text-xs mt-1 font-medium text-red-600 block';
+        } finally {
+          cleanupBtn.innerHTML = originalHtml;
+          cleanupBtn.disabled = false;
+          cleanupBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+      });
+    }
+
+  </script>
+
+  <script is:inline data-astro-rerun>
+    // ── Auth Mode Card Selection ────────────────────────────────────────
+    (function() {
+      var cards = document.querySelectorAll('.auth-mode-card');
+      var hiddenInput = document.getElementById('auth-mode-input');
+
+      cards.forEach(function(card) {
+        var radio = card.querySelector('input[type="radio"]');
+        if (!radio || radio.disabled) return;
+
+        card.addEventListener('click', function() {
+          var value = radio.value;
+          if (!hiddenInput) return;
+          if (hiddenInput.value === value) return; // already selected
+          
+          if (!confirm('Are you sure you want to change the Authentication Mode?')) {
+            return;
+          }
+
+          hiddenInput.value = value;
+
+          // Update visual state of all cards
+          cards.forEach(function(c) {
+            var r = c.querySelector('input[type="radio"]');
+            if (!r || r.disabled) return;
+            var isSelected = r.value === value;
+            r.checked = isSelected;
+            c.classList.toggle('border-primary', isSelected);
+            c.classList.toggle('bg-primary/5', isSelected);
+            c.classList.toggle('border-gray-200', !isSelected);
+            c.classList.toggle('bg-white', !isSelected);
+          });
+          
+          // Auto-save the form
+          var form = card.closest('.settings-section-form');
+          if (form && typeof handleSaveSettings === 'function') {
+            handleSaveSettings(form);
+          }
+        });
+      });
+    })();
+  </script>
+  <script is:inline data-astro-rerun>
+    // ── OTP Length Card Selection ────────────────────────────────────────
+    (function() {
+      var otpCards = document.querySelectorAll('label:has(input[name="otp_length"])');
+      otpCards.forEach(function(card) {
+        var radio = card.querySelector('input[type="radio"]');
+        if (!radio) return;
+        
+        card.addEventListener('click', function(e) {
+          if (e.target.tagName !== 'INPUT') {
+            radio.checked = true;
+          }
+          
+          if (!confirm('Are you sure you want to change the OTP Length?')) {
+            e.preventDefault();
+            return;
+          }
+
+          var value = radio.value;
+          
+          otpCards.forEach(function(c) {
+            var r = c.querySelector('input[type="radio"]');
+            var isSelected = r.value === value;
+            r.checked = isSelected;
+            c.classList.toggle('border-primary', isSelected);
+            c.classList.toggle('bg-primary/5', isSelected);
+            c.classList.toggle('border-gray-200', !isSelected);
+            c.classList.toggle('bg-gray-50', !isSelected);
+            
+            var dot = c.querySelector('.w-5.h-5');
+            if (dot) {
+              dot.classList.toggle('border-primary', isSelected);
+              dot.classList.toggle('bg-primary', isSelected);
+              dot.classList.toggle('border-gray-300', !isSelected);
+              if (isSelected && !dot.querySelector('.w-2')) {
+                dot.innerHTML = '<div class="w-2 h-2 bg-white rounded-full"></div>';
+              } else if (!isSelected) {
+                dot.innerHTML = '';
+              }
+            }
+          });
+          
+          var form = card.closest('.settings-section-form');
+          if (form && typeof handleSaveSettings === 'function') {
+            handleSaveSettings(form);
+          }
+        });
+      });
+    })();
+  </script>
+
+  <script is:inline data-astro-rerun>
+
+
+  </script>
+</AdminLayout>

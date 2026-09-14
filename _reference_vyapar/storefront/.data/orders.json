@@ -1,0 +1,158 @@
+[
+  {
+    "orderId": "ND-2001",
+    "status": "delivered",
+    "createdAt": "2026-05-18T10:30:00Z",
+    "amount": 1849,
+    "payment_method": "COD",
+    "customer": {
+      "name": "Priya Sharma",
+      "phone": "+91 98100 11234",
+      "email": "priya.sharma@email.com"
+    },
+    "shipping": {
+      "name": "Priya Sharma",
+      "address": "45, Lajpat Nagar, Block C",
+      "city": "New Delhi",
+      "state": "Delhi",
+      "pincode": "110024"
+    },
+    "items": [
+      {
+        "name": "Premium Dried Figs",
+        "weight": "250g",
+        "price": 549,
+        "quantity": 2
+      },
+      {
+        "name": "Organic Amla Powder",
+        "weight": "100g",
+        "price": 299,
+        "quantity": 1
+      },
+      {
+        "name": "Raw Forest Honey",
+        "weight": "500g",
+        "price": 452,
+        "quantity": 1
+      }
+    ]
+  },
+  {
+    "orderId": "ND-2002",
+    "status": "shipped",
+    "createdAt": "2026-05-19T14:15:00Z",
+    "amount": 3299,
+    "payment_method": "Prepaid",
+    "customer": {
+      "name": "Rahul Verma",
+      "phone": "+91 97300 55678",
+      "email": "rahul.verma@gmail.com"
+    },
+    "shipping": {
+      "name": "Rahul Verma",
+      "address": "Flat 7B, Shivaji Nagar, Plot 12",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "pincode": "411005"
+    },
+    "items": [
+      {
+        "name": "Premium Mixed Dry Fruits Box",
+        "weight": "1kg",
+        "price": 2499,
+        "quantity": 1
+      },
+      {
+        "name": "California Walnuts",
+        "weight": "200g",
+        "price": 399,
+        "quantity": 1
+      },
+      {
+        "name": "Moringa Powder",
+        "weight": "100g",
+        "price": 249,
+        "quantity": 1
+      }
+    ]
+  },
+  {
+    "orderId": "ND-2003",
+    "status": "confirmed",
+    "createdAt": "2026-05-20T08:00:00Z",
+    "amount": 975,
+    "payment_method": "UPI",
+    "customer": {
+      "name": "Ananya Singh",
+      "phone": "+91 88200 34567",
+      "email": "ananya@gmail.com"
+    },
+    "shipping": {
+      "name": "Ananya Singh",
+      "address": "12, MG Road, Indira Colony",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "pincode": "560001"
+    },
+    "items": [
+      {
+        "name": "Cashew W320 Premium",
+        "weight": "300g",
+        "price": 649,
+        "quantity": 1
+      },
+      {
+        "name": "Turmeric Powder",
+        "weight": "200g",
+        "price": 179,
+        "quantity": 1
+      },
+      {
+        "name": "Hibiscus Flower Powder",
+        "weight": "100g",
+        "price": 149,
+        "quantity": 1
+      }
+    ]
+  },
+  {
+    "orderId": "ND-2004",
+    "status": "pending",
+    "createdAt": "2026-05-20T11:45:00Z",
+    "amount": 4199,
+    "payment_method": "Card",
+    "customer": {
+      "name": "Meera Iyer",
+      "phone": "+91 91234 56789",
+      "email": "meera.iyer@outlook.com"
+    },
+    "shipping": {
+      "name": "Meera Iyer",
+      "address": "3, Besant Nagar, 2nd Cross Street",
+      "city": "Chennai",
+      "state": "Tamil Nadu",
+      "pincode": "600090"
+    },
+    "items": [
+      {
+        "name": "Premium Gift Box",
+        "weight": "1.5kg",
+        "price": 3499,
+        "quantity": 1
+      },
+      {
+        "name": "Ashwagandha Root Powder",
+        "weight": "250g",
+        "price": 349,
+        "quantity": 1
+      },
+      {
+        "name": "Dried Ginger Powder",
+        "weight": "100g",
+        "price": 199,
+        "quantity": 1
+      }
+    ]
+  }
+]

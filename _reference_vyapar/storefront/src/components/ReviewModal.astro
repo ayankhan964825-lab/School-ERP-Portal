@@ -1,0 +1,194 @@
+---
+export interface Props {
+  customerName?: string;
+  phone?: string;
+}
+
+const { customerName, phone } = Astro.props;
+---
+
+<!-- Review Modal -->
+<div id="review-modal" class="fixed inset-0 z-[100] hidden">
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" id="review-modal-bg"></div>
+  <div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-fit max-h-[85vh] w-[92%] max-w-md bg-white rounded-2xl shadow-2xl overflow-y-auto flex flex-col">
+    <div class="p-5 border-b border-gray-100 flex justify-between items-center shrink-0">
+      <div>
+        <h3 class="font-serif font-bold text-lg text-secondary">Write a Review</h3>
+        <p id="review-modal-product" class="text-xs text-secondary/60 mt-0.5">Product Name</p>
+      </div>
+      <button id="close-review-modal" class="p-2 rounded-xl text-secondary/40 hover:text-secondary hover:bg-gray-100 transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <form id="review-form" class="p-5 space-y-4">
+      <input type="hidden" name="product" id="review-product-input" />
+      <input type="hidden" name="productId" id="review-product-id-input" />
+      <input type="hidden" name="variant" id="review-variant-input" />
+      <input type="hidden" name="customer" value={customerName || phone} />
+      <input type="hidden" name="phone" value={phone} />
+
+      <div>
+        <label class="block text-sm font-medium text-secondary mb-2">Rating</label>
+        <div class="flex gap-1" id="star-rating">
+          {[1,2,3,4,5].map((star) => (
+            <button type="button" data-rating={star} class="star-btn text-gray-300 hover:text-amber-400 focus:outline-none transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            </button>
+          ))}
+        </div>
+        <input type="hidden" name="rating" id="rating-input" required />
+      </div>
+
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="block text-sm font-medium text-secondary">Review Title <span class="text-secondary/40 font-normal">(optional)</span></label>
+          <span id="review-modal-title-counter" class="text-xs text-secondary/40">0 / 20</span>
+        </div>
+        <input type="text" name="title" id="review-modal-title" placeholder="Short summary" maxlength="20"
+          class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+      </div>
+
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="block text-sm font-medium text-secondary">Review <span class="text-secondary/40 font-normal">(optional)</span></label>
+          <span id="review-modal-text-counter" class="text-xs text-secondary/40">0 / 100</span>
+        </div>
+        <textarea name="body" id="review-modal-text" rows="4" maxlength="100" placeholder="What did you like or dislike?"
+          class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none"></textarea>
+      </div>
+
+      <button type="submit" id="submit-review-btn" class="w-full btn-primary py-3 text-sm">Submit Review</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  // ---- Review Modal JS ----
+  function initReviewModal() {
+    const reviewModal = document.getElementById('review-modal');
+    if (reviewModal && reviewModal.parentElement !== document.body) {
+      document.body.appendChild(reviewModal);
+    }
+    const ratingInput = document.getElementById('rating-input') as HTMLInputElement;
+    const starBtns = document.querySelectorAll('.star-btn');
+    const reviewForm = document.getElementById('review-form') as HTMLFormElement;
+    const reviewTitleInput = document.getElementById('review-modal-title') as HTMLInputElement;
+    const reviewTextInput = document.getElementById('review-modal-text') as HTMLTextAreaElement;
+    const reviewTitleCounter = document.getElementById('review-modal-title-counter');
+    const reviewTextCounter = document.getElementById('review-modal-text-counter');
+
+    // Remove old listeners by cloning or just rely on DOM replacement
+    // Since DOM is fresh on page load, we just attach new listeners
+    reviewTitleInput?.addEventListener('input', (e) => {
+      if (reviewTitleCounter) reviewTitleCounter.textContent = `${(e.target as HTMLInputElement).value.length} / 20`;
+    });
+    
+    reviewTextInput?.addEventListener('input', (e) => {
+      if (reviewTextCounter) reviewTextCounter.textContent = `${(e.target as HTMLTextAreaElement).value.length} / 100`;
+    });
+
+    function closeReview() {
+      const modal = document.getElementById('review-modal');
+      modal?.classList.add('hidden');
+      document.body.style.overflow = '';
+      const form = document.getElementById('review-form') as HTMLFormElement;
+      form?.reset();
+      const rInput = document.getElementById('rating-input') as HTMLInputElement;
+      if (rInput) rInput.value = '';
+      document.querySelectorAll('.star-btn').forEach(b => {
+        b.classList.remove('text-amber-400');
+        b.classList.add('text-gray-300');
+      });
+      const tCounter = document.getElementById('review-modal-title-counter');
+      const txCounter = document.getElementById('review-modal-text-counter');
+      if (tCounter) tCounter.textContent = '0 / 20';
+      if (txCounter) txCounter.textContent = '0 / 100';
+    }
+
+    // Attach click listeners to BG and Close Button
+    document.getElementById('review-modal-bg')?.addEventListener('click', closeReview);
+    document.getElementById('close-review-modal')?.addEventListener('click', closeReview);
+
+    // Attach click listeners to all trigger buttons
+    document.querySelectorAll('.review-modal-trigger').forEach(btn => {
+      (btn).addEventListener('click', (e) => {
+        const button = e.currentTarget as HTMLElement;
+        const productText = button.dataset.variant 
+          ? `${button.dataset.product} (${button.dataset.variant})` 
+          : button.dataset.product;
+        const titleEl = document.getElementById('review-modal-product');
+        if (titleEl) titleEl.textContent = productText || '';
+        
+        const productInput = document.getElementById('review-product-input') as HTMLInputElement;
+        const productIdInput = document.getElementById('review-product-id-input') as HTMLInputElement;
+        const variantInput = document.getElementById('review-variant-input') as HTMLInputElement;
+        if (productInput) productInput.value = button.dataset.product || '';
+        if (productIdInput) productIdInput.value = button.dataset.productId || '';
+        if (variantInput) variantInput.value = button.dataset.variant || '';
+        
+        const modal = document.getElementById('review-modal');
+        modal?.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      });
+    });
+
+    // Star rating
+    starBtns.forEach(btn => {
+      (btn).addEventListener('click', (e) => {
+        const button = e.currentTarget as HTMLElement;
+        const rating = parseInt(button.dataset.rating || '0');
+        if (ratingInput) ratingInput.value = rating.toString();
+        starBtns.forEach((b) => {
+          const bEl = b as HTMLElement;
+          const bRating = parseInt(bEl.dataset.rating || '0');
+          bEl.classList.toggle('text-amber-400', bRating <= rating);
+          bEl.classList.toggle('text-gray-300', bRating > rating);
+        });
+      });
+    });
+
+    // Submit form handler
+    // We remove the old listener first by cloning the form to avoid duplicate submissions on soft navigations
+    if (reviewForm) {
+      const newForm = reviewForm.cloneNode(true) as HTMLFormElement;
+      reviewForm.parentNode?.replaceChild(newForm, reviewForm);
+      
+      newForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const rInput = document.getElementById('rating-input') as HTMLInputElement;
+        if (!rInput?.value) { alert('Please select a star rating.'); return; }
+        const submitBtn = document.getElementById('submit-review-btn') as HTMLButtonElement;
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Submitting...';
+        }
+        try {
+          const formData = new FormData(newForm);
+          const res = await fetch('/api/account/submit-review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.fromEntries(formData.entries()))
+          });
+          const result = await res.json();
+          if (res.ok && result.success) {
+            alert('Thank you! Your review has been submitted.');
+            closeReview();
+            window.location.reload(); // Reload to show the new review
+          } else {
+            alert(result.error || 'Failed to submit review.');
+          }
+        } catch {
+          alert('Network error. Please try again.');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Review';
+          }
+        }
+      });
+    }
+  }
+
+  // Run on first load and after view transitions
+  document.addEventListener('astro:page-load', initReviewModal);
+</script>

@@ -1,0 +1,119 @@
+---
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+import { getCsrfToken } from '../../lib/csrf';
+import type { ServiceRequest } from '../../lib/types/admin';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManageSection(ctx, "super_admin")) {
+  return Astro.redirect('/super-admin/login');
+}
+
+if (!supabaseAdmin) {
+  return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Fetch all service requests across all stores
+let requests = [];
+try {
+  const { data, error } = await supabaseAdmin
+    .from('store_service_requests')
+    .select(`
+      *,
+      stores (
+        name,
+        domain
+      )
+    `)
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) throw error;
+  requests = data || [];
+} catch (error) {
+  console.error("Error fetching service requests:", error);
+}
+---
+
+<SuperAdminLayout title="Managed Service Requests | VyaparPe">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Service Requests</h1>
+      <p class="text-slate-500 text-sm mt-1">Manage requested services like One-Time Setup, Custom Themes, etc.</p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <table class="w-full text-left">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-200 text-sm text-slate-500">
+          <th class="px-6 py-4 font-semibold">Store</th>
+          <th class="px-6 py-4 font-semibold">Service</th>
+          <th class="px-6 py-4 font-semibold">Amount</th>
+          <th class="px-6 py-4 font-semibold">Date</th>
+          <th class="px-6 py-4 font-semibold">Status</th>
+          <th class="px-6 py-4 font-semibold text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {requests && requests.length > 0 ? (
+          requests.map((req: ServiceRequest) => (
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-6 py-4">
+                <div class="font-bold text-slate-900">{req.stores?.name || 'Unknown Store'}</div>
+                <div class="text-xs text-slate-500">{req.stores?.domain || 'N/A'}</div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="font-medium text-slate-900">
+                  {req.service_type === 'one_time_setup' ? 'One-Time Setup' : 
+                   req.service_type === 'extra_listings' ? 'Extra Listings' : 'Custom UX Theme'}
+                </div>
+                {req.notes && (
+                  <div class="text-xs text-slate-500 mt-1 max-w-xs truncate" title={req.notes}>
+                    Note: {req.notes}
+                  </div>
+                )}
+              </td>
+              <td class="px-6 py-4 font-medium text-slate-900">₹{req.price}</td>
+              <td class="px-6 py-4 text-sm text-slate-500">{new Date(req.created_at).toLocaleDateString()}</td>
+              <td class="px-6 py-4">
+                <span class={`inline-flex px-2 py-1 text-[10px] font-bold rounded uppercase tracking-wider ${
+                  req.status === 'completed' ? 'bg-green-100 text-green-700' :
+                  req.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                  req.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }`}>
+                  {req.status.replaceAll('_', ' ')}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <form action="/api/super-admin/update-service" method="POST" class="inline-flex items-center gap-2">
+                  <input type="hidden" name="_csrf" value={csrfToken} />
+                  <input type="hidden" name="id" value={req.id} />
+                  <select name="status" class="text-xs border border-slate-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    <option value="pending" selected={req.status === 'pending'}>Pending</option>
+                    <option value="in_progress" selected={req.status === 'in_progress'}>In Progress</option>
+                    <option value="completed" selected={req.status === 'completed'}>Completed</option>
+                    <option value="cancelled" selected={req.status === 'cancelled'}>Cancelled</option>
+                  </select>
+                  <button type="submit" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1 rounded text-xs font-semibold transition-colors">
+                    Update
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td colspan="6" class="px-6 py-12 text-center text-slate-500">
+              No service requests found.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+</SuperAdminLayout>

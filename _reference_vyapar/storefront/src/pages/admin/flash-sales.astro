@@ -1,0 +1,1373 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "flash_sales")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getFlashSales, getProducts, getSettings } from '../../lib/database';
+
+const dbSales = await getFlashSales();
+const catalogProducts = await getProducts(Astro.locals?.storeId);
+const settings = await getSettings(Astro.locals?.storeId);
+const flashSaleConfig = settings?.flash_sale_config || { active: false, title: 'Flash Sale', type: 'simple', banner: '' };
+
+// Auto-determine status from dates
+const now = new Date();
+const offers = dbSales.map((s: any) => {
+  const start = new Date(s.startDate);
+  const end = new Date(s.endDate);
+  let status = s.status || 'scheduled';
+  if (status !== 'expired') {
+    if (start <= now && end > now) status = 'active';
+    else if (end <= now) status = 'expired';
+    else if (start > now) status = 'scheduled';
+  }
+  const discountPct = s.originalPrice > 0 ? Math.round(((s.originalPrice - s.salePrice) / s.originalPrice) * 100) : 0;
+  return { ...s, status, discountPct };
+});
+
+const activeCount = offers.filter((o: any) => o.status === 'active').length;
+const scheduledCount = offers.filter((o: any) => o.status === 'scheduled').length;
+const productsOnSale = offers.filter((o: any) => o.status === 'active' || o.status === 'scheduled').length;
+
+// Build product list for modal from catalog
+const productNames = [...new Set((catalogProducts as any[]).map((p: any) => p.name))];
+const uniqueProducts = productNames.map((name: string) => {
+  const variants = (catalogProducts as any[])
+    .filter((p: any) => p.name === name)
+    .flatMap((p: any) => (p.variants || []).map((v: any) => ({
+      name: v.weight || v.name || 'Default',
+      price: v.price || p.price || 0,
+      mrp: v.mrp || v.price || p.price || 0,
+      is_out_of_stock: v.is_out_of_stock || p.is_out_of_stock || false,
+      is_hidden: v.is_hidden || p.is_hidden || false
+    })))
+    .filter((v: any) => v.name && !v.is_out_of_stock && !v.is_hidden);
+  // deduplicate by name
+  const uniqueVars = [];
+  const seen = new Set();
+  for (const v of variants) {
+    const isAlreadyOnSale = offers.some((o: any) => 
+      o.product === name && 
+      (o.variant === v.name || o.variant === 'all' || !o.variant) &&
+      (o.status === 'active' || o.status === 'scheduled')
+    );
+    if (!seen.has(v.name) && !isAlreadyOnSale) {
+      seen.add(v.name);
+      uniqueVars.push(v);
+    }
+  }
+  return { name, variants: uniqueVars, image: (catalogProducts as any[]).find(p => p.name === name)?.images?.[0] || '' };
+}).filter((p: any) => p.variants.length > 0);
+
+const offersJson = JSON.stringify(offers);
+const productsJson = JSON.stringify(uniqueProducts);
+
+const flashSalesForAI = JSON.stringify({
+  activeCount,
+  scheduledCount,
+  campaigns: flashSaleConfig.campaigns,
+  availableProducts: uniqueProducts.map(p => ({
+    name: p.name,
+    variants: p.variants.map(v => ({ name: v.name || v.weight || v, mrp: v.mrp, regularPrice: v.price }))
+  })),
+  currentOffers: offers.slice(0, 20).map((o: any) => ({
+    product: o.product,
+    variant: o.variant,
+    status: o.status,
+    salePrice: o.salePrice
+  }))
+});
+---
+
+
+<AdminLayout title="Flash Sales & Offers | Admin Panel" description="Manage flash sales and promotional offers.">
+  <script id="flash-sale-config-data" type="application/json" set:html={JSON.stringify(flashSaleConfig).replace(/</g, '\\u003c')}></script>
+  
+  <div class="max-w-6xl mx-auto w-full">
+
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 flex items-center justify-center shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <h1 class="text-2xl font-serif font-bold text-secondary">Flash Sales &amp; Offers</h1>
+        </div>
+        <p class="text-sm text-secondary/60 ml-10">Create time-limited deals and promotional pricing for your products.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/admin/bulk-upload/flash-sales" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center justify-center gap-2 shrink-0 py-2.5 px-4 shadow-sm text-sm rounded-xl">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          BYO-AI Bulk Gen
+        </a>
+        <button
+          id="open-create-modal"
+          class="btn-primary text-sm flex items-center gap-2 shadow-md shadow-primary/20 flex-shrink-0"
+        >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Create Offer
+      </button>
+    </div>
+  </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="flash-sales"
+    title="Flash Sales Assistant"
+      pageDataJson={flashSalesForAI}
+      guideTitleEn="Flash Sales Guide"
+      guideTitleHi="Flash Sales Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Create Offers:</strong> Add products to flash sale using the "Create Offer" button.</li>
+        <li><strong>Campaigns:</strong> Group offers into themes (e.g., Diwali Sale) via the "Sale Campaigns" section.</li>
+        <li><strong>Global Toggle:</strong> Enable/disable all flash sales across the store instantly.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Create Offers:</strong> Naye products sale pe daalne ke liye "Create Offer" dabayein.</li>
+        <li><strong>Campaigns:</strong> Offers ko group karne ke liye (jaise Diwali Sale) Campaigns section use karein.</li>
+        <li><strong>Global Toggle:</strong> Store par poori flash sale chalu ya band karne ke liye upar wala toggle switch use karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '➕ New Campaign', query: 'new campaign banao' },
+        { label: '⚡ Add Offers', query: 'ek naya bulk offer create karo' },
+        { label: '📊 Active campaigns', query: 'kitni active campaigns hain' },
+        { label: '🔥 Flash sale enable', query: 'flash sale enable karo' }
+      ]}
+    />
+
+    <!-- Stats Row -->
+    <div class="grid grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center shadow-sm flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-secondary">{activeCount}</p>
+          <p class="text-xs text-secondary/60 font-medium">Active Offers</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-sm flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-secondary">{scheduledCount}</p>
+          <p class="text-xs text-secondary/60 font-medium">Scheduled</p>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-400 to-rose-500 flex items-center justify-center shadow-sm flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          </svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-secondary">{productsOnSale}</p>
+          <p class="text-xs text-secondary/60 font-medium">Products on Sale</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flash Sale Campaigns -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-secondary">Flash Sale Campaigns</h2>
+          <p class="text-sm text-secondary/60">Create distinct flash sale campaigns with different dates and banners.</p>
+        </div>
+        <div class="flex items-center gap-4">
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="config-active" class="sr-only peer" checked={flashSaleConfig.active} />
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            <span class="ml-3 text-sm font-medium text-secondary">Enable Flash Sales</span>
+          </label>
+          <button id="add-campaign-btn" class="btn-primary text-sm py-2 px-4 shadow-sm bg-indigo-500 hover:bg-indigo-600">Add Campaign</button>
+          <button id="save-campaigns-btn" class="btn-primary text-sm py-2 px-4 shadow-sm">Save Campaigns</button>
+        </div>
+      </div>
+      
+      <div id="campaigns-list" class="space-y-4">
+        <!-- JS will render campaigns here -->
+      </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="flex items-center gap-1 mb-6 bg-white rounded-xl border border-gray-100 shadow-sm p-1 w-fit">
+      {['all', 'active', 'scheduled', 'expired'].map((tab) => (
+        <button
+          class={`filter-tab px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${tab === 'all' ? 'bg-primary text-white shadow-sm' : 'text-secondary/60 hover:text-secondary hover:bg-gray-50'}`}
+          data-filter={tab}
+        >
+          {tab.charAt(0).toUpperCase() + tab.slice(1)}
+        </button>
+      ))}
+    </div>
+
+    <!-- Offers Grid -->
+    <div id="offers-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      {offers.map((offer) => (
+        <div
+          class="offer-card bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-gray-200 transition-all duration-200 group"
+          data-status={offer.status}
+          data-offer-id={offer.id}
+        >
+          <!-- Card Top Gradient Bar -->
+          <div class={`h-1.5 w-full ${offer.status === 'active' ? 'bg-gradient-to-r from-green-400 to-emerald-500' : offer.status === 'scheduled' ? 'bg-gradient-to-r from-blue-400 to-indigo-500' : 'bg-gradient-to-r from-gray-300 to-gray-400'}`}></div>
+
+          <div class="p-5">
+            <!-- Product Info Row -->
+            <div class="flex items-start justify-between gap-3 mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-orange-100 border border-orange-100 flex items-center justify-center text-2xl flex-shrink-0 shadow-inner">
+                  {offer.image}
+                </div>
+                <div>
+                  <h3 class="font-semibold text-secondary text-sm leading-tight">{offer.product}</h3>
+                  <span class="text-xs text-secondary/50 font-medium bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">{offer.variant}</span>
+                </div>
+              </div>
+              <!-- Discount Badge -->
+              <div class="flex-shrink-0">
+                <span class={`text-sm font-bold px-2.5 py-1 rounded-xl ${offer.status === 'expired' ? 'bg-gray-100 text-gray-500' : 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-sm shadow-rose-200'}`}>
+                  -{offer.discountPct}%
+                </span>
+              </div>
+            </div>
+
+            <!-- Pricing -->
+            <div class="flex items-baseline gap-2 mb-4 bg-gray-50 rounded-xl p-3">
+              <span class={`text-xl font-bold ${offer.status === 'expired' ? 'text-gray-400' : 'text-primary'}`}>₹{offer.salePrice}</span>
+              <span class="text-sm text-secondary/40 line-through">₹{offer.originalPrice}</span>
+              <span class={`text-xs font-medium ml-auto ${offer.status === 'expired' ? 'text-gray-400' : 'text-green-600'}`}>
+                Save ₹{offer.originalPrice - offer.salePrice}
+              </span>
+            </div>
+
+            <!-- Status + Timer -->
+            <div class="flex items-center justify-between mb-4">
+              <span class={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${
+                offer.status === 'active' ? 'bg-green-100 text-green-700 border border-green-200' :
+                offer.status === 'scheduled' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                'bg-gray-100 text-gray-500 border border-gray-200'
+              }`}>
+                <span class={`w-1.5 h-1.5 rounded-full ${offer.status === 'active' ? 'bg-green-500 animate-pulse' : offer.status === 'scheduled' ? 'bg-blue-500' : 'bg-gray-400'}`}></span>
+                {offer.status === 'active' ? 'Active' : offer.status === 'scheduled' ? 'Scheduled' : 'Expired'}
+              </span>
+
+              {offer.status !== 'expired' && (
+                <div class="text-right">
+                  <p class="text-[10px] text-secondary/40 uppercase tracking-wide font-medium">
+                    {offer.status === 'active' ? 'Ends in' : 'Starts in'}
+                  </p>
+                  <p
+                    class={`text-sm font-mono font-bold countdown-timer ${offer.status === 'active' ? 'text-rose-500' : 'text-blue-500'}`}
+                    data-end={offer.status === 'active' ? offer.endDate : offer.startDate}
+                  >
+                    --:--:--
+                  </p>
+                </div>
+              )}
+              {offer.status === 'expired' && (
+                <div class="mt-4 pt-4 border-t border-gray-100">
+                  <p class="text-xs text-secondary/40">Ended {offer.endDate ? offer.endDate.split('T')[0] : 'Unknown'}</p>
+                </div>
+              )}
+            </div>
+
+            <!-- Date Range -->
+            <div class="flex items-center gap-2 text-xs text-secondary/50 mb-4 bg-gray-50 rounded-lg px-3 py-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>{offer.startDate.replace('T', ' ')} → {offer.endDate.replace('T', ' ')}</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-2">
+              <button
+                class="edit-offer-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg text-secondary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all duration-150"
+                data-id={offer.id}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Edit
+              </button>
+              {offer.status !== 'expired' ? (
+                <button
+                  class="deactivate-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg text-secondary/70 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all duration-150"
+                  data-id={offer.id}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                  Deactivate
+                </button>
+              ) : (
+                <button
+                  class="reactivate-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg text-secondary/70 hover:border-green-300 hover:text-green-600 hover:bg-green-50 transition-all duration-150"
+                  data-id={offer.id}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Reactivate
+                </button>
+              )}
+              <button
+                class="delete-offer-btn flex items-center justify-center px-3 py-2 text-xs font-medium border border-gray-200 rounded-lg text-secondary/70 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-all duration-150"
+                data-id={offer.id}
+                title="Delete Offer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <!-- Empty State (hidden by default, shown via JS when filter finds nothing) -->
+    <div id="empty-state" class="hidden flex flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <p class="font-semibold text-secondary/60 mb-1">No offers found</p>
+      <p class="text-sm text-secondary/40">Try a different filter or create a new offer.</p>
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Create / Edit Modal -->
+  <!-- ============================================================ -->
+  <div id="offer-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <!-- Backdrop -->
+    <div id="modal-backdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+
+    <!-- Panel -->
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-100 z-10">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-20">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <h2 id="modal-title" class="text-lg font-bold text-secondary">Create Bulk Offer</h2>
+        </div>
+        <button id="close-modal" class="w-8 h-8 flex items-center justify-center rounded-lg text-secondary/50 hover:text-secondary hover:bg-gray-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <form id="offer-form" class="p-6 space-y-6">
+
+        <!-- Global Settings for Batch -->
+        <div class="mb-4">
+          <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Select Campaign</label>
+          <select id="modal-campaign-select" required class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors bg-white">
+             <option value="">— Choose a Campaign —</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">Products added will inherit the Start and End dates of the selected campaign.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-4 hidden">
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Start Date &amp; Time</label>
+            <input type="datetime-local" id="modal-start-date" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">End Date &amp; Time</label>
+            <input type="datetime-local" id="modal-end-date" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors" />
+          </div>
+        </div>
+
+        <!-- Stock & Urgency (FOMO) -->
+        <div class="bg-gray-50 border border-gray-100 rounded-xl p-4">
+          <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
+            </svg>
+            Global Stock Urgency (Applies to all products in batch)
+          </h3>
+          <div class="mb-3">
+            <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Stock Progress Bar Type</label>
+            <select id="modal-stock-type" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-secondary focus:ring-2 focus:ring-primary/30 outline-none">
+              <option value="none">None (Hide Progress Bar)</option>
+              <option value="real">Real Inventory (Count down on sale)</option>
+              <option value="fake">Fake Claimed % (Fixed Percentage)</option>
+            </select>
+          </div>
+          
+          <div id="real-stock-inputs" class="hidden grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Total Flash Stock per item</label>
+              <input type="number" id="modal-total-stock" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-secondary focus:ring-2 focus:ring-primary/30 outline-none" min="1" placeholder="e.g. 50" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Initially Sold per item</label>
+              <input type="number" id="modal-sold-stock" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-secondary focus:ring-2 focus:ring-primary/30 outline-none" min="0" placeholder="e.g. 0" />
+            </div>
+          </div>
+
+          <div id="fake-stock-inputs" class="hidden">
+            <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Fake Claimed Percentage (%)</label>
+            <input type="number" id="modal-fake-percentage" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-secondary focus:ring-2 focus:ring-primary/30 outline-none" min="1" max="99" placeholder="e.g. 85" />
+          </div>
+        </div>
+
+        <hr class="border-gray-100" />
+
+        <!-- Add Items Section -->
+        <div class="flex items-end gap-3">
+          <div class="flex-1 relative">
+            <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Search Product</label>
+            <input type="text" id="modal-product-search" placeholder="Search products..." autocomplete="off" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors bg-white">
+            <div id="modal-product-dropdown" class="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto hidden"></div>
+          </div>
+          <div class="flex-1">
+            <label class="block text-xs font-semibold text-secondary/70 uppercase tracking-wide mb-1.5">Select Variant</label>
+            <select id="modal-variant" disabled class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors bg-white">
+              <option value="">— Select a product first —</option>
+            </select>
+          </div>
+          <button type="button" id="add-to-list-btn" class="btn-primary text-sm py-2.5 px-5 shrink-0 rounded-xl flex items-center gap-2" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Add
+          </button>
+        </div>
+
+        <!-- Bulk Tools -->
+        <div class="flex items-center justify-between gap-3 bg-rose-50 p-3 rounded-xl border border-rose-100">
+           <div class="flex items-center gap-3">
+             <span class="text-xs font-semibold text-rose-700 uppercase tracking-wide">Bulk Discount:</span>
+             <input type="number" id="bulk-discount-pct" placeholder="20" min="1" max="99" class="w-20 px-2 py-1.5 text-sm border border-rose-200 rounded-lg outline-none focus:border-rose-400" />
+             <span class="text-sm font-bold text-rose-700">% OFF</span>
+             <button type="button" id="apply-bulk-btn" class="text-xs bg-rose-600 text-white px-3 py-1.5 font-semibold rounded-lg shadow-sm hover:bg-rose-700 transition-colors">Apply to Table</button>
+           </div>
+           <button type="button" id="clear-table-btn" class="text-xs text-secondary/50 hover:text-rose-600 font-medium">Clear All</button>
+        </div>
+
+        <!-- Table -->
+        <div class="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-gray-50 text-secondary/70 text-xs uppercase font-semibold">
+              <tr>
+                <th class="px-4 py-3 w-1/3">Product</th>
+                <th class="px-4 py-3">Variant</th>
+                <th class="px-4 py-3">Price</th>
+                <th class="px-4 py-3">Sale Price (₹)</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="sales-table-body" class="divide-y divide-gray-100">
+               <!-- Rows inserted dynamically -->
+            </tbody>
+          </table>
+          <div id="empty-table-msg" class="p-6 text-center text-secondary/50 text-sm">No products added to the sale yet.</div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="flex gap-3 pt-4 border-t border-gray-100">
+          <button
+            type="submit"
+            class="flex-1 btn-primary text-sm py-2.5 flex items-center justify-center gap-2 shadow-md"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span id="modal-submit-label">Save All Offers</span>
+          </button>
+          <button
+            type="button"
+            id="cancel-modal"
+            class="px-5 py-2.5 text-sm font-medium text-secondary/70 border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-secondary transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-6 right-6 z-[100] hidden">
+    <div class="bg-secondary text-white text-sm font-medium px-5 py-3 rounded-xl shadow-lg flex items-center gap-2.5">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+      </svg>
+      <span id="toast-msg">Action completed</span>
+    </div>
+  </div>
+
+<script is:inline define:vars={{ offersJson, productsJson }} data-astro-rerun>
+  console.log('FLASH SALES SCRIPT IS EXECUTING!');
+  // ─── Data ──────────────────────────────────────────────────────
+  const offers = JSON.parse(offersJson);
+  const products = JSON.parse(productsJson);
+
+  // ─── Countdown Timers ──────────────────────────────────────────
+  function pad(n) {
+    return String(Math.max(0, n)).padStart(2, '0');
+  }
+
+  function formatCountdown(targetDateStr) {
+    const now = new Date();
+    const target = new Date(targetDateStr);
+    const diff = target - now;
+    if (diff <= 0) return '00:00:00';
+    const hours = Math.floor(diff / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remHours = hours % 24;
+      return `${days}d ${pad(remHours)}h ${pad(mins)}m`;
+    }
+    return `${pad(hours)}:${pad(mins)}:${pad(secs)}`;
+  }
+
+  function updateTimers() {
+    document.querySelectorAll('.countdown-timer').forEach(function(el) {
+      const end = el.getAttribute('data-end');
+      if (end) el.textContent = formatCountdown(end);
+    });
+  }
+
+  updateTimers();
+  setInterval(updateTimers, 1000);
+
+  // ─── Filter Tabs ───────────────────────────────────────────────
+  const cards = document.querySelectorAll('.offer-card');
+  const emptyState = document.getElementById('empty-state');
+
+  document.querySelectorAll('.filter-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      const filter = tab.getAttribute('data-filter');
+
+      // Update active tab
+      document.querySelectorAll('.filter-tab').forEach(function(t) {
+        t.classList.remove('bg-primary', 'text-white', 'shadow-sm');
+        t.classList.add('text-secondary/60', 'hover:text-secondary', 'hover:bg-gray-50');
+      });
+      tab.classList.add('bg-primary', 'text-white', 'shadow-sm');
+      tab.classList.remove('text-secondary/60', 'hover:text-secondary', 'hover:bg-gray-50');
+
+      // Filter cards
+      let visible = 0;
+      cards.forEach(function(card) {
+        const status = card.getAttribute('data-status');
+        const show = filter === 'all' || status === filter;
+        card.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+
+      if (emptyState) {
+        emptyState.classList.toggle('hidden', visible > 0);
+        emptyState.classList.toggle('flex', visible === 0);
+      }
+    });
+  });
+
+  // ─── Deactivate Buttons ────────────────────────────────────────
+  document.querySelectorAll('.deactivate-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var card = btn.closest('.offer-card');
+      if (!card) return;
+      var offerId = card.getAttribute('data-offer-id');
+      // Visual update: mark as expired
+      card.setAttribute('data-status', 'expired');
+      var bar = card.querySelector('[class*="h-1.5"]');
+      if (bar) {
+        bar.className = 'h-1.5 w-full bg-gradient-to-r from-gray-300 to-gray-400';
+      }
+      showToast('Deactivating...');
+      fetch('/api/admin/flash-sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deactivate', id: offerId })
+      }).then(function() {
+        showToast('Offer deactivated');
+      });
+    });
+  });
+
+  // ─── Reactivate Buttons ────────────────────────────────────────
+  document.querySelectorAll('.reactivate-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var card = btn.closest('.offer-card');
+      if (!card) return;
+      var offerId = card.getAttribute('data-offer-id');
+      
+      // Calculate a new end date 3 days from now
+      var now = new Date();
+      var endDate = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+      var endIso = endDate.toISOString().slice(0, 16);
+      var startIso = now.toISOString().slice(0, 16);
+      
+      showToast('Reactivating...');
+      fetch('/api/admin/flash-sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id: offerId, startDate: startIso, endDate: endIso, status: 'active' })
+      }).then(function(res) {
+        if (res.ok) {
+          showToast('Offer reactivated');
+          window.location.reload();
+        } else {
+          showToast('Error reactivating');
+        }
+      });
+    });
+  });
+
+
+  // ─── Delete Buttons ──────────────────────────────────────────
+  document.querySelectorAll('.delete-offer-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var card = btn.closest('.offer-card');
+      if (!card) return;
+      var offerId = card.getAttribute('data-offer-id');
+      
+      if (!confirm('Are you sure you want to permanently delete this offer?')) return;
+      
+      showToast('Deleting...');
+      fetch('/api/admin/flash-sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: offerId })
+      }).then(function(res) {
+        if (res.ok) {
+          showToast('Offer deleted');
+          card.remove();
+        } else {
+          showToast('Error deleting');
+        }
+      });
+    });
+  });
+
+  // ─── Toast ─────────────────────────────────────────────────────
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-msg');
+    if (!toast || !toastMsg) return;
+    toastMsg.textContent = msg;
+    toast.classList.remove('hidden');
+    setTimeout(function() { toast.classList.add('hidden'); }, 3000);
+  }
+
+  // ─── Modal Open/Close ──────────────────────────────────────────
+  const modal = document.getElementById('offer-modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalSubmitLabel = document.getElementById('modal-submit-label');
+  const modalBackdrop = document.getElementById('modal-backdrop');
+  let currentEditId = null;
+
+  // Handle Campaign Selection
+  const modalCampaignSelect = document.getElementById('modal-campaign-select');
+  if (modalCampaignSelect) {
+    modalCampaignSelect.addEventListener('change', (e) => {
+       const campaignId = e.target.value;
+       const campaign = flashSaleConfig.campaigns.find(c => c.id === campaignId);
+       const startEl = document.getElementById('modal-start-date');
+       const endEl = document.getElementById('modal-end-date');
+       if (campaign) {
+         if (startEl) startEl.value = campaign.startDate;
+         if (endEl) endEl.value = campaign.endDate;
+       } else {
+         if (startEl) startEl.value = '';
+         if (endEl) endEl.value = '';
+       }
+    });
+  }
+
+  function openModal(editId) {
+    console.log('openModal called with editId:', editId);
+    console.log('modal element:', modal);
+    if (!modal) return;
+    currentEditId = editId;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+
+    // Populate Campaigns Dropdown
+    if (modalCampaignSelect) {
+      modalCampaignSelect.innerHTML = '<option value="">— Choose a Campaign —</option>' + 
+        flashSaleConfig.campaigns.map(c => `<option value="${c.id}">${c.title} (${c.startDate?.split('T')[0]} to ${c.endDate?.split('T')[0]})</option>`).join('');
+    }
+
+    if (editId) {
+      const offer = offers.find(function(o) { return o.id === editId; });
+      if (offer && modalTitle && modalSubmitLabel) {
+        modalTitle.textContent = 'Edit Offer';
+        modalSubmitLabel.textContent = 'Update Offer';
+        
+        const startEl = document.getElementById('modal-start-date');
+        const endEl = document.getElementById('modal-end-date');
+        const typeEl = document.getElementById('modal-stock-type');
+        const totalEl = document.getElementById('modal-total-stock');
+        const soldEl = document.getElementById('modal-sold-stock');
+        const fakePctEl = document.getElementById('modal-fake-percentage');
+        
+        if (startEl) startEl.value = offer.startDate;
+        if (endEl) endEl.value = offer.endDate;
+        
+        // Auto-select campaign if dates match
+        if (modalCampaignSelect) {
+          const matchedCampaign = flashSaleConfig.campaigns.find(c => c.startDate === offer.startDate && c.endDate === offer.endDate);
+          if (matchedCampaign) modalCampaignSelect.value = matchedCampaign.id;
+          else modalCampaignSelect.value = '';
+        }
+
+        if (typeEl) {
+          typeEl.value = offer.stockType || 'none';
+          typeEl.dispatchEvent(new Event('change'));
+        }
+        if (totalEl) totalEl.value = offer.totalStock || '';
+        if (soldEl) soldEl.value = offer.soldStock || '0';
+        if (fakePctEl) fakePctEl.value = offer.fakePercentage || '';
+
+        const pObj = products.find(p => p.name === offer.product);
+
+        // Add the single item to salesList
+        salesList = [{
+          product: offer.product,
+          variant: offer.variant,
+          originalPrice: offer.originalPrice,
+          regularPrice: offer.regularPrice || offer.originalPrice, // Fallback if regularPrice isn't in older DB entries
+          salePrice: offer.salePrice,
+          image: pObj?.images?.[0] || ''
+        }];
+        renderTable();
+      }
+    } else {
+      if (modalTitle) modalTitle.textContent = 'Create Bulk Offer';
+      if (modalSubmitLabel) modalSubmitLabel.textContent = 'Save All Offers';
+      const form = document.getElementById('offer-form');
+      if (form) form.reset();
+      const variantEl = document.getElementById('modal-variant');
+      if (variantEl) {
+        variantEl.innerHTML = '<option value="">— Select a product first —</option>';
+        variantEl.disabled = true;
+      }
+      const typeEl = document.getElementById('modal-stock-type');
+      if (typeEl) typeEl.dispatchEvent(new Event('change'));
+      
+      salesList = [];
+      renderTable();
+    }
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.body.style.overflow = '';
+  }
+
+  // Stock toggle logic
+  const modalStockType = document.getElementById('modal-stock-type');
+  if (modalStockType) {
+    modalStockType.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const realInputs = document.getElementById('real-stock-inputs');
+      const fakeInputs = document.getElementById('fake-stock-inputs');
+      if (realInputs) realInputs.classList.toggle('hidden', val !== 'real');
+      if (fakeInputs) fakeInputs.classList.toggle('hidden', val !== 'fake');
+    });
+  }
+
+  // Banner Image Upload Logic
+  const bannerUploadInput = document.getElementById('banner-upload-input');
+  if (bannerUploadInput) {
+    bannerUploadInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const uploadBtnLabel = bannerUploadInput.parentElement;
+        const originalText = uploadBtnLabel.innerHTML;
+        uploadBtnLabel.innerHTML = 'Uploading...';
+
+        const res = await fetch('/api/admin/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await res.json();
+
+        uploadBtnLabel.innerHTML = originalText;
+
+        if (result.success) {
+          const configBanner = document.getElementById('config-banner');
+          const previewContainer = document.getElementById('banner-preview-container');
+          const bannerPreview = document.getElementById('banner-preview');
+          const imageUrl = result.url;
+          const currentBanners = configBanner.value.trim();
+          configBanner.value = currentBanners ? currentBanners + ',\n' + imageUrl : imageUrl;
+          if (bannerPreview) bannerPreview.src = imageUrl;
+          if (previewContainer) previewContainer.classList.remove('hidden');
+        } else {
+          alert('Upload failed: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error('Upload error:', err);
+        alert('Network error during upload');
+      }
+    });
+  }
+
+  // --- Campaigns Manager ---
+  const initialConfig = JSON.parse(document.getElementById('flash-sale-config-data')?.textContent || '{"active": false, "campaigns": []}');
+  let flashSaleConfig = {
+    active: initialConfig.active || false,
+    campaigns: initialConfig.campaigns || []
+  };
+  
+  // Legacy fallback
+  if (!initialConfig.campaigns && initialConfig.title) {
+    flashSaleConfig.campaigns = [{
+      id: 'c-legacy',
+      title: initialConfig.title,
+      banner: initialConfig.banner || '',
+      startDate: '',
+      endDate: ''
+    }];
+  }
+
+  function renderCampaigns() {
+    const list = document.getElementById('campaigns-list');
+    if (!list) return;
+    
+    if (flashSaleConfig.campaigns.length === 0) {
+      list.innerHTML = '<div class="text-sm text-gray-400 p-4 border border-dashed rounded text-center">No campaigns created yet. Click "Add Campaign".</div>';
+      return;
+    }
+    
+    list.innerHTML = flashSaleConfig.campaigns.map((c, i) => `
+      <div class="border border-gray-200 rounded-xl p-4 bg-gray-50/50 relative">
+        <div class="absolute top-4 right-4">
+          <button class="text-red-500 hover:text-red-700 text-xs font-semibold px-2 py-1 bg-red-50 rounded" onclick="deleteCampaign(${i})">Delete</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 uppercase mb-1">Campaign Title</label>
+            <input type="text" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" value="${c.title}" onchange="updateCampaign(${i}, 'title', this.value)" placeholder="e.g. Mega Sale" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 uppercase mb-1">Banners (Comma separated URLs)</label>
+            <div class="flex flex-col gap-2">
+              <textarea id="campaign-banner-${i}" rows="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" onchange="updateCampaign(${i}, 'banner', this.value)" placeholder="https://...">${c.banner || ''}</textarea>
+              <label class="cursor-pointer inline-flex items-center w-fit gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-secondary rounded-lg text-xs font-medium transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Upload Image
+                <input type="file" accept="image/*" class="hidden" onchange="uploadCampaignBanner(event, ${i})" />
+              </label>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 uppercase mb-1">Start Date</label>
+            <input type="datetime-local" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" value="${c.startDate || ''}" onchange="updateCampaign(${i}, 'startDate', this.value)" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 uppercase mb-1">End Date</label>
+            <input type="datetime-local" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" value="${c.endDate || ''}" onchange="updateCampaign(${i}, 'endDate', this.value)" />
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  window.updateCampaign = (idx, field, val) => {
+    flashSaleConfig.campaigns[idx][field] = val;
+  };
+
+  window.uploadCampaignBanner = async (e, idx) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const label = e.target.parentElement;
+    const originalText = label.innerHTML;
+    label.innerHTML = '<span class="text-xs">Uploading...</span>';
+
+    try {
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+      
+      label.innerHTML = originalText;
+      
+      if (result.success) {
+        const textarea = document.getElementById(`campaign-banner-${idx}`);
+        // REPLACE the banner instead of appending to avoid multiple comma-separated banners which the frontend doesn't use
+        const newVal = result.url;
+        textarea.value = newVal;
+        updateCampaign(idx, 'banner', newVal);
+      } else {
+        alert('Upload failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error(err);
+      label.innerHTML = originalText;
+      alert('Upload error');
+    }
+  };
+  window.deleteCampaign = (idx) => {
+    if(confirm('Are you sure you want to delete this campaign settings? (Products will remain unless deleted separately)')) {
+      flashSaleConfig.campaigns.splice(idx, 1);
+      renderCampaigns();
+      document.getElementById('save-campaigns-btn')?.click();
+    }
+  };
+
+  document.getElementById('add-campaign-btn')?.addEventListener('click', () => {
+    flashSaleConfig.campaigns.push({
+      id: 'c-' + Date.now(),
+      title: 'New Campaign',
+      banner: '',
+      startDate: '',
+      endDate: ''
+    });
+    renderCampaigns();
+  });
+
+  document.getElementById('save-campaigns-btn')?.addEventListener('click', async (e) => {
+    const btn = e.target;
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+    
+    flashSaleConfig.active = document.getElementById('config-active')?.checked || false;
+
+    try {
+      const res = await fetch('/api/admin/flash-sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_config',
+          config: flashSaleConfig
+        })
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      showToast('Campaigns Saved!');
+    } catch (err) {
+      showToast('Error saving campaigns');
+    } finally {
+      btn.textContent = 'Save Campaigns';
+      btn.disabled = false;
+    }
+  });
+
+  renderCampaigns();
+
+  document.getElementById('open-create-modal')?.addEventListener('click', function() { 
+    console.log('Create Offer clicked!'); 
+    document.body.style.backgroundColor = 'red';
+    openModal(null); 
+  });
+  document.getElementById('close-modal')?.addEventListener('click', closeModal);
+  document.getElementById('cancel-modal')?.addEventListener('click', closeModal);
+  modalBackdrop?.addEventListener('click', closeModal);
+
+  document.querySelectorAll('.edit-offer-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const id = parseInt(btn.getAttribute('data-id') || '0');
+      openModal(id);
+    });
+  });
+
+  // ─── Bulk Offer Logic ─────────────────────────────────────────
+  let salesList = [];
+
+  function renderTable() {
+    const tbody = document.getElementById('sales-table-body');
+    const emptyMsg = document.getElementById('empty-table-msg');
+    if (!tbody || !emptyMsg) return;
+
+    if (salesList.length === 0) {
+      tbody.innerHTML = '';
+      emptyMsg.classList.remove('hidden');
+      return;
+    }
+    emptyMsg.classList.add('hidden');
+
+    tbody.innerHTML = salesList.map((sale, i) => `
+      <tr class="hover:bg-gray-50 transition-colors">
+        <td class="px-4 py-3 font-medium text-secondary">
+          <div class="flex items-center gap-2">
+            <img src="${sale.image}" class="w-8 h-8 rounded object-cover border border-gray-100" />
+            ${sale.product}
+          </div>
+        </td>
+        <td class="px-4 py-3 text-secondary/70">${sale.variant}</td>
+        <td class="px-4 py-3">
+          <div class="flex flex-col">
+            <span class="text-xs text-secondary/50 line-through">MRP: ₹${sale.originalPrice}</span>
+            <span class="text-sm font-medium text-secondary/80">Reg: ₹${sale.regularPrice || sale.originalPrice}</span>
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <div class="relative w-24">
+            <span class="absolute left-2 top-1/2 -translate-y-1/2 text-secondary/40 text-sm font-medium">₹</span>
+            <input type="number" min="1" max="${sale.originalPrice - 1}" class="row-sale-price w-full pl-6 pr-2 py-1.5 border border-gray-200 rounded text-sm text-secondary focus:border-primary outline-none" data-index="${i}" value="${sale.salePrice}" />
+          </div>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <button type="button" class="remove-row-btn text-rose-500 hover:text-rose-700 p-1" data-index="${i}" title="Remove">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+
+    // Attach listeners to new elements
+    document.querySelectorAll('.row-sale-price').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        salesList[idx].salePrice = parseFloat(e.target.value) || 0;
+      });
+    });
+    document.querySelectorAll('.remove-row-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index);
+        salesList.splice(idx, 1);
+        renderTable();
+      });
+    });
+  }
+
+  // Handle Product Dropdown Change
+  const pSearch = document.getElementById('modal-product-search');
+  const pDropdown = document.getElementById('modal-product-dropdown');
+  const modalVariant = document.getElementById('modal-variant');
+  const addToListBtn = document.getElementById('add-to-list-btn');
+  let selectedProduct = null;
+
+  function renderProductDropdown(query = '') {
+    if (!pSearch || !pDropdown) return;
+    const lowerQuery = query.toLowerCase();
+    const filtered = products.filter(p => p.name.toLowerCase().includes(lowerQuery));
+    
+    pDropdown.innerHTML = '';
+    if (filtered.length === 0) {
+      pDropdown.innerHTML = '<div class="p-3 text-sm text-secondary/50 text-center">No products found</div>';
+    } else {
+      filtered.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 flex items-center gap-3 transition-colors';
+        div.innerHTML = `<div class="w-8 h-8 rounded-lg bg-gray-100 flex-shrink-0 flex items-center justify-center overflow-hidden text-xl"><img src="${p.image || ''}" class="w-full h-full object-cover" onerror="this.outerHTML='📦'" alt="Product Image"></div>
+                         <div class="font-medium text-sm text-secondary truncate">${p.name}</div>`;
+        div.addEventListener('click', () => {
+          selectedProduct = p.name;
+          pSearch.value = p.name;
+          pDropdown.classList.add('hidden');
+          
+          // Populate variant dropdown
+          modalVariant.disabled = false;
+          addToListBtn.disabled = false;
+          modalVariant.innerHTML = '<option value="all">All Variants</option>' + p.variants.map(v => `<option value="${v.name || v.weight || v}">${v.name || v.weight || v} (MRP: ₹${v.mrp}, Reg: ₹${v.price})</option>`).join('');
+        });
+        pDropdown.appendChild(div);
+      });
+    }
+    pDropdown.classList.remove('hidden');
+  }
+
+  pSearch?.addEventListener('focus', () => renderProductDropdown(pSearch.value));
+  pSearch?.addEventListener('input', (e) => {
+    selectedProduct = null;
+    modalVariant.disabled = true;
+    addToListBtn.disabled = true;
+    modalVariant.innerHTML = '<option value="">— Select a product first —</option>';
+    renderProductDropdown(e.target.value);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (pSearch && pDropdown && !pSearch.contains(e.target) && !pDropdown.contains(e.target)) {
+      pDropdown.classList.add('hidden');
+    }
+  });
+
+  // Add to List
+  addToListBtn?.addEventListener('click', () => {
+    const pName = selectedProduct;
+    const vName = modalVariant.value;
+    if (!pName || !vName) return;
+
+    const found = products.find(p => p.name === pName);
+    if (!found) return;
+
+    const variantsToAdd = vName === 'all' ? found.variants : found.variants.filter(v => (v.name || v.weight || v) === vName);
+
+    variantsToAdd.forEach(v => {
+      const vId = v.name || v.weight || v;
+      // Prevent duplicates
+      if (!salesList.find(s => s.product === pName && s.variant === vId)) {
+        salesList.push({
+          product: pName,
+          variant: vId,
+          originalPrice: v.mrp || v.price,
+          regularPrice: v.price,
+          salePrice: Math.floor((v.mrp || v.price) * 0.9), // Default 10% off MRP
+          image: found.image || ''
+        });
+      }
+    });
+    
+    renderTable();
+    pSearch.value = '';
+    selectedProduct = null;
+    modalVariant.disabled = true;
+    addToListBtn.disabled = true;
+    modalVariant.innerHTML = '<option value="">— Select a product first —</option>';
+  });
+
+  // Bulk Apply
+  document.getElementById('apply-bulk-btn')?.addEventListener('click', () => {
+    const pct = parseFloat(document.getElementById('bulk-discount-pct')?.value);
+    if (isNaN(pct) || pct < 1 || pct > 99) {
+      alert('Please enter a valid percentage between 1 and 99');
+      return;
+    }
+    salesList = salesList.map(s => {
+      const basePrice = s.originalPrice || s.regularPrice;
+      s.salePrice = Math.floor(basePrice * (1 - pct / 100));
+      return s;
+    });
+    renderTable();
+  });
+
+  // Clear Table
+  document.getElementById('clear-table-btn')?.addEventListener('click', () => {
+    if(confirm('Clear all products from the sale list?')) {
+      salesList = [];
+      renderTable();
+    }
+  });
+
+  // Form Submit
+  document.getElementById('offer-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (salesList.length === 0) {
+      alert('Please add at least one product to the sale list.');
+      return;
+    }
+
+    const startEl = document.getElementById('modal-start-date');
+    const endEl = document.getElementById('modal-end-date');
+    const stockType = document.getElementById('modal-stock-type')?.value;
+    const totalStock = document.getElementById('modal-total-stock')?.value;
+    const soldStock = document.getElementById('modal-sold-stock')?.value;
+    const fakePct = document.getElementById('modal-fake-percentage')?.value;
+
+    if (!startEl.value || !endEl.value) {
+      alert('Please enter start and end dates.');
+      return;
+    }
+
+    // Validate sale prices
+    for (let s of salesList) {
+      const limit = s.originalPrice || s.regularPrice;
+      if (!s.salePrice || s.salePrice >= limit) {
+        alert(`Invalid sale price for ${s.product} - ${s.variant}. It must be less than MRP ₹${limit}.`);
+        return;
+      }
+    }
+
+    const submitLabel = document.getElementById('modal-submit-label');
+    submitLabel.textContent = 'Saving...';
+    
+    const payload = salesList.map(s => ({
+      product: s.product,
+      variant: s.variant,
+      originalPrice: s.originalPrice,
+      salePrice: s.salePrice,
+      startDate: startEl.value,
+      endDate: endEl.value,
+      image: s.image,
+      stockType: stockType,
+      totalStock: stockType === 'real' ? parseInt(totalStock) : null,
+      soldStock: stockType === 'real' ? parseInt(soldStock) : 0,
+      fakePercentage: stockType === 'fake' ? parseInt(fakePct) : null
+    }));
+
+    try {
+      if (currentEditId) {
+        // Edit mode (single item update)
+        const s = payload[0];
+        const res = await fetch('/api/admin/flash-sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update',
+            id: currentEditId,
+            product: s.product,
+            variant: s.variant,
+            originalPrice: s.originalPrice,
+            salePrice: s.salePrice,
+            startDate: s.startDate,
+            endDate: s.endDate,
+            stockType: s.stockType,
+            totalStock: s.totalStock,
+            soldStock: s.soldStock,
+            fakePercentage: s.fakePercentage
+          })
+        });
+        const data = await res.json();
+        if (data.success) window.location.reload();
+        else alert('Error: ' + (data.error || 'Failed to update'));
+      } else {
+        // Bulk Create mode
+        const res = await fetch('/api/admin/flash-sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_bulk',
+            sales: payload
+          })
+        });
+        const data = await res.json();
+        if (data.success && (!data.errors || data.errors.length === 0)) {
+          window.location.reload();
+        } else if (data.errors && data.errors.length > 0) {
+          alert('Validation Errors:\n' + data.errors.map(e => `${e.product} (${e.variant}): ${e.error}`).join('\n'));
+          if (data.count > 0) window.location.reload();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to save'));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error while saving offers.');
+    } finally {
+      submitLabel.textContent = 'Save All Offers';
+    }
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'create_campaign') {
+      flashSaleConfig.campaigns.push({
+        id: 'c-' + Date.now(),
+        title: params.name || 'New Campaign',
+        banner: '',
+        startDate: '',
+        endDate: ''
+      });
+      renderCampaigns();
+      showToast('Campaign created. Please review and save.');
+    }
+    else if (action === 'open_offer_modal') {
+      var modalBtn = document.getElementById('open-create-modal');
+      if (modalBtn) modalBtn.click();
+    }
+    else if (action === 'toggle_flash_sale') {
+      var toggle = document.getElementById('config-active');
+      if (toggle) {
+        if (params.enabled !== undefined) {
+          if (toggle.checked !== params.enabled) toggle.click();
+        } else {
+          toggle.click();
+        }
+      }
+    }
+
+    else if (action === 'add_flash_sale_offers') {
+      const aiModalBtn = document.getElementById('open-create-modal');
+      const aiModal = document.getElementById('offer-modal');
+      if (aiModalBtn && aiModal && aiModal.classList.contains('hidden')) {
+        aiModalBtn.click();
+      }
+      setTimeout(() => {
+        if (params.offers && params.offers.length > 0) {
+          params.offers.forEach(o => {
+            const found = products.find(p => p.name === o.product);
+            if (found) {
+              const v = found.variants.find(v => (v.name || v.weight || v) === o.variant) || found.variants[0];
+              salesList.push({
+                product: found.name,
+                variant: v.name || v.weight || v,
+                originalPrice: v.mrp || 0,
+                regularPrice: v.price || 0,
+                salePrice: o.salePrice || 0,
+                image: found.image || ''
+              });
+            }
+          });
+          renderTable();
+          const saveBtn = document.getElementById('save-campaigns-btn'); // Actually this should be the form save button, wait, let's just highlight table.
+          showToast(`Added ${params.offers.length} offers!`);
+        }
+      }, 100);
+    }
+    else if (action === 'fill_flash_sale_setup') {
+      // AI action to populate the global batch setup
+      const aiModalBtn2 = document.getElementById('open-create-modal');
+      const aiModal2 = document.getElementById('offer-modal');
+      if (aiModalBtn2 && aiModal2 && aiModal2.classList.contains('hidden')) {
+        aiModalBtn2.click();
+      }
+      setTimeout(() => {
+        if (params.campaign_id) document.getElementById('modal-campaign-select').value = params.campaign_id;
+        if (params.stock_type) {
+           let st = document.getElementById('modal-stock-type');
+           st.value = params.stock_type;
+           st.dispatchEvent(new Event('change'));
+        }
+        if (params.total_stock) document.getElementById('modal-total-stock').value = params.total_stock;
+        if (params.fake_percentage) document.getElementById('modal-fake-percentage').value = params.fake_percentage;
+        
+        // Notify user to review
+        const saveBtn = document.querySelector('#offer-form button[type="submit"]');
+        if (saveBtn) {
+          const orig = saveBtn.innerHTML;
+          saveBtn.innerHTML = '✨ Review Details';
+          saveBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(() => {
+            saveBtn.innerHTML = orig;
+            saveBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+          }, 3000);
+        }
+      }, 100);
+    }
+    else if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+  });
+</script>
+
+</AdminLayout>

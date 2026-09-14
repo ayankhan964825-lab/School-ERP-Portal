@@ -1,0 +1,336 @@
+---
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "orders_tracking")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+import { getOrders } from '../../../lib/database';
+
+const allOrders = await getOrders(Astro.locals?.storeId);
+let orders = allOrders.filter((o: any) => !(o.is_b2b || (o.customer && o.customer.is_b2b)));
+orders = orders.filter((o: any) => ['rto'].includes(o.status));
+orders.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+const statusColors: { [key: string]: string } = {
+  pending:   'bg-yellow-100 text-yellow-800',
+  confirmed: 'bg-blue-100 text-blue-800',
+  shipped:   'bg-purple-100 text-purple-800',
+  delivered: 'bg-green-100 text-green-800',
+  cancelled: 'bg-red-100 text-red-800',
+  rto:       'bg-red-100 text-red-800',
+  rto_received: 'bg-gray-200 text-gray-800',
+};
+
+// Serialize for AI (last 100 orders, lightweight)
+const ordersForAI = JSON.stringify(orders.slice(0, 100).map((o: any) => ({
+  id: o.id,
+  status: o.status,
+  date: o.createdAt,
+  customer: o.customerName || o.customer_name || '',
+  phone: o.phone || '',
+  total: o.total,
+  paymentMethod: o.paymentMethod || o.payment_method || '',
+  items: (o.items || []).map((i: any) => i.name || i.productName).join(', '),
+})));
+---
+
+<AdminLayout title="RTO Tracker | Admin Panel" description="Track Return To Origin orders.">
+  <!-- Page Header -->
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">RTO Tracker</h1>
+      <p class="text-sm text-secondary/60 mt-1">Track orders returning to origin and mark them as received.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-secondary/60 font-medium">{orders.length} RTO orders</span>
+    </div>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="orders"
+    title="RTO Assistant"
+    pageDataJson={ordersForAI}
+    guideTitleEn="RTO Management Guide"
+    guideTitleHi="RTO Management Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Track RTOs:</strong> Monitor shipments that failed delivery and are coming back.</li>
+      <li><strong>Mark Received:</strong> Once the package reaches your warehouse, update the status to "Received".</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Track RTOs:</strong> Jo orders deliver nahi hue aur wapas aa rahe hain, unhe track karein.</li>
+      <li><strong>Mark Received:</strong> Jab package wapas warehouse pahunch jaye, tab usko "Received" mark karein.</li>
+    </ul>`}
+    quickActions={[
+      { label: '📦 RTO dikhao', query: 'show rto orders' },
+      { label: '📊 Kitne orders wapas aaye?', query: 'total rto count' },
+    ]}
+  />
+
+  <div class="bg-red-50 text-red-800 text-sm px-4 py-3 rounded-xl mb-6 font-medium border border-red-100 flex items-center gap-2">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+    These orders are returning to the origin. Ensure you inspect them for damage upon receipt.
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    {orders.length === 0 ? (
+      <div class="p-16 text-center text-secondary/60">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+        No RTO orders at the moment.
+      </div>
+    ) : (
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full text-sm text-left">
+          <thead class="text-xs text-secondary/60 uppercase bg-gray-50/80 border-b border-gray-100">
+            <tr>
+              <th class="px-5 py-3.5 font-semibold">Order</th>
+              <th class="px-5 py-3.5 font-semibold">Customer</th>
+              <th class="px-5 py-3.5 font-semibold">Items & Amount</th>
+              <th class="px-5 py-3.5 font-semibold">Status</th>
+              <th class="px-5 py-3.5 font-semibold">Logistics Details</th>
+              <th class="px-5 py-3.5 font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            {orders.map((order: any) => (
+              <tr class="order-row hover:bg-gray-50/40 transition-colors" data-status={order.status}>
+                <td class="px-5 py-4">
+                  <div class="font-bold text-secondary text-xs">
+                    {order.orderId}
+                    
+                  </div>
+                  <div class="text-xs text-secondary/50 mt-0.5">
+                    {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </div>
+                  <div class="mt-1">
+                    <span class="text-[10px] uppercase font-bold tracking-wide bg-gray-100 text-secondary/60 px-2 py-0.5 rounded">
+                      {order.paymentMethod || 'COD'}
+                    </span>
+                  </div>
+                </td>
+
+                <td class="px-5 py-4">
+                  <div class="font-semibold text-secondary text-sm">{order.customer?.name || 'Guest'}</div>
+                  <div class="text-xs text-secondary/50">{order.customer?.phone}</div>
+                  <div class="text-xs text-secondary/40 mt-0.5 line-clamp-1 max-w-[160px]">
+                    {order.customer?.address}, {order.customer?.city}
+                  </div>
+                </td>
+
+                <td class="px-5 py-4">
+                  <div class="font-bold text-secondary">₹{(order.amount || 0).toLocaleString('en-IN')}</div>
+                  <div class="mt-1 space-y-0.5">
+                    {(order.items || []).slice(0,2).map((item) => (
+                      <div class="text-xs text-secondary/60">
+                        <span class="font-medium">{item.quantity}×</span> {item.name} {item.weight ? `(${item.weight})` : ''}
+                      </div>
+                    ))}
+                    {(order.items || []).length > 2 && (
+                      <div class="text-xs text-secondary/40">+{(order.items || []).length - 2} more</div>
+                    )}
+                  </div>
+                </td>
+
+                <td class="px-5 py-4">
+                  <select
+                    aria-label="Order status"
+                    class="order-status-select w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none font-semibold transition-colors"
+                    data-order-id={order.orderId}
+                    style={`background-color: transparent`}
+                  >
+                    <option value="rto" selected={order.status === 'rto'}>In Transit (RTO)</option>
+                    <option value="rto_received" selected={order.status === 'rto_received'}>Received at Warehouse</option>
+                  </select>
+                  <span class={`inline-block mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[order.status] || 'bg-gray-100 text-gray-600'}`}>
+                    {order.status.toUpperCase()}
+                  </span>
+                </td>
+
+                <td class="px-3 py-3" style="min-width:220px">
+                  <div class="bg-gray-50 border border-gray-100 p-2 rounded-lg mb-2">
+                    <p class="text-[10px] font-bold text-gray-500 uppercase tracking-wide">AWB: {order.awb || 'N/A'}</p>
+                    <p class="text-[10px] text-gray-600 font-medium">Partner: {order.courierPartner || 'N/A'}</p>
+                    <p class="text-[10px] text-gray-500 mt-0.5">Dispatched: {order.dispatchDate ? new Date(order.dispatchDate).toLocaleDateString() : 'N/A'}</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button
+                      class="mark-received-btn flex-1 text-[10px] font-semibold text-white bg-secondary rounded-lg px-2 py-1.5 hover:bg-secondary/90 transition-colors"
+                      data-order-id={order.orderId}
+                    >
+                      ✅ Mark Received
+                    </button>
+                  </div>
+                </td>
+
+                <td class="px-5 py-4">
+                  <button
+                    class="view-order-btn w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-secondary/10 text-secondary rounded-lg hover:bg-secondary hover:text-white transition-colors justify-center"
+                    data-order={encodeURIComponent(JSON.stringify(order))}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+<!-- == ORDER DETAIL MODAL == -->
+<div id="order-detail-modal" class="fixed inset-0 bg-secondary/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col">
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+      <h2 class="text-lg font-bold text-secondary" id="modal-order-title">Order Details</h2>
+      <button id="close-order-modal" class="text-secondary/50 hover:text-secondary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div id="modal-order-body" class="p-6 overflow-y-auto flex-1 space-y-5 text-sm">
+      <!-- Filled by JS -->
+    </div>
+  </div>
+</div>
+
+<script data-astro-rerun>
+  // == Status Update ==
+  document.querySelectorAll('.order-status-select').forEach(select => {
+    select.addEventListener('change', async (e) => {
+      const target = e.target;
+      const orderId = target.dataset.orderId;
+      const newStatus = target.value;
+      target.style.background = '#fef08a';
+      try {
+        const res = await fetch('/api/admin/update-order-status', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, status: newStatus })
+        });
+        if (!res.ok) { const errData = await res.json().catch(() => ({})); throw new Error(errData.error || "Unknown API error"); }
+        target.style.background = '#bbf7d0';
+        const row = target.closest('tr');
+        const badge = row?.querySelector('[class*="rounded-full"]');
+        if (badge) badge.textContent = newStatus.toUpperCase();
+        setTimeout(() => { target.style.background = ''; }, 1000);
+      } catch {
+        target.style.background = '#fecdd3';
+        setTimeout(() => { target.style.background = ''; }, 1000);
+        alert('Failed to update status');
+      }
+    });
+  });
+
+  document.querySelectorAll('.mark-received-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const btnEl = this;
+      const orderId = btnEl.dataset.orderId;
+      const row = btnEl.closest('tr');
+      
+      const originalHtml = btnEl.innerHTML;
+      btnEl.innerHTML = 'Saving...';
+      btnEl.disabled = true;
+
+      try {
+        const res = await fetch('/api/admin/update-order-status', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, status: 'rto_received' })
+        });
+        if (!res.ok) { const errData = await res.json().catch(() => ({})); throw new Error(errData.error || "Unknown API error"); }
+        btnEl.innerHTML = '✅ Saved';
+        
+        const statusSelect = row?.querySelector('.order-status-select');
+        if (statusSelect) statusSelect.value = 'rto_received';
+        const badge = row?.querySelector('[class*="rounded-full"]');
+        if (badge) badge.textContent = 'RTO_RECEIVED';
+
+        setTimeout(() => {
+            btnEl.innerHTML = originalHtml;
+            btnEl.disabled = false;
+        }, 2000);
+      } catch {
+        alert('Failed to mark as received.');
+        btnEl.innerHTML = originalHtml;
+        btnEl.disabled = false;
+      }
+    });
+  });
+
+  // == Order Detail Modal ==
+  const modal = document.getElementById('order-detail-modal');
+  const modalBody = document.getElementById('modal-order-body');
+  const modalTitle = document.getElementById('modal-order-title');
+
+  document.querySelectorAll('.view-order-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const btnEl = this;
+      const order = JSON.parse(btnEl.dataset.order || '{}');
+      if (modalTitle) modalTitle.textContent = `Order #${order.orderId}`;
+
+      const statusBadge = (s) => {
+        const c = { pending:'bg-yellow-100 text-yellow-800', rto:'bg-red-100 text-red-800', rto_received:'bg-gray-200 text-gray-800' };
+        return `<span class="text-xs font-bold px-2.5 py-1 rounded-full capitalize ${c[s] || 'bg-gray-100 text-gray-600'}">${s}</span>`;
+      };
+
+      if (modalBody) modalBody.innerHTML = `
+        <div class="flex items-center gap-3 pb-4 border-b border-gray-100">
+          ${statusBadge(order.status)}
+          <span class="text-xs text-secondary/50">${new Date(order.createdAt).toLocaleString('en-IN')}</span>
+          <span class="ml-auto font-bold text-secondary text-base">₹${(order.amount||0).toLocaleString('en-IN')}</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-1.5">Customer</p>
+            <p class="font-semibold text-secondary">${order.customer?.name || '—'}</p>
+            <p class="text-xs text-secondary/60 mt-0.5">${order.customer?.phone || ''}</p>
+            <p class="text-xs text-secondary/60">${order.customer?.email || ''}</p>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-1.5">Delivery Address</p>
+            <p class="text-xs text-secondary/70 leading-relaxed">${order.customer?.address || '—'}, ${order.customer?.city || ''}, ${order.customer?.state || ''} — ${order.customer?.pincode || ''}</p>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-2">Order Items</p>
+          <div class="space-y-2 border border-gray-100 rounded-xl overflow-hidden">
+            ${(order.items||[]).map((item) => `
+              <div class="flex justify-between items-center px-4 py-2.5 border-b border-gray-50 last:border-0">
+                <div>
+                  <p class="font-medium text-secondary text-xs">${item.name}</p>
+                  <p class="text-xs text-secondary/40">${item.weight || item.variant || ''}</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-secondary/60">${item.quantity}× ₹${item.price || 0}</p>
+                  <p class="font-bold text-secondary text-xs">₹${((item.price||0) * (item.quantity||1)).toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      modal?.classList.remove('hidden');
+      modal?.classList.add('flex');
+    });
+  });
+
+  document.getElementById('close-order-modal')?.addEventListener('click', () => {
+    modal?.classList.add('hidden');
+    modal?.classList.remove('flex');
+  });
+  modal?.addEventListener('click', (e) => { if (e.target === modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); } });
+</script>
+
+</AdminLayout>
+
+
+
+
+
+
+

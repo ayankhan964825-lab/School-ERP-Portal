@@ -1,0 +1,251 @@
+---
+export interface Variant {
+  id: string;
+  weight: string;
+  price: number;
+  mrp: number;
+  originalPrice?: number;
+  isFlashSale?: boolean;
+  stockType?: 'none' | 'real' | 'fake';
+  totalStock?: number;
+  soldStock?: number;
+  fakePercentage?: number;
+  is_out_of_stock?: boolean;
+}
+
+export interface Props {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  variants: Variant[];
+  image?: string;
+  badge?: string | null;
+  rating?: { value: number; count: number };
+}
+
+const { id, name, slug, description, variants: rawVariants, image, badge, rating } = Astro.props;
+const variants = rawVariants.filter((v: any) => !v.is_hidden);
+const defaultVariant = variants[0] || rawVariants[0];
+const discount = Math.round(((defaultVariant.mrp - defaultVariant.price) / defaultVariant.mrp) * 100);
+const savings = defaultVariant.mrp - defaultVariant.price;
+const isFakeDbPlaceholder = image?.startsWith('/products/') && image?.endsWith('.webp');
+const validMainImage = (image && !isFakeDbPlaceholder) ? image : null;
+const imageSrc = validMainImage || (variants[0]?.images?.[0]) || `/products/${slug}.webp`;
+
+let fomoPercent = 0;
+let fomoText = '';
+if (defaultVariant.stockType && defaultVariant.stockType !== 'none') {
+  if (defaultVariant.stockType === 'fake') {
+    fomoPercent = defaultVariant.fakePercentage || 85;
+    fomoText = `🔥 Limited Stock Available`;
+  } else if (defaultVariant.stockType === 'real') {
+    const total = defaultVariant.totalStock || 1;
+    const sold = defaultVariant.soldStock || 0;
+    const left = Math.max(0, total - sold);
+    fomoPercent = Math.min(100, Math.round((sold / total) * 100));
+    fomoText = left > 0 ? `🔥 Only ${left} left!` : 'Sold Out!';
+  }
+} else {
+  // Default FOMO text if not explicitly set
+  fomoPercent = 88;
+  fomoText = `🔥 Limited Stock Available`;
+}
+---
+
+<article class="flash-product-card group relative flex flex-col h-full bg-surface rounded-[20px] shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all duration-300 transform hover:-translate-y-1 overflow-hidden min-w-0 w-full" data-product-id={id}>
+  <a href={`/products/${slug}`} class="absolute inset-0 z-10" aria-label={`View details for ${name}`}></a>
+  
+  <!-- Image Container -->
+  <div class="product-card-img-wrap w-full aspect-square overflow-hidden bg-background-alt">
+    <div class="img-skeleton absolute inset-0 bg-stone-200 animate-pulse" aria-hidden="true"></div>
+    <img
+      src={imageSrc}
+      alt={name}
+      width="400"
+      height="400"
+      class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-0"
+      loading="lazy"
+      decoding="async"
+      onload="this.classList.remove('opacity-0'); this.previousElementSibling.classList.add('hidden');"
+      onerror="this.src='/placeholder-product.webp'; this.classList.remove('opacity-0'); this.previousElementSibling.classList.add('hidden');"
+    />
+    
+    <!-- Discount Badge (Large, Gold/Red) -->
+    {discount > 0 && (
+      <span class="absolute top-3 left-3 bg-gradient-to-br from-accent to-accent-warm text-white text-xs font-black tracking-wide px-3 py-1 rounded-full z-10 shadow-sm animate-pulse">
+        {discount}% OFF
+      </span>
+    )}
+    
+    <!-- Sale Ending Soon Badge -->
+    <span class="absolute bottom-3 left-3 right-3 text-center bg-surface/90 backdrop-blur-sm text-text text-[10px] font-bold px-2 py-1.5 rounded-xl z-10 border border-primary/10 uppercase tracking-widest shadow-sm">
+      ⚡ Sale Ending Soon
+    </span>
+  </div>
+
+  <!-- Content -->
+  <div class="p-5 flex flex-col gap-2.5 flex-1 relative z-20 pointer-events-none bg-surface min-w-0">
+    <!-- Rating -->
+    <div class="flex items-center gap-1.5">
+      <div class="flex gap-0.5 text-accent">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={i < Math.floor(rating?.value || 5) ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        ))}
+      </div>
+      <span class="text-xs font-semibold text-text-muted">
+        {rating?.value || '5.0'} ({rating?.count || 124})
+      </span>
+    </div>
+
+    <!-- Product Name -->
+    <h3 class="font-serif text-lg font-bold text-primary leading-snug group-hover:text-accent transition-colors duration-200 line-clamp-2 break-words">
+      {name}
+    </h3>
+    
+    <!-- Variants -->
+    <div class="flex flex-wrap gap-1.5 mt-1 variant-selector" role="group">
+      {variants.map((v: any, index: number) => (
+        <button
+          type="button"
+          class={`flash-variant-pill px-2.5 py-1 text-xs font-bold rounded-lg border transition-all duration-200 pointer-events-auto relative z-30 max-w-full truncate ${
+            index === 0 
+              ? 'border-accent bg-accent/10 text-accent' 
+              : 'border-stone-200 text-stone-400 hover:border-accent/50 hover:text-stone-600'
+          }`}
+          data-product={id}
+          data-variant={v.id}
+          data-price={v.price}
+          data-mrp={v.mrp}
+          data-out-of-stock={v.is_out_of_stock ? 'true' : 'false'}
+          aria-label={`Select ${v.weight} variant`}
+        >
+          {v.weight}
+        </button>
+      ))}
+    </div>
+
+    <!-- Price Section -->
+    <div class="mt-auto pt-2 flex flex-col">
+      <div class="flex items-end gap-2.5">
+        <span class="font-bold text-2xl text-primary" id={`f-price-${id}`}>₹{defaultVariant.price}</span>
+        <span class="text-sm font-medium text-stone-400 line-through mb-1" id={`f-mrp-${id}`}>₹{defaultVariant.mrp}</span>
+      </div>
+      <span class="text-xs font-bold text-accent tracking-wide" id={`f-save-${id}`}>You Save ₹{savings}</span>
+    </div>
+
+    <!-- FOMO Bar -->
+    <div class="mt-2 mb-1">
+      <div class="flex justify-between text-[10px] font-bold text-primary mb-1.5">
+        <span>{fomoText}</span>
+      </div>
+      <div class="w-full bg-stone-100 rounded-full h-1.5">
+        <div class="bg-accent h-1.5 rounded-full" style={`width: ${fomoPercent}%`}></div>
+      </div>
+    </div>
+
+    <!-- Add to Cart Button -->
+    <button
+      class="w-full flex items-center justify-center gap-2 mt-2 bg-primary text-white py-3.5 px-4 rounded-xl font-bold text-sm hover:bg-primary-light active:scale-[0.98] transition-all duration-200 shadow-md shadow-primary/20 pointer-events-auto f-add-to-cart-btn"
+      data-product-id={id}
+      data-product-name={name}
+      data-product-slug={slug}
+      data-variant-id={defaultVariant.id}
+      data-variant-weight={defaultVariant.weight}
+      data-price={defaultVariant.price}
+      data-mrp={defaultVariant.mrp}
+      data-image={imageSrc}
+      data-out-of-stock={defaultVariant.is_out_of_stock ? 'true' : 'false'}
+      aria-label={`Add ${name} to cart`}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+      </svg>
+      ADD TO CART
+    </button>
+  </div>
+</article>
+
+<script>
+document.addEventListener('click', function(e) {
+  // Variant Selection
+  const pillBtn = (e.target).closest('.flash-variant-pill');
+  if (pillBtn) {
+    const productId = pillBtn.dataset.product;
+    const price     = parseInt(pillBtn.dataset.price || '0', 10);
+    const mrp       = parseInt(pillBtn.dataset.mrp || '0', 10);
+    const variantId = pillBtn.dataset.variant;
+    const weight    = pillBtn.dataset.weight || pillBtn.textContent?.trim();
+
+    // Reset all pills for this product
+    document.querySelectorAll('.flash-variant-pill[data-product="' + productId + '"]').forEach(function(p) {
+      p.classList.remove('border-accent', 'bg-accent/10', 'text-accent');
+      p.classList.add('border-stone-200', 'text-stone-400');
+    });
+
+    // Set active class
+    pillBtn.classList.add('border-accent', 'bg-accent/10', 'text-accent');
+    pillBtn.classList.remove('border-stone-200', 'text-stone-400');
+
+    // Update Price and Savings
+    const priceEl = document.getElementById('f-price-' + productId);
+    const mrpEl   = document.getElementById('f-mrp-' + productId);
+    const saveEl  = document.getElementById('f-save-' + productId);
+    
+    if (priceEl) priceEl.textContent = '₹' + price;
+    if (mrpEl)   mrpEl.textContent   = '₹' + mrp;
+    if (saveEl)  saveEl.textContent  = 'You Save ₹' + (mrp - price);
+
+    const isOut = pillBtn.dataset.outOfStock === 'true';
+
+    // Update Add to Cart Data
+    document.querySelectorAll('.f-add-to-cart-btn[data-product-id="' + productId + '"]').forEach(function(el) {
+      const addBtn = el;
+      addBtn.dataset.variantId     = variantId;
+      addBtn.dataset.price         = price.toString();
+      addBtn.dataset.mrp           = mrp.toString();
+      addBtn.dataset.variantWeight = weight;
+      addBtn.dataset.outOfStock    = isOut ? 'true' : 'false';
+      
+      if (isOut) {
+        addBtn.disabled = true;
+        addBtn.innerHTML = 'Out of Stock';
+        addBtn.className = 'w-full flex items-center justify-center gap-2 mt-2 bg-stone-200 text-stone-500 py-3.5 px-4 rounded-xl font-bold text-sm cursor-not-allowed pointer-events-auto f-add-to-cart-btn';
+      } else {
+        addBtn.disabled = false;
+        addBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg> ADD TO CART';
+        addBtn.className = 'w-full flex items-center justify-center gap-2 mt-2 bg-primary text-white py-3.5 px-4 rounded-xl font-bold text-sm hover:bg-primary-light active:scale-[0.98] transition-all duration-200 shadow-md shadow-primary/20 pointer-events-auto f-add-to-cart-btn';
+      }
+    });
+    return;
+  }
+
+  // Add to Cart Action
+  const addBtn = (e.target).closest('.f-add-to-cart-btn');
+  if (addBtn) {
+    if (addBtn.dataset.outOfStock === 'true') return;
+    const slug = addBtn.dataset.productSlug || addBtn.dataset.productId || '';
+    const item = {
+      id:     (addBtn.dataset.productId || '') + '-' + (addBtn.dataset.variantId || ''),
+      name:   addBtn.dataset.productName   || '',
+      price:  Number(addBtn.dataset.price  || 0),
+      mrp:    Number(addBtn.dataset.mrp    || addBtn.dataset.price || 0),
+      weight: addBtn.dataset.variantWeight || '',
+      image:  addBtn.dataset.image || '/products/' + slug + '.webp',
+    };
+
+    window.dispatchEvent(new CustomEvent('vyaparpe:add-to-cart', { detail: item }));
+
+    // Button feedback
+    const originalInner = addBtn.innerHTML;
+    addBtn.innerHTML = '✓ ADDED';
+    addBtn.classList.add('!bg-green-600');
+    setTimeout(function() {
+      addBtn.innerHTML = originalInner;
+      addBtn.classList.remove('!bg-green-600');
+    }, 1500);
+  }
+});
+</script>

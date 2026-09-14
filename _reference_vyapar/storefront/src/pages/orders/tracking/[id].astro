@@ -1,0 +1,309 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { supabaseAdmin, isSupabase } from '../../../lib/database';
+
+const { id } = Astro.params;
+if (!id) return Astro.redirect('/orders');
+
+let order = null;
+let rider = null;
+let store = null;
+
+if (isSupabase && supabaseAdmin) {
+  // Fetch Order
+  const { data: orderData } = await supabaseAdmin
+    .from('orders')
+    .select('*')
+    .eq('order_id', id)
+    .single();
+    
+  if (orderData) {
+    order = orderData;
+    
+    // Fetch Store
+    const { data: storeData } = await supabaseAdmin
+      .from('stores')
+      .select('name, address, lat, lng')
+      .eq('id', order.store_id)
+      .single();
+    if (storeData) store = storeData;
+      
+    // Fetch Rider if assigned
+    if (order.rider_id) {
+      const { data: riderData } = await supabaseAdmin
+        .from('riders')
+        .select('id, name, phone, vehicle_type, vehicle_number, current_lat, current_lng, updated_at')
+        .eq('id', order.rider_id)
+        .single();
+      if (riderData) rider = riderData;
+    }
+  } else {
+    return Astro.redirect('/orders');
+  }
+}
+
+// Calculate progress percentage
+const statusMap: Record<string, number> = {
+  pending: 10,
+  confirmed: 30,
+  shipped: 50,
+  dispatched: 50,
+  out_for_delivery: 80,
+  delivered: 100,
+  cancelled: 0
+};
+const progress = statusMap[order?.status || 'pending'] || 10;
+
+const etaOverride = order?.items?.find((i: any) => i.eta_override)?.eta_override;
+---
+
+<Layout title={`Track Order #${id}`} description="Live order tracking">
+  <Fragment slot="head">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+      /* Smooth transitions for Leaflet markers */
+      .leaflet-marker-icon.rider-marker {
+        transition: transform 3s linear !important;
+      }
+      .rider-marker-inner {
+        width: 40px;
+        height: 40px;
+        background-color: black;
+        border-radius: 50%;
+        border: 4px solid white;
+        box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        animation: bounce 1s infinite;
+      }
+      @keyframes bounce {
+        0%, 100% { transform: translateY(-10%); }
+        50% { transform: translateY(0); }
+      }
+    </style>
+  </Fragment>
+
+  <div class="min-h-screen bg-gray-50 flex flex-col relative pb-20">
+    
+    <!-- Animated Map Header -->
+    <div class="h-[40vh] bg-slate-200 relative w-full overflow-hidden z-10">
+      <!-- Back Button -->
+      <a href="/orders" class="absolute top-4 left-4 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center text-gray-800 z-[400]">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+      </a>
+
+      <!-- Leaflet Map Container -->
+      <div id="map" class="absolute inset-0 z-10"></div>
+    </div>
+
+    <!-- Tracking Card -->
+    <div class="px-4 -mt-8 relative z-20">
+      <div class="bg-white rounded-2xl shadow-xl p-5 border border-gray-100">
+        
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h1 class="text-sm font-bold text-gray-500 uppercase tracking-wider">Order #{order?.order_id?.slice(0,8)}</h1>
+            <p class="font-bold text-xl text-gray-900 mt-0.5 capitalize">{order?.status.replace(/_/g, ' ')}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-gray-500 font-semibold">Total Amount</p>
+            <p class="font-bold text-lg text-primary">₹{order?.amount}</p>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="relative w-full h-2 bg-gray-100 rounded-full mb-6 overflow-hidden">
+          <div class="absolute left-0 top-0 bottom-0 bg-primary rounded-full transition-all duration-1000" style={`width: ${progress}%`}></div>
+        </div>
+
+        <!-- Rider Details (if assigned) -->
+        {rider ? (
+          <div class="bg-primary/5 rounded-xl p-4 mb-4 border border-primary/10">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center text-xl shrink-0">
+                👤
+              </div>
+              <div class="flex-1">
+                <p class="text-xs font-bold text-primary uppercase tracking-wide">Delivery Partner</p>
+                <p class="font-bold text-gray-900 text-lg">{rider.name}</p>
+                <p class="text-xs text-gray-600">{rider.vehicle_type} • {rider.vehicle_number}</p>
+              </div>
+              <a href={`tel:${rider.phone}`} class="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-green-600 shrink-0">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+              </a>
+            </div>
+            
+            <div class="mt-4 pt-3 border-t border-primary/10 flex justify-between items-center">
+              <div>
+                <p class="text-xs text-gray-500 font-semibold">Estimated Time</p>
+                <p class="font-bold text-gray-900" id="eta-text">Calculating...</p>
+              </div>
+              <div class="text-right">
+                <p class="text-xs text-gray-500 font-semibold">Distance</p>
+                <p class="font-bold text-gray-900" id="distance-text">Calculating...</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div class="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-lg shrink-0">📦</div>
+              <div>
+                <p class="font-bold text-gray-900">Preparing your order</p>
+                <p class="text-xs text-gray-500">We will assign a delivery partner soon.</p>
+              </div>
+            </div>
+            {etaOverride && (
+              <div class="mt-2 sm:mt-0 sm:ml-auto">
+                <span class="inline-block bg-primary/10 text-primary border border-primary/20 text-xs font-bold px-3 py-1 rounded-full">
+                  ⚡ {etaOverride}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <!-- Order Items Summary -->
+        <div>
+          <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Order Details</h2>
+          <div class="space-y-2">
+            {(order?.items || []).map((item: any) => (
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-gray-600"><span class="font-bold text-gray-900">{item.quantity}x</span> {item.name}</span>
+                <span class="font-bold text-gray-900">₹{item.price * item.quantity}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script is:inline define:vars={{ orderId: order?.order_id, riderId: rider?.id, orderLat: order?.latitude || store?.lat, orderLng: order?.longitude || store?.lng, storeLat: store?.lat, storeLng: store?.lng, riderLat: rider?.current_lat, riderLng: rider?.current_lng, status: order?.status }}>
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+      var R = 6371; // Radius of the earth in km
+      var dLat = (lat2 - lat1) * (Math.PI / 180);
+      var dLon = (lon2 - lon1) * (Math.PI / 180);
+      var a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c; // Distance in km
+    }
+
+    document.addEventListener('astro:page-load', () => {
+      // Map Initialization (Ensure we don't double init)
+      const mapContainer = document.getElementById('map');
+      if (!mapContainer || mapContainer._leaflet_id) return;
+      
+      const map = L.map('map', { 
+        zoomControl: false,
+        attributionControl: false 
+      }).setView([orderLat || 20, orderLng || 77], 14);
+      
+      // Clean, minimal CartoDB Voyager basemap
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19
+      }).addTo(map);
+
+      // Custom Leaflet Icons
+      const storeIcon = L.divIcon({ 
+        html: '<div style="font-size:24px;text-align:center;background:white;border-radius:50%;padding:4px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">🏪</div>', 
+        className: 'bg-transparent', 
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      });
+      const customerIcon = L.divIcon({ 
+        html: '<div style="font-size:24px;text-align:center;background:#ef4444;border-radius:50%;border:3px solid white;box-shadow:0 4px 6px rgba(0,0,0,0.1);">📍</div>', 
+        className: 'bg-transparent', 
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      });
+      const riderIcon = L.divIcon({ 
+        html: '<div class="rider-marker-inner">🛵</div>', 
+        className: 'bg-transparent rider-marker', 
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+
+      // Add Static Markers
+      if (storeLat && storeLng) L.marker([storeLat, storeLng], { icon: storeIcon }).addTo(map);
+      if (orderLat && orderLng) L.marker([orderLat, orderLng], { icon: customerIcon }).addTo(map);
+
+      // Add Dynamic Rider Marker
+      let rMarker = null;
+      if (riderId && riderLat && riderLng && (status === 'shipped' || status === 'out_for_delivery')) {
+        rMarker = L.marker([riderLat, riderLng], { icon: riderIcon }).addTo(map);
+      }
+
+      function fitMapBounds() {
+        const group = new L.featureGroup([]);
+        if (storeLat && storeLng) group.addLayer(L.marker([storeLat, storeLng]));
+        if (orderLat && orderLng) group.addLayer(L.marker([orderLat, orderLng]));
+        if (rMarker) group.addLayer(rMarker);
+        
+        if (group.getLayers().length > 0) {
+          map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 16 });
+        }
+      }
+      setTimeout(fitMapBounds, 500);
+
+      // Polling Logic
+      if (riderId && (status === 'shipped' || status === 'out_for_delivery')) {
+        const pollInterval = setInterval(async () => {
+          if (document.hidden) return; // Smart polling: save Vercel Edge requests
+          
+          try {
+            const res = await fetch(`/api/tracking/live?order_id=${orderId}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === 'delivered' || data.status === 'cancelled') {
+                 clearInterval(pollInterval); // Stop polling forever
+                 setTimeout(() => window.location.reload(), 3000);
+                 return;
+              }
+              if (data.rider && data.rider.lat && data.rider.lng) {
+                const newLat = data.rider.lat;
+                const newLng = data.rider.lng;
+
+                // Move Marker (CSS transitions handle smooth animation)
+                if (!rMarker) {
+                  rMarker = L.marker([newLat, newLng], { icon: riderIcon }).addTo(map);
+                  fitMapBounds();
+                } else {
+                  rMarker.setLatLng([newLat, newLng]);
+                  // Re-fit bounds smoothly if rider moves far
+                  // fitMapBounds(); 
+                }
+
+                // Update Distances
+                const dt = document.getElementById('distance-text');
+                const eta = document.getElementById('eta-text');
+                const dist = calculateDistance(orderLat, orderLng, newLat, newLng);
+                if (dist !== null && dt) {
+                  dt.innerText = `${dist.toFixed(1)} km`;
+                  if (eta) {
+                    // Rough ETA calculation (assuming 20km/h in city = 3 mins per km)
+                    const mins = Math.max(2, Math.ceil(dist * 3));
+                    eta.innerText = `${mins} - ${mins + 5} mins`;
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Live track error:', err);
+          }
+        }, 10000);
+
+        // Cleanup interval if navigated away
+        document.addEventListener('astro:before-preparation', () => clearInterval(pollInterval), { once: true });
+      }
+    });
+  </script>
+</Layout>

@@ -1,0 +1,125 @@
+---
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "finance_expenses")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin, supabase, isSupabase } from '../../../lib/database';
+
+import { storeContext } from '../../../lib/storeContext';
+
+if (Astro.request.method === "POST" && canManageSection(ctx, "finance_expenses")) {
+  await storeContext.run({ storeId: (Astro.locals as any).storeId }, async () => {
+    const formData = await Astro.request.formData();
+    const category = formData.get("category") as string;
+    const amount = formData.get("amount");
+    const expense_date = formData.get("expense_date") as string;
+    const description = formData.get("description") as string;
+
+    if (isSupabase) {
+      const client = supabaseAdmin || supabase;
+      if (client) {
+        await client.from("expenses").insert({
+          id: 'EXP-' + Date.now(),
+          store_id: (Astro.locals as any).storeId,
+          category,
+          amount: Number(amount),
+          expense_date,
+          description
+        });
+      }
+    }
+  });
+}
+
+let expenses: any[] = [];
+if (isSupabase) {
+  const client = supabaseAdmin || supabase;
+  if (client) {
+    const { data } = await client.from('expenses').select('*').eq('store_id', Astro.locals.storeId).order('expense_date', { ascending: false });
+    expenses = data || [];
+  }
+}
+
+const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+---
+
+<AdminLayout title="Expense Ledger | Vyapaarpe Admin" description="Track daily expenses.">
+  <!-- Page Header -->
+  <div class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Expense Ledger</h1>
+      <p class="text-sm text-secondary/60 mt-1">Track Ad Spend, Packaging, Shipping, and other operational costs.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Quick Add Form -->
+    <div class="lg:col-span-1">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h2 class="text-lg font-bold text-secondary mb-4">Add Expense</h2>
+        <form method="POST" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Category</label>
+            <select name="category" class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors">
+              <option value="ads">Ad Spend (Meta/Google)</option>
+              <option value="shipping">Shipping Recharge</option>
+              <option value="packaging">Packaging Material</option>
+              <option value="platform_fee">Platform / Software Fee</option>
+              <option value="other">Other / Misc</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Amount (₹)</label>
+            <input type="number" name="amount" placeholder="0.00" required class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Date</label>
+            <input type="date" name="expense_date" required value={new Date().toISOString().split('T')[0]} class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Description</label>
+            <input type="text" name="description" placeholder="e.g. Meta Ads" class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <button type="submit" class="w-full px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition">
+            Save Expense
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Ledger Table -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col">
+        <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Recent Expenses</h2>
+          <span class="text-sm font-bold text-red-600 bg-red-50 px-3 py-1 rounded-full">Total: ₹{totalExpenses.toLocaleString('en-IN')}</span>
+        </div>
+        <div class="overflow-x-auto w-full flex-1">
+          <table class="min-w-full text-sm text-left">
+            <thead class="text-xs text-secondary/60 uppercase bg-gray-50/80 border-b border-gray-100">
+              <tr>
+                <th class="px-5 py-3.5 font-semibold">Date</th>
+                <th class="px-5 py-3.5 font-semibold">Category</th>
+                <th class="px-5 py-3.5 font-semibold">Description</th>
+                <th class="px-5 py-3.5 font-semibold text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              {expenses.map(e => (
+                <tr class="hover:bg-gray-50/40 transition-colors">
+                  <td class="px-5 py-4 text-secondary/60">{new Date(e.expense_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                  <td class="px-5 py-4 text-secondary text-xs uppercase tracking-wide font-bold">{e.category.replace('_', ' ')}</td>
+                  <td class="px-5 py-4 font-medium text-secondary">{e.description}</td>
+                  <td class="px-5 py-4 font-bold text-red-600 text-right">-₹{e.amount.toLocaleString('en-IN')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

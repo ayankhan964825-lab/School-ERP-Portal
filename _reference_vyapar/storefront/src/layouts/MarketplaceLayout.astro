@@ -1,0 +1,49 @@
+---
+import '../styles/global.css';
+export interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  {description && <meta name="description" content={description} />}
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans antialiased flex flex-col min-h-screen">
+
+  <!-- Marketplace Header -->
+  <header class="bg-white border-b border-gray-100 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="font-black text-2xl tracking-tighter text-purple-700">VyaparPe</div>
+        <span class="bg-purple-100 text-purple-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded ml-2">Marketplace</span>
+      </div>
+      <nav class="hidden md:flex items-center gap-6 font-semibold text-sm text-gray-600">
+        <a href="#" class="hover:text-purple-600">Shop</a>
+        <a href="#" class="hover:text-purple-600">Creators</a>
+        <a href="#" class="hover:text-purple-600">Sell on VyaparPe</a>
+      </nav>
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-sm font-bold text-gray-700 hover:text-purple-600">Seller Login</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1">
+    <slot />
+  </main>
+
+  <footer class="bg-gray-900 text-gray-400 py-12 text-center text-sm">
+    <p>&copy; {new Date().getFullYear()} VyaparPe Inc. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>

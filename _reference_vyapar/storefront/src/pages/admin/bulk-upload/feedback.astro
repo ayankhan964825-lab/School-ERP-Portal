@@ -1,0 +1,348 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+---
+
+<AdminLayout title="Bulk Upload Feedback | Admin Panel" description="Bulk upload customer feedback using CSV or JSON.">
+  <div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center gap-4 mb-8">
+      <a href="/admin/feedback" class="p-2 rounded-lg border border-gray-200 text-secondary hover:bg-gray-50 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+      </a>
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary flex items-center gap-2">
+          Bulk Upload Feedback
+        </h1>
+        <p class="text-sm text-secondary/60 mt-1">Upload multiple customer feedback and inquiries at once via CSV or JSON.</p>
+      </div>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="bulk-upload-feedback"
+    title="Feedback Upload Assistant"
+      pageDataJson="{}"
+      guideTitleEn="Bulk Upload Guide"
+      guideTitleHi="Bulk Upload Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>CSV/Excel:</strong> Create a CSV with name, email, subject, message, and type.</li>
+        <li><strong>JSON BYO-AI:</strong> Use AI to generate a JSON array of feedback and paste it.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>CSV/Excel:</strong> Feedback ki detail CSV format me banakar yahan upload karein.</li>
+        <li><strong>JSON:</strong> AI se JSON code banwa kar direct paste karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '📁 CSV Upload', query: 'excel tab kholo' },
+        { label: '🤖 BYO-AI (JSON)', query: 'json tab kholo' }
+      ]}
+    />
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-200 mb-8 overflow-x-auto hide-scrollbar">
+      <button class="tab-btn active px-6 py-3 text-sm font-medium border-b-2 border-primary text-primary whitespace-nowrap transition-colors" data-target="tab-excel">
+        📁 CSV Upload
+      </button>
+      <button class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-secondary/60 hover:text-secondary whitespace-nowrap transition-colors" data-target="tab-json">
+        🤖 BYO-AI (JSON)
+      </button>
+    </div>
+
+    <div class="tab-content relative">
+      
+      <!-- TAB 1: EXCEL / CSV UPLOAD -->
+      <div id="tab-excel" class="tab-pane block">
+        <!-- How it works -->
+        <div class="bg-primary/5 border border-primary/20 rounded-2xl p-6 mb-8 flex flex-col sm:flex-row gap-4 sm:items-center justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-primary mb-2">How Feedback Upload works:</h3>
+            <ol class="text-sm text-secondary/70 space-y-1 list-decimal list-inside">
+              <li>Create a CSV with headers: <code>name, email, subject, message, type</code>.</li>
+              <li>Type can be <code>feedback</code> or <code>complaint</code>.</li>
+              <li>Upload the CSV below to add them to your feedback inbox.</li>
+            </ol>
+          </div>
+        </div>
+
+        <form id="bulk-upload-form" class="space-y-6">
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h2 class="text-base font-bold text-secondary mb-1">Upload Feedback Data (CSV)</h2>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+              <input type="file" required accept=".csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" id="data-file" />
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 group-hover:text-primary mx-auto mb-3 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <div class="text-sm font-medium text-secondary mb-1">Drag and drop your data file here</div>
+              <div class="text-xs text-secondary/50" id="data-file-name">Supports .csv</div>
+            </div>
+          </div>
+
+          <div id="processing-status" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div class="flex items-center gap-3 mb-4">
+              <svg class="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <h2 class="text-base font-bold text-secondary" id="process-title">Processing...</h2>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-1.5 mt-6 overflow-hidden">
+              <div class="bg-primary h-1.5 rounded-full w-0 transition-all duration-500" id="progress-bar"></div>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-4">
+            <button type="submit" class="btn-primary !px-8 !py-2.5 !rounded-lg flex items-center gap-2" id="start-btn">
+              <span class="text-lg">✨</span> Import Feedback
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- TAB 2: JSON BYO-AI -->
+      <div id="tab-json" class="tab-pane hidden">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+            <h2 class="font-bold text-secondary">Bring Your Own AI (BYO-AI)</h2>
+            <p class="text-xs text-secondary/60">Use ChatGPT, Claude, or any other AI to generate your feedback data, then paste the JSON here.</p>
+          </div>
+          
+          <div class="p-6">
+            <div class="mb-8">
+              <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+                <span class="flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-xs">1</span> 
+                Copy this prompt and send it to your AI
+              </h3>
+              <div class="relative bg-gray-900 rounded-xl p-5 group">
+                <button type="button" class="absolute top-3 right-3 p-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('ai-prompt').innerText); const icon = this.querySelector('svg'); const oldPath = icon.innerHTML; icon.innerHTML = '<path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M5 13l4 4L19 7\' />'; setTimeout(() => { icon.innerHTML = oldPath; }, 2000);" title="Copy to clipboard">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </button>
+                <pre id="ai-prompt" class="text-xs text-gray-300 whitespace-pre-wrap font-mono leading-relaxed">{`I have a list of customer feedback to import.
+Please generate a valid JSON array of objects representing the feedback.
+Follow this exact schema for each feedback object:
+
+{
+  "name": "Customer Name",
+  "email": "customer@example.com",
+  "subject": "Short summary",
+  "message": "The full feedback or complaint message",
+  "type": "feedback" // or "complaint"
+}
+
+Do not wrap the JSON in markdown blocks, just output the raw JSON array starting with [ and ending with ].`}</pre>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+                <span class="flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-xs">2</span> 
+                Paste the generated JSON here
+              </h3>
+              <textarea id="json-paste-area" rows="10" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary focus:border-primary text-sm font-mono placeholder:text-gray-400 bg-gray-50/50 focus:bg-white transition-colors" placeholder='[\n  {\n    "name": "Jane Doe",\n    "email": "jane@example.com",\n    "subject": "Love the packaging",\n    "message": "Really impressed with how the products arrived.",\n    "type": "feedback"\n  }\n]'></textarea>
+            </div>
+            
+            <div class="flex justify-end mt-6 pt-6 border-t border-gray-100">
+              <button type="button" class="btn-primary !px-8 !py-2.5 !rounded-lg flex items-center gap-2" id="json-import-btn">
+                Import JSON Feedback
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+<script is:inline data-astro-rerun>
+  // Tab Switching Logic
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Reset all tabs
+      tabBtns.forEach(b => {
+        b.classList.remove('border-primary', 'text-primary', 'active');
+        b.classList.add('border-transparent', 'text-secondary/60');
+      });
+      tabPanes.forEach(p => p.classList.add('hidden'));
+      tabPanes.forEach(p => p.classList.remove('block'));
+
+      // Activate clicked tab
+      btn.classList.remove('border-transparent', 'text-secondary/60');
+      btn.classList.add('border-primary', 'text-primary', 'active');
+      const target = btn.getAttribute('data-target');
+      document.getElementById(target)?.classList.remove('hidden');
+      document.getElementById(target)?.classList.add('block');
+    });
+  });
+
+  // ==========================================
+  // EXCEL / CSV UPLOAD
+  // ==========================================
+  const bulkForm = document.getElementById('bulk-upload-form');
+  const startBtn = document.getElementById('start-btn');
+  const statusBox = document.getElementById('processing-status');
+  const processTitle = document.getElementById('process-title');
+  const progressBar = document.getElementById('progress-bar');
+  
+  const dataFile = document.getElementById('data-file');
+  const dataFileName = document.getElementById('data-file-name');
+  
+  dataFile?.addEventListener('change', (e) => {
+    if (dataFile.files && dataFile.files[0]) {
+      dataFileName.textContent = dataFile.files[0].name;
+      dataFileName.parentElement.classList.add('border-primary', 'bg-primary/5');
+    }
+  });
+
+  bulkForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    startBtn.disabled = true;
+    statusBox?.classList.remove('hidden');
+    
+    const file = dataFile.files?.[0];
+    if (!file) {
+      alert('Please select a CSV file first.');
+      startBtn.disabled = false;
+      statusBox?.classList.add('hidden');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      // Simple CSV parser
+      const rows = text.split('\n').filter(r => r.trim());
+      const headers = rows[0].split(',').map(h => h.replace(/["\r]/g, '').trim().toLowerCase());
+      
+      const items = [];
+      
+      for (let i = 1; i < rows.length; i++) {
+        const rowString = rows[i];
+        const cells = [];
+        let currentCell = '';
+        let inQuotes = false;
+        
+        for (let j = 0; j < rowString.length; j++) {
+          const char = rowString[j];
+          if (char === '"' && rowString[j+1] === '"') { currentCell += '"'; j++; }
+          else if (char === '"') { inQuotes = !inQuotes; }
+          else if (char === ',' && !inQuotes) { cells.push(currentCell.trim()); currentCell = ''; }
+          else { currentCell += char; }
+        }
+        cells.push(currentCell.replace(/\r/g, '').trim());
+
+        const row: any = {};
+        headers.forEach((h, idx) => row[h] = cells[idx] || '');
+        
+        if (!row.subject && !row.message) continue; 
+
+        items.push({
+          name: row.name || 'Guest',
+          email: row.email || '',
+          subject: row.subject || '',
+          message: row.message || '',
+          type: row.type?.toLowerCase() === 'complaint' ? 'complaint' : 'feedback'
+        });
+      }
+
+      progressBar.style.width = '50%';
+      processTitle.textContent = 'Saving feedback to database...';
+
+      const res = await fetch('/api/admin/bulk_upload_feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(items)
+      });
+      const data = await res.json();
+      
+      progressBar.style.width = '100%'; 
+      
+      if (data.success) {
+        processTitle.textContent = '✅ Success! Imported ' + data.count + ' items.'; 
+        setTimeout(() => {
+          alert('Upload flow completed successfully. ' + data.count + ' items saved to database.');
+          window.location.href = '/admin/feedback?refresh=true';
+        }, 1000);
+      } else {
+        processTitle.textContent = '❌ Upload Failed';
+        alert('Failed to import feedback: ' + data.error);
+        startBtn.disabled = false;
+        statusBox?.classList.add('hidden');
+        progressBar.style.width = '0%';
+      }
+
+    } catch (err: any) {
+      console.error(err);
+      alert('Error parsing or uploading CSV: ' + err.message);
+      startBtn.disabled = false;
+      statusBox?.classList.add('hidden');
+    }
+  });
+
+  // ==========================================
+  // JSON BYO-AI IMPORT
+  // ==========================================
+  const jsonImportBtn = document.getElementById('json-import-btn');
+  const jsonPasteArea = document.getElementById('json-paste-area');
+
+  jsonImportBtn?.addEventListener('click', async () => {
+    const val = jsonPasteArea.value.trim();
+    if (!val) {
+      alert('Please paste some JSON first!');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(val);
+      if (!Array.isArray(parsed)) {
+        alert('Error: JSON must be an array of feedback objects starting with [ and ending with ].');
+        return;
+      }
+      
+      jsonImportBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...`;
+      
+      try {
+        const res = await fetch('/api/admin/bulk_upload_feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed)
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          alert(`Success! Imported ${data.count} items via API.`);
+          window.location.href = '/admin/feedback';
+        } else {
+          alert('Failed to import feedback: ' + data.error);
+        }
+      } catch (err) {
+        console.error('API Error:', err);
+        alert('Failed to connect to the bulk upload API.');
+      } finally {
+        jsonImportBtn.innerHTML = 'Import JSON Feedback';
+      }
+
+    } catch (e: any) {
+      alert('Invalid JSON format. Please ensure it is a valid JSON array. Error: ' + e.message);
+    }
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e: any) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    } else if (action === 'switch_tab' && params.tabId) {
+       const tabBtn = document.querySelector(`.tab-btn[data-target="${params.tabId}"]`);
+       if (tabBtn) tabBtn.click();
+    }
+  });
+</script>
+
+</AdminLayout>

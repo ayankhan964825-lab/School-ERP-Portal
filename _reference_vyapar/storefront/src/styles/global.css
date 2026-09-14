@@ -1,0 +1,483 @@
+@import "tailwindcss";
+
+/* ── Design Tokens ────────────────────────────────────── */
+@theme {
+  /* Brand Colors (Default / NutriDry Premium Theme) */
+  --color-primary: var(--theme-primary, #1B4332);
+  --color-primary-light: var(--theme-primary-light, #2D6A4F);
+  --color-secondary: var(--theme-secondary, #40916C);
+
+  /* Accent Colors (dynamic per theme) */
+  --color-accent: var(--theme-accent, #D4A373);
+  --color-accent-warm: var(--theme-accent-warm, #E76F51);
+
+  /* Legacy aliases (mapped to new tokens for backward compatibility) */
+  --color-accent-orange: var(--theme-accent-warm, #E76F51);
+  --color-accent-olive: var(--theme-accent-olive, #6C8B4F);
+  --color-accent-brown: var(--theme-accent-brown, #8B5E3C);
+
+  /* Text Colors */
+  --color-text: var(--theme-text, #1A1A2E);
+  --color-text-muted: var(--theme-text-muted, #6B7280);
+
+  /* Surfaces & Backgrounds */
+  --color-background: var(--theme-background, #FDFBF7);
+  --color-background-alt: var(--theme-background-alt, #F0EDE5);
+  --color-surface: var(--theme-surface, #FFFFFF);
+
+  /* Borders */
+  --color-border: var(--theme-border, #E5E1D8);
+
+  /* Shadow tint (used in color-mix for dynamic shadows) */
+  --color-overlay: var(--theme-overlay, #1B4332);
+
+  /* Typography */
+  --font-family-sans: 'Inter', sans-serif;
+  --font-family-serif: 'Playfair Display', serif;
+}
+
+/* ── Additional Themes ────────────────────────────────── */
+
+/* (Theme variables are dynamically injected by Layout.astro) */
+
+/* ── Base Styles ──────────────────────────────────────── */
+html { scroll-behavior: smooth; overflow-x: hidden; }
+
+body {
+  background-color: var(--color-background);
+  font-family: var(--font-family-sans);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 { font-family: var(--font-family-serif); }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-background); }
+::-webkit-scrollbar-thumb { background: var(--color-primary-light); border-radius: 9999px; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Buttons ──────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background-color: var(--color-primary);
+  color: var(--color-surface);
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 9999px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.btn-primary:hover {
+  background-color: var(--color-primary-light);
+  box-shadow: 0 8px 24px -4px color-mix(in srgb, var(--color-overlay) 40%, transparent), 0 2px 8px -2px color-mix(in srgb, var(--color-overlay) 20%, transparent);
+  transform: translateY(-2px);
+}
+.btn-primary:hover::after { opacity: 1; }
+.btn-primary:active { transform: translateY(0); box-shadow: none; transition-duration: 0.1s; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background-color: transparent;
+  border: 2px solid var(--color-primary);
+  color: var(--color-primary);
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 9999px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn-secondary:hover {
+  background-color: var(--color-primary);
+  color: var(--color-surface);
+  box-shadow: 0 8px 24px -4px color-mix(in srgb, var(--color-overlay) 40%, transparent);
+  transform: translateY(-2px);
+}
+.btn-secondary:active { transform: translateY(0); transition-duration: 0.1s; }
+
+.btn-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background-color: var(--color-accent);
+  color: var(--color-surface);
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 9999px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+}
+.btn-accent:hover {
+  background-color: var(--color-accent-brown);
+  box-shadow: 0 8px 24px -4px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  transform: translateY(-2px);
+}
+.btn-accent:active { transform: translateY(0); transition-duration: 0.1s; }
+
+/* ── Product Card ─────────────────────────────────────── */
+.product-card {
+  background: var(--color-surface);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  transition:
+    box-shadow 0.3s cubic-bezier(0.4,0,0.2,1),
+    transform 0.3s cubic-bezier(0.4,0,0.2,1),
+    border-color 0.25s ease;
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+.product-card:hover {
+  box-shadow: 0 20px 48px -8px color-mix(in srgb, var(--color-overlay) 20%, transparent), 0 6px 20px -4px rgba(0,0,0,0.08);
+  transform: translateY(-6px);
+  border-color: color-mix(in srgb, var(--color-primary-light) 30%, transparent);
+}
+.product-card:active { transform: translateY(-2px); transition-duration: 0.1s; }
+
+/* Image with skeleton */
+.product-card-img-wrap {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-background-alt);
+  aspect-ratio: 1;
+}
+
+.product-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+  opacity: 0;
+  position: relative;
+  z-index: 1;
+}
+.product-card-img.img-loaded { opacity: 1; }
+.product-card:hover .product-card-img { transform: scale(1.07); }
+
+/* Skeleton shimmer layer — uses theme tokens */
+.img-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(90deg,
+    var(--color-border) 25%,
+    var(--color-background-alt) 50%,
+    var(--color-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  transition: opacity 0.3s ease;
+}
+.img-skeleton.sk-done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Skeleton Card (for grid placeholders) ────────────── */
+.skeleton-card {
+  background: var(--color-surface);
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+}
+.skeleton-block {
+  background: linear-gradient(90deg,
+    var(--color-border) 25%,
+    var(--color-background-alt) 50%,
+    var(--color-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+.skeleton-block.delay-1 { animation-delay: 0.1s; }
+.skeleton-block.delay-2 { animation-delay: 0.2s; }
+
+/* ── Keyframes ────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position:  200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Animation Classes ────────────────────────────────── */
+.animate-fade-in-up    { animation: fadeInUp 0.5s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-fade-in       { animation: fadeIn 0.4s ease forwards; }
+.animate-slide-in-left { animation: slideInLeft 0.5s cubic-bezier(0.4,0,0.2,1) forwards; }
+.animate-scale-in      { animation: scaleIn 0.4s cubic-bezier(0.4,0,0.2,1) forwards; }
+
+/* Smooth page entrance */
+main { animation: pageFadeIn 0.35s cubic-bezier(0.4,0,0.2,1) both; }
+
+/* Scroll-reveal: add .visible via IntersectionObserver */
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.55s cubic-bezier(0.4,0,0.2,1),
+    transform 0.55s cubic-bezier(0.4,0,0.2,1);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Hover lift utility */
+.hover-lift {
+  transition: transform 0.22s cubic-bezier(0.4,0,0.2,1), box-shadow 0.22s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px -4px rgba(0,0,0,0.12);
+}
+
+/* ── Focus Ring ───────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.bg-theme-section {
+  background-color: var(--theme-section-bg);
+  color: var(--theme-section-text);
+}
+.bg-theme-section .text-theme-section-muted {
+  color: color-mix(in srgb, var(--theme-section-text) 70%, transparent);
+}
+.bg-theme-section .text-theme-section-muted-hover:hover {
+  color: var(--theme-section-text);
+}
+
+
+.border-theme-section-muted {
+  border-color: color-mix(in srgb, var(--theme-section-text) 20%, transparent);
+}
+.bg-theme-section-muted {
+  background-color: color-mix(in srgb, var(--theme-section-text) 10%, transparent);
+}
+
+
+.bg-theme-section-btn {
+  background-color: var(--theme-section-btn-bg);
+  color: var(--theme-section-btn-text);
+}
+.bg-theme-section-btn:hover {
+  background-color: color-mix(in srgb, var(--theme-section-btn-bg) 90%, transparent);
+}
+
+/* ── Global Design System Overrides (Professional Shape & Typography Tokens) ── */
+
+/* Design: Classic (Default) - No overrides needed, uses base Tailwind rounded corners and standard fonts */
+
+/* Design: Clean Beauty (Soft, Feminine, Approachable) */
+.design-beauty, .design-modern {
+  --font-family-sans: 'Outfit', 'Nunito', sans-serif;
+  --font-family-serif: 'Outfit', sans-serif;
+}
+.design-beauty .btn-primary, .design-beauty .btn-secondary, .design-beauty .btn-accent,
+.design-modern .btn-primary, .design-modern .btn-secondary, .design-modern .btn-accent {
+  border-radius: 9999px; /* Pill shaped buttons */
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06); /* Soft, diffused shadow */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all 0.3s ease;
+}
+.design-beauty .btn-primary:hover, .design-beauty .btn-secondary:hover,
+.design-modern .btn-primary:hover, .design-modern .btn-secondary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+}
+.design-beauty .product-card, .design-modern .product-card {
+  border-radius: 24px; /* Soft heavily rounded product cards */
+  box-shadow: 0 10px 40px rgba(0,0,0,0.03); /* Floating effect */
+  border: 1px solid rgba(0,0,0,0.02);
+  transition: all 0.4s ease;
+}
+.design-beauty .product-card:hover, .design-modern .product-card:hover {
+  box-shadow: 0 16px 50px rgba(0,0,0,0.06);
+  transform: translateY(-4px) scale(1.02);
+}
+.design-beauty #hero .hero-slide, .design-modern #hero .hero-slide {
+  border-radius: 0 0 40px 40px; /* Soften the hero bottom edge */
+}
+
+/* Design: High Energy (Neo-Brutalist, Tech, Streetwear) */
+.design-energy, .design-vibrant {
+  --font-family-sans: 'Fredoka', 'Oswald', sans-serif;
+  --font-family-serif: 'Fredoka', sans-serif;
+}
+.design-energy h1, .design-energy h2, .design-energy h3, .design-energy h4 {
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.design-energy .btn-primary, .design-energy .btn-secondary, .design-energy .btn-accent {
+  border-radius: 0; /* Razor sharp edges */
+  border: 2px solid var(--color-text); /* Hard border matching text color */
+  box-shadow: 4px 4px 0px var(--color-primary); /* Solid block shadow using primary color */
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: all 0.1s ease;
+}
+.design-energy .btn-primary:active, .design-energy .btn-secondary:active {
+  transform: translate(4px, 4px); /* Physically depress the button */
+  box-shadow: 0px 0px 0px var(--color-primary);
+}
+.design-energy .product-card {
+  border-radius: 0; /* Razor sharp edges */
+  border: 2px solid var(--color-text);
+  box-shadow: 8px 8px 0px var(--color-primary); /* Bold offset shadow */
+  transition: all 0.2s ease;
+}
+.design-energy .product-card:hover {
+  transform: translate(-4px, -4px); /* Pop out effect */
+  box-shadow: 12px 12px 0px var(--color-primary);
+}
+.design-energy main > section {
+  border-bottom: 2px solid var(--color-text); /* Strong section dividers */
+}
+
+/* Design: Earthy Organic (Editorial Luxury, Minimalist, Flat) */
+.design-earthy, .design-editorial {
+  --font-family-sans: 'Inter', sans-serif;
+  --font-family-serif: 'Playfair Display', serif; /* Elegant serif headers */
+}
+.design-earthy h1, .design-earthy h2, .design-earthy h3 {
+  font-weight: 400; /* Lighter, elegant weight */
+  letter-spacing: 0.05em;
+}
+.design-earthy .btn-primary, .design-earthy .btn-secondary, .design-earthy .btn-accent {
+  border-radius: 0; /* Sharp, traditional edges */
+  font-weight: 500;
+  box-shadow: none; /* Zero shadows for luxury flat look */
+  border: 1px solid var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.15em; /* Increased spacing for luxury feel */
+  padding-left: 2.5rem;
+  padding-right: 2.5rem;
+  transition: all 0.5s ease;
+}
+.design-earthy .btn-primary:hover, .design-earthy .btn-secondary:hover {
+  background-color: transparent !important;
+  color: var(--color-primary) !important;
+}
+.design-earthy main > section {
+  padding-top: 6rem; /* More whitespace */
+  padding-bottom: 6rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08); /* Ultra-thin hairline border */
+}
+.design-earthy .product-card {
+  border-radius: 0;
+  border: none; /* No card border, let the image breathe */
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05); /* Just a subtle baseline separator */
+  box-shadow: none; /* Absolutely no shadows */
+  background: transparent;
+  padding: 1rem; /* Whitespace inside the card */
+  transition: all 0.6s ease;
+}
+.design-earthy .product-card img {
+  border-radius: 0;
+  transition: transform 0.8s ease; /* Slow elegant image scale */
+}
+.design-earthy .product-card:hover img {
+  transform: scale(1.05);
+}
+
+/* ── Structural Layout Sequencing Overrides ────────────────── */
+
+/* Beauty / Modern Design Sequence */
+.design-beauty main, .design-modern main { display: flex; flex-direction: column; }
+.design-beauty main > #hero, .design-modern main > #hero { order: 1; }
+.design-beauty main > #categories, .design-modern main > #categories { order: 2; }
+.design-beauty main > #trending-slider, .design-modern main > #trending-slider { order: 3; }
+.design-beauty main > #featured-products, .design-modern main > #featured-products { order: 4; }
+.design-beauty main > section[id^="flash-sale-"], .design-modern main > section[id^="flash-sale-"] { order: 5; }
+.design-beauty main > .featured-videos-section, .design-modern main > .featured-videos-section { order: 6; }
+.design-beauty main > #testimonials, .design-modern main > #testimonials { order: 7; }
+.design-beauty main > section[id^="why-"], .design-modern main > section[id^="why-"] { order: 8; }
+.design-beauty main > #usps, .design-modern main > #usps { order: 9; opacity: 0.8; }
+.design-beauty main > #newsletter, .design-modern main > #newsletter { order: 99 !important; }
+
+/* Energy / Vibrant Design Sequence */
+.design-energy main, .design-vibrant main { display: flex; flex-direction: column; }
+.design-energy main > #hero, .design-vibrant main > #hero { order: 1; }
+.design-energy main > #categories, .design-vibrant main > #categories { order: 2; }
+.design-energy main > #trending-slider, .design-vibrant main > #trending-slider { order: 3; }
+.design-energy main > #featured-products, .design-vibrant main > #featured-products { order: 4; }
+.design-energy main > section[id^="flash-sale-"], .design-vibrant main > section[id^="flash-sale-"] { order: 5; }
+.design-energy main > .featured-videos-section, .design-vibrant main > .featured-videos-section { order: 6; }
+.design-energy main > #testimonials, .design-vibrant main > #testimonials { order: 7; }
+.design-energy main > section[id^="why-"], .design-vibrant main > section[id^="why-"] { order: 8; }
+.design-energy main > #usps, .design-vibrant main > #usps { order: 9; }
+.design-energy main > #newsletter, .design-vibrant main > #newsletter { order: 99 !important; }
+
+/* Earthy / Editorial Design Sequence */
+.design-earthy main, .design-editorial main { display: flex; flex-direction: column; }
+.design-earthy main > #hero, .design-editorial main > #hero { order: 1; }
+.design-earthy main > #categories, .design-editorial main > #categories { order: 2; }
+.design-earthy main > #featured-products, .design-editorial main > #featured-products { order: 3; }
+.design-earthy main > #trending-slider, .design-editorial main > #trending-slider { order: 4; }
+.design-earthy main > section[id^="flash-sale-"], .design-editorial main > section[id^="flash-sale-"] { order: 5; }
+.design-earthy main > .featured-videos-section, .design-editorial main > .featured-videos-section { order: 6; }
+.design-earthy main > #testimonials, .design-editorial main > #testimonials { order: 7; }
+.design-earthy main > section[id^="why-"] { order: 8; }
+.design-earthy main > #usps { order: 9; }
+.design-earthy main > #newsletter { order: 99 !important; }

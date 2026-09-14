@@ -1,0 +1,62 @@
+---
+import QCommerceLayout from '../layouts/QCommerceLayout.astro';
+import { getSettings, getCategoryTree } from '../lib/database';
+
+Astro.response.headers.set('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
+
+const forceStoreId = Astro.locals.storeId;
+const currentCatSlug = Astro.url.searchParams.get('category');
+
+if (!currentCatSlug || currentCatSlug === 'all') {
+  return Astro.redirect('/');
+}
+
+const [dbCategoryTree, settings] = await Promise.all([
+  getCategoryTree(forceStoreId),
+  getSettings(forceStoreId),
+]);
+
+const storeName = settings?.brand_name || settings?.store_name || 'Store';
+
+// Find the mega category
+const megaCategory = dbCategoryTree.find((c: any) => c.slug === currentCatSlug);
+if (!megaCategory) {
+  return Astro.redirect('/');
+}
+
+const subCategories = megaCategory.children || [];
+---
+
+<QCommerceLayout title={`${megaCategory.name} - ${storeName}`} settings={settings}>
+  <div class="bg-white min-h-screen pb-24">
+    <!-- Header -->
+    <div class="sticky top-0 z-20 bg-white border-b border-slate-100 px-3 py-3 flex items-center gap-3 shadow-sm">
+      <button onclick="history.back()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100">
+        <svg class="w-5 h-5 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <h1 class="text-[16px] font-bold text-slate-800 leading-tight">{megaCategory.name}</h1>
+    </div>
+
+    <!-- Subcategories Grid -->
+    <div class="p-4">
+      {subCategories.length > 0 ? (
+        <div class="grid grid-cols-3 gap-4">
+          {subCategories.map((sub: any) => (
+            <a href={`/qcommerce-category?category=${sub.slug}`} class="flex flex-col items-center gap-2 group">
+              <div class="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm overflow-hidden group-hover:border-rose-200 transition-colors">
+                <img src={sub.image || '/placeholder.webp'} alt={sub.name} class="w-14 h-14 object-contain mix-blend-multiply" loading="lazy" />
+              </div>
+              <span class="text-[12px] font-semibold text-slate-700 text-center leading-tight">{sub.name}</span>
+            </a>
+          ))}
+        </div>
+      ) : (
+        <div class="py-12 flex flex-col items-center justify-center text-slate-400">
+          <svg class="w-12 h-12 mb-3 opacity-20" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"/></svg>
+          <p class="text-sm font-medium">No subcategories found</p>
+          <a href="/" class="mt-4 text-rose-600 font-bold text-sm bg-rose-50 px-4 py-2 rounded-xl">Back to Home</a>
+        </div>
+      )}
+    </div>
+  </div>
+</QCommerceLayout>

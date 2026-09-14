@@ -1,0 +1,362 @@
+---
+import { verifyCustomerAuth, getEffectiveAuthMode } from '../../lib/auth';
+
+if (!!verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value)) {
+  return Astro.redirect('/account');
+}
+import Layout from '../../layouts/Layout.astro';
+import QCommerceLayout from '../../layouts/QCommerceLayout.astro';
+import { getSettings } from '../../lib/database';
+
+const { authMode, hasTwilio, hasResend, otpLength, testMode } = await getEffectiveAuthMode(Astro.locals?.storeId);
+const settings = await getSettings(Astro.locals?.storeId as string);
+
+let qcThemeActive = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string'
+      ? JSON.parse(settings.website_configuration)
+      : settings.website_configuration;
+    if (parsed.theme === 'qcommerce') qcThemeActive = true;
+  }
+} catch (e) {}
+
+const ActiveLayout = qcThemeActive ? QCommerceLayout : Layout;
+---
+
+<ActiveLayout bodyClass="bg-surface md:overflow-hidden" title="Login" description="Login to your account." hideFooter={true} hideBottomNav={true}>
+  <div class="bg-surface min-h-screen flex flex-col justify-center sm:px-6 lg:px-8 pt-6 pb-12">
+    <div class="sm:mx-auto sm:w-full sm:max-w-md">
+      <h2 class="text-center text-3xl font-serif font-bold text-secondary">
+        Welcome Back
+      </h2>
+      <p class="mt-2 text-center text-sm text-secondary/60" id="login-subtitle">
+        {authMode === 'email_only' ? 'Enter your email to continue' : 'Enter your phone number to continue'}
+      </p>
+    </div>
+
+    <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+      <div class="bg-white py-8 px-4 shadow-sm sm:rounded-2xl sm:px-10 border border-gray-100">
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- PHONE ONLY + BOTH (phone step) — Phone Input Step  -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        {authMode !== 'email_only' && (
+          <div id="phone-step">
+            <div class="mb-6">
+              <label for="phone" class="block text-sm font-medium text-secondary">Phone Number</label>
+              <div class="mt-1 flex">
+                <span class="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-secondary text-sm">+91</span>
+                <input
+                  id="phone"
+                  type="tel"
+                  maxlength="10"
+                  placeholder="Enter 10-digit number"
+                  class="flex-1 px-3 py-2 border border-gray-300 rounded-r-lg focus:ring-primary focus:border-primary text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Both mode: show email login option if they have verified email */}
+            {authMode === 'both' && (
+              <p class="text-xs text-secondary/50 text-center mb-4">
+                Have a verified email?{' '}
+                <button id="switch-to-email-btn" class="text-primary underline font-medium">Login with email instead</button>
+              </p>
+            )}
+
+            <button id="send-otp-btn" class="w-full btn-primary justify-center">
+              Send OTP
+            </button>
+          </div>
+        )}
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- EMAIL ONLY + BOTH (email login) — Email Input Step -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="email-step" class={authMode === 'email_only' ? '' : 'hidden'}>
+          <div class="mb-6">
+            <label for="email" class="block text-sm font-medium text-secondary">Email Address</label>
+            <input
+              id="email"
+              type="email"
+              placeholder="your@email.com"
+              class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm"
+            />
+          </div>
+
+          {authMode === 'both' && (
+            <p class="text-xs text-secondary/50 text-center mb-4">
+              <button id="switch-to-phone-btn" class="text-primary underline font-medium">← Back to phone login</button>
+            </p>
+          )}
+
+          <button id="send-email-otp-btn" class="w-full btn-primary justify-center">
+            Send OTP
+          </button>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- OTP Input Step (shared — hidden initially)         -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="otp-step" class="hidden">
+          <p class="text-sm text-secondary/70 mb-4">
+            We've sent a {otpLength}-digit OTP to <span id="otp-target-display" class="font-bold text-secondary"></span>
+          </p>
+          <div class="mb-6">
+            <label for="otp" class="block text-sm font-medium text-secondary">Enter OTP</label>
+            <input
+              id="otp"
+              type="text"
+              autocomplete="one-time-code"
+              maxlength={otpLength}
+              placeholder={`Enter ${otpLength}-digit OTP`}
+              class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm tracking-[0.5em] text-center text-lg font-bold"
+            />
+            {testMode && (
+              <p class="text-xs text-secondary/50 mt-2">Test mode: Enter any {otpLength}-digit code</p>
+            )}
+          </div>
+          <button id="verify-otp-btn" class="w-full btn-primary justify-center">
+            Verify &amp; Login
+          </button>
+          <button id="back-btn" class="w-full text-center text-sm text-primary mt-4 hover:underline">
+            ← Change details
+          </button>
+        <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</ActiveLayout>
+
+<script define:vars={{ authMode, otpLength }}>
+  // ── State ──────────────────────────────────────────────────────────────
+  let currentVia = 'phone'; // 'phone' | 'email'
+
+  // ── Elements ───────────────────────────────────────────────────────────
+  const phoneStep      = document.getElementById('phone-step');
+  const emailStep      = document.getElementById('email-step');
+  const otpStep        = document.getElementById('otp-step');
+  const phoneInput     = document.getElementById('phone');
+  const emailInput     = document.getElementById('email');
+  const otpInput       = document.getElementById('otp');
+  const otpDisplay     = document.getElementById('otp-target-display');
+  const subtitle       = document.getElementById('login-subtitle');
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  let webOtpAbortController = null;
+
+  function showStep(step) {
+    [phoneStep, emailStep, otpStep].forEach(el => el && el.classList.add('hidden'));
+    step && step.classList.remove('hidden');
+    
+    // Start WebOTP API listener when OTP step is shown for phone
+    if (step === otpStep && currentVia === 'phone' && 'OTPCredential' in window) {
+      if (webOtpAbortController) webOtpAbortController.abort();
+      webOtpAbortController = new AbortController();
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: webOtpAbortController.signal
+      }).then((otp) => {
+        if (otp && otp.code && otpInput) {
+          otpInput.value = otp.code;
+          document.getElementById('verify-otp-btn')?.click(); // Auto submit
+        }
+      }).catch(err => {
+        console.log("WebOTP API error", err);
+      });
+    } else {
+      if (webOtpAbortController) {
+        webOtpAbortController.abort();
+        webOtpAbortController = null;
+      }
+    }
+  }
+
+  function setBtn(btn, text, disabled = false) {
+    if (!btn) return;
+    btn.textContent = text;
+    btn.disabled = disabled;
+  }
+
+  // ── Switch phone ↔ email (Both mode only) ──────────────────────────────
+  document.getElementById('switch-to-email-btn')?.addEventListener('click', () => {
+    currentVia = 'email';
+    subtitle && (subtitle.textContent = 'Enter your email to continue');
+    showStep(emailStep);
+  });
+  document.getElementById('switch-to-phone-btn')?.addEventListener('click', () => {
+    currentVia = 'phone';
+    subtitle && (subtitle.textContent = 'Enter your phone number to continue');
+    showStep(phoneStep);
+  });
+
+  // ── SEND PHONE OTP ─────────────────────────────────────────────────────
+  document.getElementById('send-otp-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const phone = phoneInput?.value.trim();
+    if (!phone || phone.length !== 10 || !/^\d+$/.test(phone)) {
+      alert('Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    setBtn(btn, 'Sending...', true);
+    currentVia = 'phone';
+
+    try {
+      const payload = authMode === 'both' ? { phone } : { phone };
+      const res = await fetch('/api/account/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+
+        if (data.bypassOTP) {
+          // Test mode direct login
+          const loginRes = await fetch('/api/account/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, otp: '123456', via: 'phone' })
+          });
+          if (loginRes.ok) { window.location.href = '/account'; return; }
+          alert('Test login failed.');
+          setBtn(btn, 'Send OTP', false);
+          return;
+        }
+
+        if (data.mock) alert(`MOCK MODE: Any ${otpLength}-digit OTP will work!`);
+        otpDisplay && (otpDisplay.textContent = '+91 ' + phone);
+        showStep(otpStep);
+        otpInput?.focus();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to send OTP');
+      }
+    } catch {
+      alert('Network error. Please try again.');
+    } finally {
+      setBtn(btn, 'Send OTP', false);
+    }
+  });
+
+  // ── SEND EMAIL OTP ─────────────────────────────────────────────────────
+  document.getElementById('send-email-otp-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const email = emailInput?.value.trim();
+    if (!email || !email.includes('@') || !email.includes('.')) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
+    setBtn(btn, 'Sending...', true);
+    if (currentVia !== 'email_signup') {
+      currentVia = 'email';
+    }
+
+    try {
+      // For email_only mode send { email }, for both mode send { email } (no phone = email login path)
+      const res = await fetch('/api/account/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+
+        if (data.bypassOTP) {
+          const loginRes = await fetch('/api/account/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, otp: '123456', via: 'email' })
+          });
+          if (loginRes.ok) { window.location.href = '/account'; return; }
+          alert('Test login failed.');
+          setBtn(btn, 'Send OTP', false);
+          return;
+        }
+
+        if (data.mock) alert(`MOCK MODE: Any ${otpLength}-digit OTP will work!`);
+        otpDisplay && (otpDisplay.textContent = email);
+        showStep(otpStep);
+        otpInput?.focus();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to send OTP');
+      }
+    } catch {
+      alert('Network error. Please try again.');
+    } finally {
+      setBtn(btn, 'Send OTP', false);
+    }
+  });
+
+  // ── BACK BUTTON ────────────────────────────────────────────────────────
+  document.getElementById('back-btn')?.addEventListener('click', () => {
+    if (currentVia === 'email' || authMode === 'email_only') {
+      showStep(emailStep);
+    } else {
+      showStep(phoneStep);
+    }
+    otpInput && (otpInput.value = '');
+  });
+
+  // ── VERIFY OTP ─────────────────────────────────────────────────────────
+  document.getElementById('verify-otp-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const otp = otpInput?.value.trim();
+    if (!otp || otp.length !== otpLength || !/^\d+$/.test(otp)) {
+      alert(`Please enter a valid ${otpLength}-digit OTP`);
+      return;
+    }
+
+    setBtn(btn, 'Verifying...', true);
+
+    try {
+      let payload;
+      if (currentVia === 'email_signup') {
+        const email = emailInput?.value.trim();
+        payload = { email, otp, via: 'email_signup', source: 'login' };
+      } else if (currentVia === 'email' || authMode === 'email_only') {
+        const email = emailInput?.value.trim();
+        payload = { email, otp, via: 'email', source: 'login' };
+      } else {
+        const phone = phoneInput?.value.trim();
+        payload = { phone, otp, via: 'phone', source: 'login' };
+      }
+
+      const res = await fetch('/api/account/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        window.location.href = '/account';
+      } else if (res.ok && data.requireEmailSignup) {
+        // Special case: New user in Both mode -> transition to Email Signup step
+        currentVia = 'email_signup';
+        subtitle && (subtitle.textContent = 'Link your Email to complete sign up');
+        showStep(emailStep);
+        setBtn(btn, 'Verify OTP');
+        
+        // Hide the "Switch to Phone" toggle so they can't escape
+        const toggleRow = document.querySelector('.flex.bg-gray-100');
+        if (toggleRow) toggleRow.classList.add('hidden');
+      } else {
+        alert(data.error || 'Invalid OTP. Please try again.');
+      }
+    } catch {
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setBtn(btn, 'Verify & Login', false);
+    }
+  });
+</script>

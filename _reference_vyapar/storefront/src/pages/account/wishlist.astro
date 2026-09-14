@@ -1,0 +1,101 @@
+---
+import { verifyCustomerAuth, signCustomerAuth } from '../../lib/auth';
+import Layout from '../../layouts/Layout.astro';
+import { getSettings } from '../../lib/database';
+
+const settings = await getSettings(Astro.locals?.storeId);
+const isLoggedIn = !!verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value);
+---
+
+<Layout bodyClass="bg-surface" title="My Wishlist">
+  <div class="bg-primary pb-14 text-center pt-12 pb-12">
+    <div class="max-w-2xl mx-auto px-4">
+      <h1 class="font-serif text-4xl sm:text-5xl font-bold text-surface mb-4">My Wishlist</h1>
+      <p class="text-surface/75 text-lg">Your curated collection of premium favorites.</p>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-12 min-h-[50vh]">
+    <div id="wishlist-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+      <!-- Injected by client JS -->
+    </div>
+
+    <div id="empty-wishlist" class="hidden text-center py-20">
+      <div class="text-6xl mb-4 flex justify-center">
+        <svg class="text-gray-300 w-24 h-24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      </div>
+      <h2 class="text-2xl font-serif font-bold text-secondary mb-2">Your wishlist is empty</h2>
+      <p class="text-secondary/60 mb-6">Browse our collection and tap the heart icon to save items you love.</p>
+      <a href="/products" class="btn-primary inline-flex">Explore Products</a>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  function renderWishlist() {
+    const grid = document.getElementById('wishlist-grid');
+    const emptyState = document.getElementById('empty-wishlist');
+    if (!grid || !emptyState) return;
+
+    let wishlist = [];
+    try {
+      wishlist = JSON.parse(localStorage.getItem(`vyaparpe-wishlist-${window.location.hostname}`) || '[]');
+    } catch (e) {}
+
+    if (wishlist.length === 0) {
+      grid.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      return;
+    }
+
+    emptyState.classList.add('hidden');
+    grid.innerHTML = wishlist.map(item => {
+      const discount = Math.round(((item.mrp - item.price) / item.mrp) * 100);
+      return `
+        <article class="group relative flex flex-col h-full bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-primary/30 transition-colors duration-300" data-id="${item.id}">
+          <a href="/products/${item.slug}" class="absolute inset-0 z-10" aria-label="View details"></a>
+          
+          <div class="aspect-square bg-background-alt rounded-t-2xl overflow-hidden relative">
+            <img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='/placeholder-product.webp'" />
+            ${discount > 0 ? `<span class="absolute top-3 left-3 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full z-10">${discount}% OFF</span>` : ''}
+            
+            <button class="remove-wishlist-btn absolute top-3 right-3 z-20 p-1.5 rounded-full bg-white/80 backdrop-blur-sm text-red-500 hover:bg-white transition-all shadow-sm" data-id="${item.id}" aria-label="Remove from wishlist">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="p-4 flex flex-col flex-1 relative z-20 pointer-events-none">
+            <h3 class="font-serif text-sm font-semibold text-secondary leading-snug line-clamp-2">${item.name}</h3>
+            
+            <div class="flex items-baseline gap-2 mt-auto pt-3">
+              <span class="font-bold text-lg text-primary">₹${item.price}</span>
+              <span class="text-xs text-secondary/40 line-through">₹${item.mrp}</span>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  document.addEventListener('DOMContentLoaded', renderWishlist);
+
+  document.addEventListener('click', (e) => {
+    const removeBtn = (e.target as HTMLElement).closest('.remove-wishlist-btn') as HTMLButtonElement;
+    if (removeBtn) {
+      e.preventDefault();
+      const id = removeBtn.dataset.id;
+      let wishlist = [];
+      try {
+        wishlist = JSON.parse(localStorage.getItem(`vyaparpe-wishlist-${window.location.hostname}`) || '[]');
+        wishlist = wishlist.filter((w: any) => w.id !== id);
+        localStorage.setItem(`vyaparpe-wishlist-${window.location.hostname}`, JSON.stringify(wishlist));
+        renderWishlist();
+        window.dispatchEvent(new Event('wishlist-updated'));
+      } catch (err) {}
+    }
+  });
+</script>

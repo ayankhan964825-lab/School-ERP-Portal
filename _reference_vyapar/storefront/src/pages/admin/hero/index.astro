@@ -1,0 +1,671 @@
+---
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "hero")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+import { getHeroSlides } from '../../../lib/database';
+
+const dbSlides = await getHeroSlides();
+
+// Fallback to default slides if empty
+const slides = dbSlides.length > 0 ? dbSlides : [
+  {
+    id: 'slide-1',
+    headline: 'Pure. Natural.',
+    headline_accent: 'Premium.',
+    description: 'Premium vegetable & fruit powders with zero preservatives. Nature at its finest.',
+    button_text: 'Shop Now', 
+    button_link: '/products',
+    secondary_button_text: 'Our Story', 
+    secondary_button_link: '/about',
+    tagline: '100% Natural',
+    media_url: '/images/hero-1.jpg',
+    is_active: true
+  },
+  {
+    id: 'slide-2',
+    headline: 'Raw Honey.',
+    headline_accent: 'Unprocessed Goodness.',
+    description: 'Straight from the beehive to your spoon. Jamun, Multiflora, and Lichee honey.',
+    button_text: 'Shop Honey', 
+    button_link: '/products?category=honey',
+    secondary_button_text: 'Why Your Brand?', 
+    secondary_button_link: '/about',
+    tagline: '100% Pure',
+    media_url: '/images/hero-2.jpg',
+    is_active: true
+  }
+];
+
+const slidesForAI = JSON.stringify(slides.map((s: any) => ({
+  id: s.id,
+  headline: s.headline,
+  is_active: s.is_active
+})));
+---
+
+<AdminLayout title="Hero Banner Manager | Admin Panel" description="Manage homepage slider images and content.">
+  <div class="max-w-5xl mx-auto">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Hero Banner Manager</h1>
+        <p class="text-sm text-secondary/60 mt-1">
+          Drag the
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 inline text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          handle to reorder slides. Click ✏️ to edit content.
+        </p>
+      </div>
+      <button id="btn-open-add" class="btn-primary !px-6 !py-2.5 !rounded-lg flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Add New Slide
+      </button>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="hero"
+    title="Hero Assistant"
+      pageDataJson={slidesForAI}
+      guideTitleEn="Hero Banner Guide"
+      guideTitleHi="Hero Banner Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Add Slide:</strong> Use the Add New Slide button to create promotional banners.</li>
+        <li><strong>AI Copywriter:</strong> When adding a slide, you can use the AI Assistant to write catchy headlines.</li>
+        <li><strong>Reorder:</strong> Drag and drop slides to change the order they appear on the homepage.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Add Slide:</strong> Homepage ke liye naye banner add karne ke liye button click karein.</li>
+        <li><strong>AI Copywriter:</strong> Banner ka text likhne ke liye modal me diye AI assistant ka use karein.</li>
+        <li><strong>Reorder:</strong> Drag karke banner ka order change karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '🖼️ New Slide', query: 'ek naya banner add karna hai' },
+        { label: '✨ AI Copy', query: 'banner ke liye achha headline kaise likhein?' }
+      ]}
+    />
+
+    <!-- Drag-to-reorder slide list -->
+    <div id="slides-container" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {slides.map((slide, index) => (
+        <div
+          class="slide-card bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col transition-shadow"
+          draggable="true"
+          data-id={slide.id}
+          data-index={index}
+          data-badge={slide.tagline}
+          data-headline={slide.headline}
+          data-accent={slide.headline_accent}
+          data-subtext={slide.description}
+          data-cta-label={slide.button_text}
+          data-cta-href={slide.button_link}
+          data-cta2-label={slide.secondary_button_text}
+          data-cta2-href={slide.secondary_button_link}
+          data-image={slide.media_url}
+        >
+          <!-- Image area -->
+          <div class="h-48 bg-gray-100 relative group">
+            <img
+              src={slide.media_url}
+              alt={slide.headline}
+              class="w-full h-full object-cover"
+              onerror="this.src='https://placehold.co/600x400/e2e8f0/64748b?text=Image+Not+Found'"
+            />
+            <!-- No hover overlay needed anymore -->
+            {slide.is_active && (
+              <span class="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wide shadow-sm">
+                Active
+              </span>
+            )}
+          </div>
+
+          <!-- Card footer -->
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <p class="text-xs font-bold text-primary uppercase tracking-wider mb-1">{slide.tagline}</p>
+              <h3 class="text-base font-bold text-secondary leading-tight mb-1">
+                {slide.headline} <span class="text-accent italic">{slide.headline_accent}</span>
+              </h3>
+              <p class="text-xs text-secondary/60 line-clamp-2">{slide.description}</p>
+            </div>
+            <div class="flex items-center justify-between border-t border-gray-100 pt-4 mt-4">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={slide.is_active} class="sr-only peer" onchange={`toggleSlideStatus('${slide.id}', this.checked)`} />
+                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary relative"></div>
+                <span class="text-xs text-secondary/70">Show</span>
+              </label>
+              
+              <div class="flex items-center gap-1">
+                <button class="btn-edit-slide p-1.5 text-secondary hover:text-primary transition-colors" title="Edit">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button class="btn-delete-slide p-1.5 text-red-500 hover:text-red-600 transition-colors" title="Delete">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+                <!-- Drag handle -->
+                <div class="drag-handle ml-1 flex items-center text-xs font-medium text-secondary/50 hover:text-primary transition-colors cursor-grab active:cursor-grabbing p-1.5 rounded hover:bg-gray-50 select-none">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- ═══ ADD SLIDE MODAL ═══════════════════════════════════════════ -->
+  <div id="add-slide-modal" class="fixed inset-0 bg-secondary/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+        <h2 class="text-lg font-bold text-secondary">Add New Hero Slide</h2>
+        <button id="btn-close-add" class="text-secondary/50 hover:text-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <!-- AI Assistant -->
+        <div class="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100 rounded-xl p-5 relative overflow-hidden">
+          <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-green-400 opacity-10 rounded-full blur-xl"></div>
+          <div class="relative z-10">
+            <h3 class="text-sm font-bold text-green-800 flex items-center gap-2 mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              AI Banner Assistant ✨
+            </h3>
+            <p class="text-xs text-green-700/80 mb-3">Describe the promotion or product, and I'll write the perfect headline and copy.</p>
+            <div class="flex gap-2">
+              <input type="text" id="ai-banner-prompt" placeholder="e.g. Banner for summer sale on Raw Honey..." class="flex-1 px-3 py-2 text-sm border border-green-200 rounded-lg focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none bg-white" />
+              <button type="button" id="btn-generate-banner" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Generate ✨</button>
+            </div>
+          </div>
+        </div>
+
+        <form id="add-slide-form" class="space-y-5">
+          <div>
+            <label class="text-sm font-medium text-secondary block mb-2">Slide Background (16:9 Image/Video)</label>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative">
+              <input type="file" id="add-slide-media" accept="image/*,video/mp4" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+              <img id="add-media-preview" class="hidden absolute inset-0 w-full h-full object-cover rounded-xl z-0" />
+              <div id="add-media-placeholder" class="relative z-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <div class="text-sm font-medium text-secondary mb-1">Click or drag media here</div>
+                <div class="text-xs text-secondary/50">JPG, PNG, WEBP, MP4 — 16:9 ratio recommended</div>
+              </div>
+            </div>
+            <input type="hidden" id="add-media-url" value="/images/hero-1.jpg" />
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Badge / Tagline</label>
+              <input type="text" id="slide-badge" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. 100% Organic" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Main Title <span class="text-red-400">*</span></label>
+              <input type="text" id="slide-headline" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. Premium Raw" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Accent (italic)</label>
+              <input type="text" id="slide-accent" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. Forest Honey." />
+            </div>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-sm font-medium text-secondary">Description</label>
+            <textarea rows="2" id="slide-subtext" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none transition-colors" placeholder="Short supporting line below headline..."></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Primary Button Text</label>
+              <input type="text" id="slide-btn-text" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. Shop Now" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Primary Button Link</label>
+              <input type="text" id="slide-btn-link" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. /products" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Secondary Button Text</label>
+              <input type="text" id="slide-btn2-text" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. Our Story" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Secondary Button Link</label>
+              <input type="text" id="slide-btn2-link" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. /about" />
+            </div>
+          </div>
+          <div class="pt-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" id="btn-cancel-add" class="px-6 py-2.5 text-sm font-medium text-secondary bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="submit" class="btn-primary !px-8 !py-2.5 !rounded-lg">Save Slide</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ EDIT SLIDE MODAL ══════════════════════════════════════════ -->
+  <div id="edit-slide-modal" class="fixed inset-0 bg-secondary/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+        <h2 class="text-lg font-bold text-secondary">Edit Hero Slide</h2>
+        <button id="btn-close-edit" class="text-secondary/50 hover:text-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <form id="edit-slide-form" class="space-y-5">
+          <input type="hidden" id="edit-slide-id" />
+          <div>
+            <label class="text-sm font-medium text-secondary block mb-2">Slide Background</label>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative">
+              <input type="file" id="edit-slide-media" accept="image/*,video/mp4" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+              <img id="edit-media-preview" class="absolute inset-0 w-full h-full object-cover rounded-xl z-0" />
+              <div class="relative z-0 bg-white/80 p-2 rounded inline-block backdrop-blur-sm mt-4">
+                <div class="text-sm font-medium text-secondary">Click to replace media</div>
+              </div>
+            </div>
+            <input type="hidden" id="edit-media-url" />
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Badge / Tagline</label>
+              <input type="text" id="edit-badge" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Main Title</label>
+              <input type="text" id="edit-headline" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Accent (italic)</label>
+              <input type="text" id="edit-accent" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-sm font-medium text-secondary">Description</label>
+            <textarea rows="2" id="edit-subtext" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none transition-colors"></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Primary Button Text</label>
+              <input type="text" id="edit-btn-text" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Primary Button Link</label>
+              <input type="text" id="edit-btn-link" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Secondary Button Text</label>
+              <input type="text" id="edit-btn2-text" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-secondary">Secondary Button Link</label>
+              <input type="text" id="edit-btn2-link" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+            </div>
+          </div>
+          <div class="pt-4 border-t border-gray-100 flex justify-end gap-3">
+            <button type="button" id="btn-cancel-edit" class="px-6 py-2.5 text-sm font-medium text-secondary bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="submit" class="btn-primary !px-8 !py-2.5 !rounded-lg">Update Slide</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    // ── Modal helpers ─────────────────────────────────────────────────
+    const showModal = (id) => {
+      const m = document.getElementById(id);
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    };
+    const hideModal = (id) => {
+      const m = document.getElementById(id);
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+    };
+
+    document.getElementById('btn-open-add')?.addEventListener('click', () => showModal('add-slide-modal'));
+    document.getElementById('btn-close-add')?.addEventListener('click', () => hideModal('add-slide-modal'));
+    document.getElementById('btn-cancel-add')?.addEventListener('click', () => hideModal('add-slide-modal'));
+    document.getElementById('btn-close-edit')?.addEventListener('click', () => hideModal('edit-slide-modal'));
+    document.getElementById('btn-cancel-edit')?.addEventListener('click', () => hideModal('edit-slide-modal'));
+
+    // Close modals on backdrop click
+    ['add-slide-modal', 'edit-slide-modal'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', function(e) {
+        if (e.target === this) hideModal(id);
+      });
+    });
+
+    // ── File Upload Handler ───────────────────────────────────────────
+    async function handleMediaUpload(fileInputId, previewId, placeholderId, urlInputId) {
+      const fileInput = document.getElementById(fileInputId);
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
+      
+      const file = fileInput.files[0];
+      const preview = document.getElementById(previewId);
+      const placeholder = document.getElementById(placeholderId);
+      
+      // local preview
+      if (preview) {
+        preview.src = URL.createObjectURL(file);
+        preview.classList.remove('hidden');
+      }
+      if (placeholder) placeholder.classList.add('hidden');
+      
+      // upload to bucket
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      try {
+        const res = await fetch('/api/admin/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await res.json();
+        if (result.success && result.url) {
+          document.getElementById(urlInputId).value = result.url;
+        } else {
+          alert('Failed to upload image: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Error uploading media. Check your connection.');
+      }
+    }
+
+    document.getElementById('add-slide-media')?.addEventListener('change', () => {
+      handleMediaUpload('add-slide-media', 'add-media-preview', 'add-media-placeholder', 'add-media-url');
+    });
+    document.getElementById('edit-slide-media')?.addEventListener('change', () => {
+      handleMediaUpload('edit-slide-media', 'edit-media-preview', null, 'edit-media-url');
+    });
+
+    // ── Add form submit ───────────────────────────────────────────────
+    document.getElementById('add-slide-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const origText = submitBtn.innerHTML;
+      submitBtn.innerHTML = 'Saving...';
+      submitBtn.disabled = true;
+
+      const data = {
+        action: 'create_slide',
+        tagline: document.getElementById('slide-badge').value,
+        headline: document.getElementById('slide-headline').value,
+        headline_accent: document.getElementById('slide-accent').value,
+        description: document.getElementById('slide-subtext').value,
+        button_text: document.getElementById('slide-btn-text').value,
+        button_link: document.getElementById('slide-btn-link').value,
+        secondary_button_text: document.getElementById('slide-btn2-text').value,
+        secondary_button_link: document.getElementById('slide-btn2-link').value,
+        media_url: document.getElementById('add-media-url').value,
+        media_type: document.getElementById('add-media-url').value.endsWith('.mp4') ? 'video' : 'image'
+      };
+
+      try {
+        const res = await fetch('/api/admin/hero', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+          window.location.reload();
+        } else {
+          alert('Error: ' + result.error);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to save slide');
+      } finally {
+        submitBtn.innerHTML = origText;
+        submitBtn.disabled = false;
+      }
+    });
+
+    // ── Edit slide — pre-fill modal from card data ────────────────────
+    document.querySelectorAll('.btn-edit-slide').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const card = this.closest('.slide-card');
+        document.getElementById('edit-slide-id').value   = card.dataset.id;
+        document.getElementById('edit-badge').value      = card.dataset.badge;
+        document.getElementById('edit-headline').value   = card.dataset.headline;
+        document.getElementById('edit-accent').value     = card.dataset.accent;
+        document.getElementById('edit-subtext').value    = card.dataset.subtext;
+        document.getElementById('edit-btn-text').value   = card.dataset.ctaLabel;
+        document.getElementById('edit-btn-link').value   = card.dataset.ctaHref;
+        document.getElementById('edit-btn2-text').value  = card.dataset.cta2Label;
+        document.getElementById('edit-btn2-link').value  = card.dataset.cta2Href;
+        
+        const mediaUrl = card.dataset.image;
+        document.getElementById('edit-media-url').value = mediaUrl;
+        const preview = document.getElementById('edit-media-preview');
+        if (preview) preview.src = mediaUrl;
+        
+        showModal('edit-slide-modal');
+      });
+    });
+
+    // ── Edit form submit ──────────────────────────────────────────────
+    document.getElementById('edit-slide-form')?.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const origText = submitBtn.innerHTML;
+      submitBtn.innerHTML = 'Updating...';
+      submitBtn.disabled = true;
+
+      const id = document.getElementById('edit-slide-id').value;
+      const data = {
+        action: 'update_slide',
+        id,
+        tagline: document.getElementById('edit-badge').value,
+        headline: document.getElementById('edit-headline').value,
+        headline_accent: document.getElementById('edit-accent').value,
+        description: document.getElementById('edit-subtext').value,
+        button_text: document.getElementById('edit-btn-text').value,
+        button_link: document.getElementById('edit-btn-link').value,
+        secondary_button_text: document.getElementById('edit-btn2-text').value,
+        secondary_button_link: document.getElementById('edit-btn2-link').value,
+        media_url: document.getElementById('edit-media-url').value,
+      };
+
+      try {
+        const res = await fetch('/api/admin/hero', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+          window.location.reload();
+        } else {
+          alert('Error: ' + result.error);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to update slide');
+      } finally {
+        submitBtn.innerHTML = origText;
+        submitBtn.disabled = false;
+      }
+    });
+
+    // ── Delete slide ──────────────────────────────────────────────────
+    document.querySelectorAll('.btn-delete-slide').forEach(btn => {
+      btn.addEventListener('click', async function(e) {
+        e.stopPropagation();
+        const card = this.closest('.slide-card');
+        const headline = card.dataset.headline;
+        if (confirm(`Delete slide "${headline}"? This cannot be undone.`)) {
+          card.style.transition = 'opacity 0.3s, transform 0.3s';
+          card.style.opacity = '0';
+          card.style.transform = 'scale(0.95)';
+          
+          try {
+            await fetch('/api/admin/hero', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'delete_slide', id: card.dataset.id })
+            });
+            setTimeout(() => card.remove(), 300);
+          } catch(err) {
+            console.error(err);
+            alert('Failed to delete slide');
+            card.style.opacity = '1';
+            card.style.transform = 'scale(1)';
+          }
+        }
+      });
+    });
+
+    window.toggleSlideStatus = async function(id, is_active) {
+      try {
+        await fetch('/api/admin/hero', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update_slide', id, is_active })
+        });
+      } catch (err) {
+        console.error('Failed to toggle status:', err);
+      }
+    };
+
+    // ── Drag-and-drop reorder ─────────────────────────────────────────
+    const container = document.getElementById('slides-container');
+    let draggedEl = null;
+
+    container.addEventListener('dragstart', (e) => {
+      draggedEl = e.target.closest('.slide-card');
+      if (!draggedEl) return;
+      setTimeout(() => draggedEl.classList.add('opacity-40', 'scale-95'), 0);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    container.addEventListener('dragend', async () => {
+      if (!draggedEl) return;
+      draggedEl.classList.remove('opacity-40', 'scale-95');
+      draggedEl = null;
+      document.querySelectorAll('.slide-card').forEach(c => c.classList.remove('border-primary', 'border-2', 'shadow-lg'));
+      
+      // Save order
+      const cards = Array.from(document.querySelectorAll('.slide-card'));
+      const order = cards.map((card, idx) => ({ id: card.dataset.id, sort_order: idx }));
+      try {
+        await fetch('/api/admin/hero', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reorder_slides', order })
+        });
+      } catch (err) {
+        console.error('Failed to save order:', err);
+      }
+    });
+
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const target = e.target.closest('.slide-card');
+      if (!target || target === draggedEl) return;
+
+      document.querySelectorAll('.slide-card').forEach(c => c.classList.remove('border-primary', 'border-2', 'shadow-lg'));
+      target.classList.add('border-primary', 'border-2', 'shadow-lg');
+
+      const rect = target.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        container.insertBefore(draggedEl, target);
+      } else {
+        container.insertBefore(draggedEl, target.nextSibling);
+      }
+    });
+
+    container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      document.querySelectorAll('.slide-card').forEach(c => c.classList.remove('border-primary', 'border-2', 'shadow-lg'));
+    });
+
+    // ── AI Banner Generator ───────────────────────────────────────────
+    document.getElementById('btn-generate-banner')?.addEventListener('click', async function() {
+      const prompt = document.getElementById('ai-banner-prompt').value;
+      if (!prompt) return alert('Please enter a prompt first.');
+      const btn = this;
+      const orig = btn.innerHTML;
+      btn.innerHTML = `<svg class="animate-spin h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Generating...`;
+      btn.disabled = true;
+      try {
+        const currentData = {
+          badge: document.getElementById('slide-badge')?.value || '',
+          headline: document.getElementById('slide-headline')?.value || '',
+          accent: document.getElementById('slide-accent')?.value || '',
+          subtext: document.getElementById('slide-subtext')?.value || '',
+          btnText: document.getElementById('slide-btn-text')?.value || '',
+          btnLink: document.getElementById('slide-btn-link')?.value || ''
+        };
+        const res = await fetch('/api/admin/generate-hero', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, currentData })
+        });
+        
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(r.error || r.details || 'Internal Server Error. Please check API configuration.');
+        }
+        if (r.error) throw new Error(r.error);
+        
+        const fill = (id, v) => { const el = document.getElementById(id); if (!el) return; el.value = v; el.classList.add('bg-green-50','border-green-400'); setTimeout(() => el.classList.remove('bg-green-50','border-green-400'), 1500); };
+        fill('slide-badge', r.badge || ''); fill('slide-headline', r.headline || ''); fill('slide-accent', r.accent || '');
+        fill('slide-subtext', r.subtext || ''); fill('slide-btn-text', r.btnText || ''); fill('slide-btn-link', r.btnLink || '');
+      } catch (err) {
+        alert('AI Error: ' + (err.message || 'Error generating banner. Check API configuration.'));
+      } finally {
+        btn.innerHTML = orig; btn.disabled = false;
+      }
+    });
+
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'open_add_slide') {
+        showModal('add-slide-modal');
+      } else if (action === 'fill_hero_slide') {
+        showModal('add-slide-modal');
+        
+        if (params.headline) document.getElementById('slide-headline').value = params.headline;
+        if (params.headline_accent) document.getElementById('slide-accent').value = params.headline_accent;
+        if (params.tagline) document.getElementById('slide-badge').value = params.tagline;
+        if (params.description) document.getElementById('slide-subtext').value = params.description;
+        if (params.button_text) document.getElementById('slide-btn-text').value = params.button_text;
+        if (params.button_link) document.getElementById('slide-btn-link').value = params.button_link;
+        if (params.secondary_button_text) document.getElementById('slide-btn2-text').value = params.secondary_button_text;
+        if (params.secondary_button_link) document.getElementById('slide-btn2-link').value = params.secondary_button_link;
+        
+        const submitBtn = document.querySelector('#add-slide-form button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(() => submitBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2'), 4000);
+        }
+      } else if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      }
+    });
+  </script>
+</AdminLayout>

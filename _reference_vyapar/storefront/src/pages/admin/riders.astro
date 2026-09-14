@@ -1,0 +1,289 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin, isSupabase } from '../../lib/database';
+import { getPermissionContext, canViewSection } from '../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canViewSection(ctx, 'shipping')) return Astro.redirect('/admin');
+
+const storeId = Astro.locals.storeId;
+if (!storeId) return Astro.redirect('/login');
+
+let riders: any[] = [];
+if (isSupabase && supabaseAdmin) {
+  const { data, error } = await supabaseAdmin
+    .from('riders')
+    .select('*')
+    .eq('store_id', storeId)
+    .order('created_at', { ascending: false });
+  if (data) riders = data;
+}
+
+const activeCount = riders.filter(r => r.status === 'active').length;
+const pendingCount = riders.filter(r => r.status === 'pending').length;
+---
+
+<AdminLayout title="Delivery Riders" description="Manage your delivery fleet for Q-Commerce">
+  <div class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Delivery Riders</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage delivery agents, view their status, and approve new signups.</p>
+    </div>
+    <button onclick="openRiderModal()" class="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-primary/90 transition shadow-sm flex items-center gap-2">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+      Add Rider
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+      <div>
+        <p class="text-sm font-medium text-gray-500 mb-1">Total Riders</p>
+        <p class="text-2xl font-bold text-secondary">{riders.length}</p>
+      </div>
+      <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+      </div>
+    </div>
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+      <div>
+        <p class="text-sm font-medium text-gray-500 mb-1">Active Riders</p>
+        <p class="text-2xl font-bold text-green-600">{activeCount}</p>
+      </div>
+      <div class="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      </div>
+    </div>
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+      <div>
+        <p class="text-sm font-medium text-gray-500 mb-1">Pending Approval</p>
+        <p class="text-2xl font-bold text-yellow-600">{pendingCount}</p>
+      </div>
+      <div class="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-full flex items-center justify-center">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    {riders.length === 0 ? (
+      <div class="p-12 text-center">
+        <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+        </div>
+        <h3 class="text-lg font-bold text-secondary mb-1">No riders found</h3>
+        <p class="text-sm text-secondary/60 mb-6">Add your first delivery agent to start assigning local orders.</p>
+        <button onclick="openRiderModal()" class="btn-primary text-sm px-6 py-2">Add Rider</button>
+      </div>
+    ) : (
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+          <thead class="bg-gray-50 text-gray-500 font-medium">
+            <tr>
+              <th class="px-6 py-4">Rider Details</th>
+              <th class="px-6 py-4">Contact</th>
+              <th class="px-6 py-4">Vehicle</th>
+              <th class="px-6 py-4">Status</th>
+              <th class="px-6 py-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {riders.map(r => (
+              <tr class="hover:bg-gray-50/50 transition">
+                <td class="px-6 py-4">
+                  <div class="font-semibold text-secondary">{r.name}</div>
+                  <div class="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                    <span class={`w-2 h-2 rounded-full ${r.is_online ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                    {r.is_online ? 'Online' : 'Offline'}
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <div class="text-secondary">{r.phone}</div>
+                  {r.email && <div class="text-xs text-gray-500 mt-0.5">{r.email}</div>}
+                </td>
+                <td class="px-6 py-4 capitalize text-secondary">
+                  {r.vehicle_type}
+                  {r.vehicle_number && <span class="block text-xs font-mono text-gray-500 mt-0.5">{r.vehicle_number}</span>}
+                </td>
+                <td class="px-6 py-4">
+                  <span class={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    r.status === 'active' ? 'bg-green-100 text-green-700' :
+                    r.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {r.status}
+                  </span>
+                </td>
+                <td class="px-6 py-4 text-right">
+                  <button class="edit-btn text-purple-600 hover:text-purple-800 font-medium text-sm transition px-3 py-1 bg-purple-50 hover:bg-purple-100 rounded-lg" data-rider={JSON.stringify(r)}>
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- Rider Form Modal -->
+  <div id="rider-modal" class="fixed inset-0 bg-secondary/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="flex justify-between items-center p-6 border-b border-gray-100">
+        <h2 id="modal-title" class="text-xl font-serif font-bold text-secondary">Add Rider</h2>
+        <button onclick="closeRiderModal()" class="text-gray-400 hover:text-red-500 transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <form id="rider-form" class="overflow-y-auto">
+        <input type="hidden" id="rider_id" name="id" value="" />
+        
+        <div class="p-6 space-y-5">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-secondary mb-1">Full Name</label>
+              <input type="text" id="rider_name" name="name" required class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none">
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">Phone Number</label>
+              <input type="text" id="rider_phone" name="phone" required placeholder="e.g. 9876543210" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none">
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">Email (Optional)</label>
+              <input type="email" id="rider_email" name="email" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">Vehicle Type</label>
+              <select id="rider_vehicle_type" name="vehicle_type" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none bg-white">
+                <option value="bike">Bike / Motorcycle</option>
+                <option value="scooter">Scooter / Scooty</option>
+                <option value="cycle">Bicycle</option>
+                <option value="walking">Walking</option>
+              </select>
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">Vehicle Number</label>
+              <input type="text" id="rider_vehicle_number" name="vehicle_number" placeholder="UP 32 XX 1234" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none font-mono">
+            </div>
+
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-secondary mb-1">Status</label>
+              <select id="rider_status" name="status" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-600/20 focus:border-purple-600 transition outline-none bg-white">
+                <option value="active">Active - Can receive orders</option>
+                <option value="pending">Pending - Waiting for approval</option>
+                <option value="suspended">Suspended - Cannot receive orders</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center p-4 border-t border-gray-100 flex-shrink-0 bg-white">
+          <button type="button" id="btn-delete" onclick="deleteRider()" class="hidden px-4 py-2 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition">
+            Delete Rider
+          </button>
+          <div class="flex gap-3 ml-auto">
+            <button type="button" onclick="closeRiderModal()" class="px-4 py-2 text-sm font-semibold text-secondary bg-gray-100 hover:bg-gray-200 rounded-xl transition">Cancel</button>
+            <button type="submit" id="save-btn" class="px-6 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-light rounded-xl transition shadow-sm flex items-center gap-2">
+              Save Rider
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    const modal = document.getElementById('rider-modal');
+    const form = document.getElementById('rider-form');
+
+    function openRiderModal(r = null) {
+      form.reset();
+      document.getElementById('modal-title').innerText = r ? 'Edit Rider' : 'Add Rider';
+      document.getElementById('rider_id').value = r ? r.id : '';
+      
+      const delBtn = document.getElementById('btn-delete');
+      if (r) {
+        document.getElementById('rider_name').value = r.name || '';
+        document.getElementById('rider_phone').value = r.phone || '';
+        document.getElementById('rider_email').value = r.email || '';
+        document.getElementById('rider_vehicle_type').value = r.vehicle_type || 'bike';
+        document.getElementById('rider_vehicle_number').value = r.vehicle_number || '';
+        document.getElementById('rider_status').value = r.status || 'active';
+        delBtn.classList.remove('hidden');
+      } else {
+        delBtn.classList.add('hidden');
+      }
+      
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeRiderModal() {
+      modal.classList.remove('flex');
+      modal.classList.add('hidden');
+    }
+
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        try {
+          const data = JSON.parse(e.currentTarget.getAttribute('data-rider'));
+          openRiderModal(data);
+        } catch(e) {}
+      });
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true;
+      btn.innerHTML = 'Saving...';
+      
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      
+      try {
+        const method = data.id ? 'PUT' : 'POST';
+        const res = await fetch('/api/admin/riders', {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to save rider');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('An error occurred while saving.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Save Rider';
+      }
+    });
+
+    async function deleteRider() {
+      const id = document.getElementById('rider_id').value;
+      if (!id || !confirm('Are you sure you want to permanently delete this rider?')) return;
+      
+      try {
+        const res = await fetch('/api/admin/riders', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) window.location.reload();
+        else alert('Failed to delete rider');
+      } catch(e) {
+        console.error(e);
+      }
+    }
+  </script>
+</AdminLayout>

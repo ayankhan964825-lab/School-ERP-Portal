@@ -1,0 +1,1205 @@
+---
+import '../styles/global.css';
+import SpeedInsights from '@vercel/speed-insights/astro';
+import LogoLoader from '../components/LogoLoader.astro';
+import { ClientRouter } from 'astro:transitions';
+import pkg from '../../package.json';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Admin Dashboard' } = Astro.props;
+
+const isAuthenticated = Astro.cookies.has('admin_auth');
+const isLoginPage = Astro.url.pathname === '/admin/login';
+const currentPath = Astro.url.pathname;
+
+import { isSupabase as isLiveDb, getSettings, supabaseAdmin } from '../lib/database';
+import { getPermissionContext } from '../lib/permissions';
+import AdminGuideModal from '../components/admin/AdminGuideModal.astro';
+
+// Read role and permissions from cookies
+const ctx = getPermissionContext(Astro.cookies);
+const adminRole = ctx.adminRole;
+const isSuperAdmin = ctx.isOriginalSuperAdmin;
+const hierarchyLevel = ctx.hierarchyLevel;
+const isOriginalSuperAdmin = ctx.isOriginalSuperAdmin;
+const adminId = ctx.adminId || 'super_admin_root';
+// Fetch settings for dynamic admin branding and custom name
+const forceStoreId = Astro.locals.storeId;
+const adminSettings = await getSettings(forceStoreId);
+let pc = adminSettings?.pages_content;
+if (typeof pc === 'string') {
+  try { pc = JSON.parse(pc); } catch { pc = {}; }
+}
+if (!pc || typeof pc !== 'object') pc = {};
+const customName = pc.super_admin_custom_name || 'Super Admin';
+
+// Override the cookie name for original super admin to ensure immediate dynamic updates
+const adminName = isOriginalSuperAdmin ? customName : (ctx.adminName || 'Staff');
+
+let userPermissions: Record<string,string> = ctx.permissions;
+const adminEmail = Astro.cookies.get('admin_email')?.value || '';
+
+// Recovery method for this user (from staff record, stored in cookie)
+const recoveryMethod = Astro.cookies.get('admin_recovery')?.value || 'contact_super';
+
+const adminLogoUrl = adminSettings?.admin_logo_url || adminSettings?.brand_logo || '';
+const adminFaviconUrl = adminSettings?.admin_favicon_url || adminSettings?.brand_favicon || adminSettings?.logo_url || adminSettings?.brand_logo || '/favicon.ico';
+const adminBrandTitle = adminSettings?.admin_title || adminSettings?.brand_name || 'Admin Panel';
+
+let forceRedirect: string | null = null;
+// Single Active Session Verification
+if (isAuthenticated && !isLoginPage) {
+  const currentToken = Astro.cookies.get('admin_session_token')?.value;
+  const dbEntry = pc.active_sessions?.[adminId];
+  // active_sessions stores objects like { token: '...', timestamp: ... }
+  const dbToken = dbEntry && typeof dbEntry === 'object' ? dbEntry.token : dbEntry;
+  if (dbToken && currentToken !== dbToken) {
+    Astro.cookies.delete('admin_auth', { path: '/' });
+    Astro.cookies.delete('admin_role', { path: '/' });
+    Astro.cookies.delete('admin_id', { path: '/' });
+    Astro.cookies.delete('admin_signature', { path: '/' });
+    Astro.cookies.delete('admin_session_token', { path: '/' });
+    forceRedirect = '/admin/login?error=multidevice';
+  }
+} else if (!isAuthenticated && !isLoginPage) {
+  forceRedirect = '/admin/login';
+}
+
+// Permission-gated nav sections mapping
+let storeWebsiteUrl = '/';
+let storeWebsiteLabel = 'View Website';
+
+// Determine the actual storeId to build the URL for
+// If master admin is impersonating, use impersonated store
+// Otherwise use current tenant
+const isMasterAdmin = Astro.locals?.storeId === 'SUPER_ADMIN_BYPASS';
+const urlStoreId = isMasterAdmin ? Astro.url.searchParams.get('id') : null;
+const impersonateStoreId = Astro.cookies.get('admin_impersonate')?.value;
+const effectiveStoreId = urlStoreId || impersonateStoreId || Astro.locals?.storeId || '';
+
+if (isLiveDb && supabaseAdmin && effectiveStoreId && effectiveStoreId !== 'SUPER_ADMIN_BYPASS') {
+  try {
+    const { data: storeData } = await supabaseAdmin.from('stores').select('subdomain, custom_domain, name').eq('id', effectiveStoreId).maybeSingle();
+    if (storeData) {
+      storeWebsiteLabel = storeData.name ? `View: ${storeData.name}` : 'View Website';
+      if (storeData.custom_domain) {
+        storeWebsiteUrl = `https://${storeData.custom_domain}`;
+      } else if (storeData.subdomain) {
+        // Build URL based on current host
+        const currentHost = Astro.url.host;
+        const protocol = Astro.url.protocol;
+        // Match: something.vyaparpe.in, something.vyaparpe.com, something.vercel.app, localhost:4321
+        const platformMatch = currentHost.match(/^(?:[^.]+\.)?(vyaparpe\.in|vyaparpe\.com|vercel\.app|localhost(?::\d+)?)(.*)$/);
+        if (platformMatch) {
+          storeWebsiteUrl = `${protocol}//${storeData.subdomain}.${platformMatch[1]}${platformMatch[2]}`;
+        } else if (currentHost.startsWith('master.')) {
+          storeWebsiteUrl = `${protocol}//${currentHost.replace(/^master\./, storeData.subdomain + '.')}`;
+        } else {
+          storeWebsiteUrl = `${protocol}//${storeData.subdomain}.${currentHost}`;
+        }
+      }
+    }
+  } catch(e) {
+    console.error('View Website URL error:', e);
+  }
+}
+
+const sectionPermMap: Record<string, string> = {
+  '/admin/reports':      'reports',
+  '/admin/orders':       'orders_all',
+  '/admin/batch-invoice':'batch_invoice',
+  '/admin/manual-bill':  'orders_manual',
+  '/admin/pos-billing':  'orders_pos',
+  '/admin/products':     'products',
+  '/admin/inventory':    'inventory',
+  '/admin/categories':   'categories',
+  '/admin/flash-sales':  'flash_sales',
+  '/admin/bulk-upload':  'bulk_upload',
+  '/admin/media':        'media',
+  '/admin/customers':    'customers',
+  '/admin/reviews':      'reviews',
+  '/admin/feedback':     'feedback',
+  '/admin/coupons':      'coupons',
+  '/admin/milestones':   'milestones',
+  '/admin/affiliates':   'affiliates',
+  '/admin/affiliate-offers': 'affiliate_offers',
+  '/admin/blog':         'blog',
+  '/admin/hero':         'hero',
+  '/admin/seo':          'seo',
+  '/admin/marketing':    'marketing',
+  '/admin/notifications':'notifications',
+  '/admin/shipping':     'shipping_rates',
+  '/admin/finance':      'finance_wallet',
+  '/admin/finance/remittance': 'finance_remittance',
+  '/admin/finance/expenses': 'finance_expenses',
+  '/admin/finance/pnl':  'finance_pnl',
+  '/admin/finance/account-health': 'finance_health',
+  '/admin/finance/profit-calculator': 'finance_calculator',
+  '/admin/staff':        'staff',
+  '/admin/activity':     'activity',
+  '/admin/settings':     'settings',
+  '/admin/store-details':'store_details',
+  '/admin/settings/domains': 'settings_domains',
+  '/admin/settings/mobile-app': 'settings_mobile',
+  '/admin/settings/locations': 'settings_locations',
+  '/admin/website/configuration': 'website_config',
+  '/admin/website/navigation': 'website_navigation',
+  '/admin/website/themes': 'website_themes',
+  '/admin/website/featured-videos': 'website_videos',
+  '/admin/website/announcement': 'website_announcement',
+  '/admin/website/designs': 'website_designs',
+  '/admin/settings/whatsapp': 'whatsapp',
+  '/admin/b2b-orders': 'orders_b2b',
+  '/admin/bulk-bill': 'orders_bulk',
+  '/admin/orders/non-dispatched': 'orders_tracking',
+  '/admin/orders/ndr': 'orders_tracking',
+  '/admin/orders/returns': 'orders_returns',
+  '/admin/orders/rto': 'orders_tracking',
+  '/admin/orders/tracking': 'orders_tracking',
+  '/admin/wallet': 'finance_wallet',
+  '/admin/marketplace': 'marketing',
+  '/admin/riders': 'shipping_riders',
+};
+
+function canSeeNav(path: string): boolean {
+  if (isSuperAdmin) return true;
+  const basePath = path.split('?')[0];
+  const section = sectionPermMap[basePath];
+  if (!section) return true; // dashboard always visible
+  
+  const perm = userPermissions[section] || 'none';
+  return perm === 'view' || perm === 'manage';
+}
+
+
+const navGroups = [
+  {
+    label: 'Dashboard',
+    icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
+    path: '/admin'
+  },
+  {
+    label: 'Analytics',
+    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+    items: [
+      { label: 'Reports', path: '/admin/reports' },
+      { label: 'Activity Logs', path: '/admin/activity' }
+    ]
+  },
+  {
+    label: 'Orders',
+    icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z',
+    items: [
+      { label: 'All Orders', path: '/admin/orders' },
+      { label: 'B2B Orders', path: '/admin/b2b-orders' },
+      { label: 'POS Billing', path: '/admin/pos-billing' },
+      { label: 'Manual Bill', path: '/admin/manual-bill' },
+      { label: 'Bulk Order', path: '/admin/bulk-bill' },
+      { label: 'Batch Print', path: '/admin/batch-invoice' },
+      { label: 'Non-Dispatched', path: '/admin/orders/non-dispatched' },
+      { label: 'NDR Pending', path: '/admin/orders/ndr' },
+      { label: 'Returns / Refunds', path: '/admin/orders/returns' },
+      { label: 'RTO Tracker', path: '/admin/orders/rto' },
+      { label: 'Tracking Hub', path: '/admin/orders/tracking' }
+    ]
+  },
+  {
+    label: 'Finance',
+    icon: 'M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10',
+    items: [
+      { label: 'Wallet & Earnings', path: '/admin/wallet' },
+      { label: 'Account Health', path: '/admin/finance/account-health' },
+      { label: 'Profit Calculator', path: '/admin/finance/profit-calculator' },
+      { label: 'Remittance', path: '/admin/finance/remittance' },
+      { label: 'Expense Ledger', path: '/admin/finance/expenses' },
+      { label: 'Profit & Loss', path: '/admin/finance/pnl' }
+    ]
+  },
+  {
+    label: 'Products',
+    icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+    items: [
+      { label: 'All Products', path: '/admin/products' },
+      { label: 'Inventory', path: '/admin/inventory' },
+      { label: 'Categories', path: '/admin/categories' },
+      { label: 'Bulk Upload', path: '/admin/bulk-upload' },
+      { label: 'Media Library', path: '/admin/media' }
+    ]
+  },
+  {
+    label: 'Customers',
+    icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
+    items: [
+      { label: 'All Customers', path: '/admin/customers' },
+      { label: 'Feedback & B2B', path: '/admin/feedback' }
+    ]
+  },
+  {
+    label: 'Offers & Promos',
+    icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z',
+    items: [
+      { label: 'Coupons', path: '/admin/coupons' },
+      { label: 'Flash Sales', path: '/admin/flash-sales' },
+      { label: 'Milestones', path: '/admin/milestones' },
+      { label: 'Affiliate Offers', path: '/admin/affiliate-offers' },
+      { label: 'Affiliates', path: '/admin/affiliates' }
+    ]
+  },
+  {
+    label: 'Shipping',
+    icon: 'M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z M13 9h4l3 3v5h-2M1 5h12v12H1z',
+    items: [
+      { label: 'Shipping Rates', path: '/admin/shipping' },
+      { label: 'Delivery Riders', path: '/admin/riders' },
+      { label: 'Rate Calculator', path: '/admin/finance/profit-calculator' }
+    ]
+  },
+  {
+    label: 'Website',
+    icon: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m-9 9a9 9 0 019-9',
+    items: [
+      { label: 'Hero Banner', path: '/admin/hero' },
+      { label: 'SEO Settings', path: '/admin/seo' },
+      { label: 'Web Configuration', path: '/admin/website/configuration' },
+      { label: 'Featured Videos', path: '/admin/website/featured-videos' },
+      { label: 'Navigation Manager', path: '/admin/website/navigation' },
+      { label: 'Global Themes', path: '/admin/website/themes' },
+      { label: 'Global Designs', path: '/admin/website/designs' },
+      { label: 'Blog', path: '/admin/blog' },
+      { label: 'Reviews', path: '/admin/reviews' },
+      { label: 'Announcement Bar', path: '/admin/website/announcement' }
+    ]
+  },
+  {
+    label: 'Settings',
+    icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+    items: [
+      { label: 'Store Details', path: `/admin/store-details${effectiveStoreId && isMasterAdmin ? '?id=' + effectiveStoreId : ''}` },
+      { label: 'Locations & Fulfillments', path: '/admin/settings/locations' },
+      { label: 'Custom Domains', path: `/admin/settings/domains${effectiveStoreId && isMasterAdmin ? '?id=' + effectiveStoreId : ''}` },
+      { label: 'API & Integrations', path: '/admin/settings' },
+      { label: 'Marketing Pixels', path: '/admin/marketing' },
+      { label: 'Staff Accounts', path: '/admin/staff' },
+      { label: 'Notifications', path: '/admin/notifications' },
+      { label: 'WhatsApp Automation', path: '/admin/settings/whatsapp' },
+      { label: 'Mobile App', path: '/admin/settings/mobile-app' }
+    ]
+  },
+  {
+    label: storeWebsiteLabel,
+    icon: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14',
+    path: storeWebsiteUrl,
+    external: true
+  }
+];
+
+// Commented out to allow store admins to safely revert QCommerce mode by selecting a standard theme
+// if (adminSettings?.theme === 'qcommerce') {
+//   const websiteGroup = navGroups.find(g => g.label === 'Website');
+//   if (websiteGroup && websiteGroup.items) {
+//      websiteGroup.items = websiteGroup.items.filter(item => 
+//        item.label !== 'Global Themes' && item.label !== 'Global Designs'
+//      );
+//   }
+// }
+
+const flatNavItems = navGroups.flatMap(g => g.items || [g]);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    {forceRedirect && <meta http-equiv="refresh" content={`0;url=${forceRedirect}`} />}
+    {forceRedirect && <script define:vars={{ forceRedirect }}>window.location.href = forceRedirect;</script>}
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href={adminFaviconUrl} />
+    <title>{title}</title>
+    <!-- Universal PWA Link Interceptor -->
+    <script>
+      document.addEventListener('astro:page-load', () => {
+        if (/android/i.test(navigator.userAgent)) {
+          document.body.addEventListener('click', (e) => {
+            const a = e.target.closest('a');
+            if (!a || !a.href) return;
+            
+            try {
+              const url = new URL(a.href);
+              if (url.origin === window.location.origin) {
+                const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+                const isToAdmin = url.pathname.startsWith('/admin');
+                const currentIsAdmin = window.location.pathname.startsWith('/admin');
+                
+                if (isStandalone) {
+                  // If in Admin PWA, and crossing boundaries to Storefront
+                  if (currentIsAdmin && !isToAdmin) {
+                    e.preventDefault();
+                    window.open(url.href, '_blank');
+                    return;
+                  }
+                } else {
+                  // In Browser: Only force PWA for Storefront links.
+                  // Do NOT force PWA for /admin links from the browser, otherwise the Storefront PWA will swallow them!
+                  if (!isToAdmin && !currentIsAdmin) {
+                    e.preventDefault();
+                    const intentUrl = `intent://${url.host}${url.pathname}${url.search}${url.hash}#Intent;scheme=https;S.browser_fallback_url=${encodeURIComponent(a.href)};end`;
+                    window.location.href = intentUrl;
+                  }
+                }
+              }
+            } catch(err) {}
+          });
+        }
+      });
+    </script>
+
+    <!-- Admin identity meta tags (read by JS for API calls) -->
+    <meta name="admin-id" content={adminId} />
+    <meta name="admin-name" content={adminName} />
+    <meta name="admin-hierarchy" content={hierarchyLevel.toString()} />
+    <meta name="admin-recovery" content={recoveryMethod} />
+    <meta name="tenant-id" content={effectiveStoreId} />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+
+    <!-- Admin PWA -->
+    <link rel="manifest" href="/admin-manifest.json" />
+    <meta name="theme-color" content="#1a2e1a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content={adminBrandTitle} />
+    <link rel="apple-touch-icon" sizes="192x192" href={adminFaviconUrl} />
+    <link rel="apple-touch-icon" sizes="512x512" href={adminFaviconUrl} />
+    <style is:global>
+      /* Scale down entire admin UI slightly to show more content */
+      html {
+        font-size: 14px; /* Base size smaller to fit more options */
+      }
+      @media (max-width: 768px) {
+        /* Scale down everything (text, spacing, sizes) on mobile to fit more content */
+        html {
+          font-size: 12px; /* Very compact on mobile to prevent cutoffs */
+        }
+      }
+      
+      /* Ensure horizontal scrolling for all main content containers */
+      .admin-content-wrapper {
+        min-width: 0; /* Prevents flex items from overflowing container */
+      }
+    </style>
+
+    <!-- Cross-Tab Tenant Contamination Interceptors -->
+    <script>
+      (function() {
+        // Read the tenant ID immediately upon page load
+        const getTenantId = () => document.querySelector('meta[name="tenant-id"]')?.getAttribute('content') || '';
+        
+        // 1. Intercept fetch calls to /api/admin/* and /api/super-admin/*
+        const originalFetch = window.fetch;
+        window.fetch = async function() {
+          let [resource, config] = arguments;
+          const url = (typeof resource === 'string') ? resource : (resource instanceof Request ? resource.url : '');
+          
+          if (url && (url.includes('/api/admin/') || url.includes('/api/super-admin/'))) {
+            config = config || {};
+            config.headers = config.headers || {};
+            
+            // Standardize headers to an object
+            const headersObj = config.headers instanceof Headers 
+              ? Object.fromEntries(config.headers.entries()) 
+              : config.headers;
+              
+            headersObj['X-Tenant-Id'] = getTenantId();
+            config.headers = headersObj;
+          }
+          
+          const res = await originalFetch(resource, config);
+          
+          // Fast-fail UX: If the backend detected a tenant mismatch (409 Conflict)
+          if (res.status === 409) {
+             const data = await res.clone().json().catch(() => ({}));
+             if (data.error && data.error.includes('Tenant mismatch')) {
+                alert("Security Alert: " + data.error);
+                window.location.reload(); // Force refresh to correct the state
+             }
+          }
+          return res;
+        };
+
+        // 2. Intercept standard HTML <form method="POST"> submissions
+        document.addEventListener('submit', function(e) {
+          const form = e.target as HTMLFormElement;
+          const actionUrl = form.getAttribute('action') || '';
+          const method = form.getAttribute('method')?.toUpperCase() || 'GET';
+          
+          if (method === 'POST' && (actionUrl.includes('/api/admin/') || actionUrl.includes('/api/super-admin/'))) {
+            // Append _tenant_id as a query parameter for standard form POSTs
+            const tenantId = getTenantId();
+            if (tenantId && !actionUrl.includes('_tenant_id=')) {
+              const separator = actionUrl.includes('?') ? '&' : '?';
+              form.setAttribute('action', actionUrl + separator + '_tenant_id=' + encodeURIComponent(tenantId));
+            }
+          }
+        }, true);
+      })();
+    </script>
+    <ClientRouter />
+  </head>
+
+  <body class="bg-gray-50 text-secondary antialiased font-sans">
+    <LogoLoader logoUrl={adminLogoUrl} />
+
+    {isLoginPage ? (
+      <slot />
+    ) : (
+      <div class="flex h-[100dvh] overflow-hidden">
+
+        <!-- Sidebar -->
+        <aside class="w-64 md:w-56 lg:w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:flex flex-col relative z-50" id="admin-sidebar">
+          <!-- Logo -->
+          <div class="h-16 flex items-center px-5 border-b border-gray-100 gap-3">
+            {adminLogoUrl ? (
+              <img src={adminLogoUrl} alt={adminBrandTitle} class="w-8 h-8 rounded-lg object-contain bg-white" />
+            ) : (
+              <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-lg">
+                {adminBrandTitle.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <span class="text-base font-serif font-bold text-primary leading-tight block">{adminBrandTitle}</span>
+              <span class="text-[10px] font-bold text-white bg-primary px-1.5 py-0.5 rounded uppercase tracking-wider">Admin</span>
+            </div>
+          </div>
+
+          <!-- Nav -->
+          <nav class="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1 accordion-nav">
+            {navGroups.map((group) => {
+              // Group without items is a standalone link
+              if (group.path) {
+                const isActive = currentPath === group.path || (group.path !== '/admin' && currentPath.startsWith(group.path));
+                if (!canSeeNav(group.path)) return null;
+                return (
+                  <a
+                    href={group.path}
+                    class:list={[
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                      isActive ? "bg-primary/10 text-primary" : "text-secondary/70 hover:bg-gray-50 hover:text-secondary"
+                    ]}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 flex-shrink-0" style="width:18px;height:18px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d={group.icon} />
+                    </svg>
+                    {group.label}
+                  </a>
+                );
+              }
+
+              // Accordion group
+              const visibleItems = group.items.filter(item => item.isNew || canSeeNav(item.path));
+              if (visibleItems.length === 0) return null;
+              
+              const isActiveGroup = visibleItems.some(item => !item.isNew && (currentPath === item.path || currentPath.startsWith(item.path)));
+              
+              return (
+                <div class="nav-group mb-1">
+                  <button class:list={[
+                    "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors group-btn",
+                    isActiveGroup ? "bg-primary/5 text-primary" : "text-secondary/70 hover:bg-gray-50 hover:text-secondary"
+                  ]}>
+                    <div class="flex items-center gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 flex-shrink-0" style="width:18px;height:18px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d={group.icon} />
+                      </svg>
+                      {group.label}
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" class:list={["h-4 w-4 transition-transform duration-200 chevron", isActiveGroup ? "rotate-180" : ""]} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <div class:list={["submenu overflow-hidden transition-all duration-300", isActiveGroup ? "max-h-[1200px] opacity-100 mt-1" : "max-h-0 opacity-0"]}>
+                    <div class="pl-10 pr-2 py-1 flex flex-col space-y-1 border-l-2 border-gray-100 ml-5 mb-2">
+                      {visibleItems.map(item => {
+                        const isActive = !item.isNew && (currentPath === item.path || currentPath.startsWith(item.path));
+                        return (
+                          <a
+                            href={item.isNew ? '#' : item.path}
+                            onclick={item.isNew ? "alert('This feature is part of the Vyapaarpe Roadmap and is coming soon!'); return false;" : ""}
+                            class:list={[
+                              "flex items-center justify-between px-3 py-1.5 rounded-md text-xs transition-colors font-medium",
+                              isActive ? "bg-primary/10 text-primary font-bold" : "text-secondary/60 hover:text-secondary hover:bg-gray-100"
+                            ]}
+                          >
+                            {item.label}
+                            {item.isNew && <span class="text-[8px] uppercase tracking-wider bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-bold">New</span>}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
+
+          <!-- Footer: DB Mode + Install + Logout -->
+          <div class="p-3 border-t border-gray-100 space-y-2">
+            <!-- DB Mode -->
+            <div class={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${isLiveDb ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+              <span class={`w-2 h-2 rounded-full flex-shrink-0 ${isLiveDb ? 'bg-green-500' : 'bg-yellow-400 animate-pulse'}`}></span>
+              {isLiveDb ? 'Live Database' : 'Mock Mode'}
+            </div>
+
+            <!-- PWA Install Button (shows only if installable) -->
+            <button
+              id="pwa-install-btn"
+              class="hidden w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Install Admin App
+            </button>
+
+            <!-- Offline indicator -->
+            <div id="offline-indicator" class="hidden flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold bg-red-50 text-red-600">
+              <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+              You're Offline
+            </div>
+
+            <!-- Sign Out -->
+            <form action="/api/admin/logout" method="POST">
+              <button type="submit" class="flex items-center gap-2 px-3 py-2 w-full text-left rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign Out
+              </button>
+            </form>
+
+            <!-- Version -->
+            <p class="text-[10px] text-secondary/30 text-center pt-1">Admin Panel v{pkg.version}</p>
+          </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="flex-1 flex flex-col min-w-0 h-[100dvh] overflow-y-auto relative">
+    
+    {Astro.cookies.has('admin_impersonate') && isSuperAdmin && (
+      <div class="bg-indigo-600 text-white px-4 py-2 text-sm font-medium flex justify-between items-center z-50 sticky top-0">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          You are impersonating a store.
+        </div>
+        <form action="/api/super-admin/impersonate" method="POST" class="m-0">
+          <input type="hidden" name="store_id" value="reset" />
+          <button type="submit" class="bg-white/20 hover:bg-white/30 px-3 py-1 rounded text-xs transition-colors">Exit Impersonation</button>
+        </form>
+      </div>
+    )}
+
+          <!-- Top Header -->
+          <header class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 z-50 relative flex-shrink-0">
+            <!-- Mobile logo (click to open menu) -->
+            <button id="mobile-logo-menu-btn" class="flex items-center gap-2 md:hidden hover:opacity-80 transition-opacity">
+              {adminLogoUrl ? (
+                <img src={adminLogoUrl} alt="" class="w-7 h-7 rounded-md object-contain bg-white" />
+              ) : (
+                <div class="w-7 h-7 rounded-md bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+                  {adminBrandTitle.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span class="text-base font-serif font-bold text-primary">{adminBrandTitle} Admin</span>
+            </button>
+
+            <!-- Page breadcrumb (desktop) -->
+            <div class="hidden md:block">
+              <p class="text-sm text-secondary/50 font-medium">
+                {flatNavItems.find(n => currentPath === n.path || (n.path !== '/admin' && currentPath.startsWith(n.path)))?.label || 'Dashboard'}
+              </p>
+            </div>
+
+            <!-- Right side: status + avatar -->
+            <div class="flex items-center gap-2 sm:gap-3">
+              <!-- View Website -->
+              <a href={storeWebsiteUrl} target="_blank" class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                View: {storeWebsiteUrl}
+              </a>
+
+              <!-- Connection status -->
+              <span id="connection-badge" class="hidden text-[10px] sm:text-xs font-semibold px-2 py-1 rounded-full bg-red-100 text-red-600">Offline</span>
+
+              <!-- DB badge -->
+              <span class={`text-[10px] sm:text-xs font-semibold px-2 sm:px-2.5 py-1 rounded-full border ${isLiveDb ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                {isLiveDb ? '🟢 Live' : '🟡 Mock'}
+              </span>
+
+              <!-- Notifications link -->
+              <a href="/admin/notifications" class="relative p-1.5 text-secondary/50 hover:text-secondary rounded-lg hover:bg-gray-100 transition-colors" title="Notifications">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] font-bold flex items-center justify-center"></span>
+              </a>
+
+              <!-- Guide/Help Button -->
+              <button id="open-guide-modal" class="relative p-1.5 text-secondary/50 hover:text-primary rounded-lg hover:bg-primary/10 transition-colors" title="Page Guide">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+
+              <!-- Avatar Dropdown -->
+              <div class="relative" id="avatar-dropdown-wrapper">
+                <button id="avatar-dropdown-btn" class="flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-gray-100 transition-colors group">
+                  <div class="hidden sm:flex flex-col items-end text-right">
+                    <span class="text-[11px] font-bold text-secondary leading-none">{adminName}</span>
+                    <span class="text-[9px] font-semibold text-primary/70 uppercase tracking-wide">{adminRole.replace('_', ' ')}</span>
+                  </div>
+                  <div class="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-gradient-to-br from-primary to-emerald-700 shadow-sm text-white flex items-center justify-center font-bold text-xs sm:text-sm">
+                    {adminName.slice(0,1).toUpperCase()}
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-secondary/30 hidden sm:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div id="avatar-dropdown-menu" class="hidden absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+                  <!-- User info -->
+                  <div class="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                    <p class="text-xs font-bold text-secondary truncate">{adminName}</p>
+                    <p class="text-[10px] text-secondary/50 truncate">{adminRole.replace(/_/g,' ')}</p>
+                    {!isOriginalSuperAdmin && <span class="inline-block mt-1 text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-semibold">Level {hierarchyLevel}</span>}
+                    {isOriginalSuperAdmin && <span class="inline-block mt-1 text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">Root Authority</span>}
+                  </div>
+
+                  <!-- Change My Password (all staff) -->
+                  <button onclick="window.openChangePasswordModal()" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-secondary/70 hover:bg-primary/5 hover:text-primary transition-colors text-left">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    Change My Password
+                  </button>
+
+
+
+                  <div class="border-t border-gray-100">
+                    <form action="/api/admin/logout" method="POST">
+                      <button type="submit" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors text-left">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        Sign Out
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <!-- Mobile bottom nav -->
+          <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex justify-around pt-2 px-1 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+            {[
+              { label: 'Home', path: '/admin', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+              { label: 'Orders', path: '/admin/orders', icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z' },
+              { label: 'Products', path: '/admin/products', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
+              { label: 'Reports', path: '/admin/reports', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10' },
+            ].map(item => {
+              const active = currentPath === item.path || (item.path !== '/admin' && currentPath.startsWith(item.path));
+              return (
+                <a href={item.path} class:list={["flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-medium transition-colors", active ? "text-primary" : "text-secondary/50"]}>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
+                  </svg>
+                  {item.label}
+                </a>
+              );
+            })}
+            <button id="open-mobile-menu" class="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg text-[10px] font-medium transition-colors text-secondary/50 hover:text-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              More
+            </button>
+          </nav>
+
+          <!-- Mobile Menu Drawer & Overlay -->
+          <div id="mobile-menu-overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden backdrop-blur-sm transition-opacity opacity-0"></div>
+          <div id="mobile-menu-drawer" class="fixed top-0 left-0 h-[100dvh] w-64 bg-white z-50 transform -translate-x-full transition-transform duration-300 flex flex-col shadow-2xl md:hidden">
+            <div class="h-16 flex items-center justify-between px-5 border-b border-gray-100 shrink-0">
+              <div class="flex items-center gap-3">
+                <img src={adminLogoUrl} class="w-8 h-8 rounded-lg" />
+                <span class="text-base font-serif font-bold text-primary">Admin Menu</span>
+              </div>
+              <button id="close-mobile-menu" class="p-2 text-secondary/50 hover:text-secondary bg-gray-50 rounded-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <nav class="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1 accordion-nav pb-8">
+              {navGroups.map((group) => {
+                if (group.path) {
+                  const isActive = currentPath === group.path || (group.path !== '/admin' && currentPath.startsWith(group.path));
+                  if (!canSeeNav(group.path)) return null;
+                  return (
+                    <a href={group.path} class:list={["flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-secondary/70 hover:bg-gray-50 hover:text-secondary"]}>
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d={group.icon} />
+                      </svg>
+                      {group.label}
+                    </a>
+                  );
+                }
+
+                const visibleItems = group.items.filter(item => item.isNew || canSeeNav(item.path));
+                if (visibleItems.length === 0) return null;
+                const isActiveGroup = visibleItems.some(item => !item.isNew && (currentPath === item.path || currentPath.startsWith(item.path)));
+                
+                return (
+                  <div class="nav-group mb-1">
+                    <button class:list={[
+                      "w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group-btn",
+                      isActiveGroup ? "bg-primary/5 text-primary" : "text-secondary/70 hover:bg-gray-50 hover:text-secondary"
+                    ]}>
+                      <div class="flex items-center gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d={group.icon} />
+                        </svg>
+                        {group.label}
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" class:list={["h-4 w-4 transition-transform duration-200 chevron", isActiveGroup ? "rotate-180" : ""]} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    <div class:list={["submenu overflow-hidden transition-all duration-300", isActiveGroup ? "max-h-[1200px] opacity-100 mt-1" : "max-h-0 opacity-0"]}>
+                      <div class="pl-11 pr-2 py-1 flex flex-col space-y-1 border-l-2 border-gray-100 ml-5 mb-2">
+                        {visibleItems.map(item => {
+                          const isActive = !item.isNew && (currentPath === item.path || currentPath.startsWith(item.path));
+                          return (
+                            <a
+                              href={item.isNew ? '#' : item.path}
+                              onclick={item.isNew ? "alert('This feature is part of the Vyapaarpe Roadmap and is coming soon!'); return false;" : ""}
+                              class:list={[
+                                "flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors font-medium",
+                                isActive ? "bg-primary/10 text-primary font-bold" : "text-secondary/60 hover:text-secondary hover:bg-gray-100"
+                              ]}
+                            >
+                              {item.label}
+                              {item.isNew && <span class="text-[8px] uppercase tracking-wider bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-bold">New</span>}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </nav>
+            
+            <!-- Mobile Footer: DB Mode + Logout -->
+            <div class="p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] border-t border-gray-100 space-y-2 shrink-0">
+              <div class={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${isLiveDb ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                <span class={`w-2 h-2 rounded-full flex-shrink-0 ${isLiveDb ? 'bg-green-500' : 'bg-yellow-400 animate-pulse'}`}></span>
+                {isLiveDb ? 'Live Database' : 'Mock Mode'}
+              </div>
+              <form action="/api/admin/logout" method="POST">
+                <button type="submit" class="flex items-center gap-2 px-3 py-2 w-full text-left rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Sign Out
+                </button>
+              </form>
+              <!-- Version -->
+              <p class="text-[10px] text-secondary/30 text-center pt-1">Admin Panel v{pkg.version}</p>
+            </div>
+          </div>
+
+          <!-- Page Content -->
+          <main class="flex-1 overflow-auto bg-gray-50 p-4 sm:p-6 lg:p-8 pb-32 md:pb-8 admin-content-wrapper">
+            <slot />
+          </main>
+
+        </div>
+      </div>
+    )}
+
+
+    <!-- ── Change Password Modal ──────────────────────────────── -->
+    <div id="change-password-modal" class="fixed inset-0 z-[200] hidden items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" id="cp-backdrop"></div>
+      <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-modal-in">
+        <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div>
+            <h3 class="text-base font-semibold text-secondary">Change Password</h3>
+            <p class="text-xs text-secondary/50 mt-0.5">Update your login password</p>
+          </div>
+          <button onclick="window.closeChangePasswordModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-secondary/40 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form id="change-password-form" class="px-6 py-5 space-y-4" onsubmit="window.handleChangePassword(event)">
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Current Password</label>
+            <input type="password" id="cp-current" required placeholder="Your current password"
+              class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">New Password</label>
+            <input type="password" id="cp-new" required placeholder="Min 6 characters"
+              class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Confirm New Password</label>
+            <input type="password" id="cp-confirm" required placeholder="Re-enter new password"
+              class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+          </div>
+          <p id="cp-error" class="hidden text-xs text-red-500 font-medium"></p>
+          <div class="flex gap-3 pt-1">
+            <button type="button" onclick="window.closeChangePasswordModal()" class="flex-1 px-4 py-2.5 text-sm font-medium text-secondary/60 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
+            <button type="submit" id="cp-submit-btn" class="flex-1 px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 active:scale-95 transition-all">Update Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Password Recovery Request Modal ───────────────────── -->
+    <div id="recovery-request-modal" class="fixed inset-0 z-[200] hidden items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" id="rr-backdrop"></div>
+      <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-modal-in">
+        <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div>
+            <h3 class="text-base font-semibold text-secondary">Request Password Recovery</h3>
+            <p class="text-xs text-secondary/50 mt-0.5">Send a reset request to your admin</p>
+          </div>
+          <button onclick="window.closeRecoveryRequestModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-secondary/40 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div class="px-6 py-5 space-y-4">
+          <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm text-orange-700">
+            <p class="font-semibold mb-1">📩 How it works</p>
+            <p class="text-xs">Your password recovery request will be sent to your admin. They will set a new password and notify you.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Message (Optional)</label>
+            <textarea id="rr-message" rows="3" placeholder="e.g. I forgot my password, please reset it..."
+              class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition resize-none"></textarea>
+          </div>
+          <div class="flex gap-3 pt-1">
+            <button type="button" onclick="window.closeRecoveryRequestModal()" class="flex-1 px-4 py-2.5 text-sm font-medium text-secondary/60 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
+            <button type="button" onclick="window.submitRecoveryRequest()" class="flex-1 px-4 py-2.5 text-sm font-semibold bg-orange-500 text-white rounded-xl hover:bg-orange-600 active:scale-95 transition-all">Send Request</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Guide Modal -->
+    <AdminGuideModal />
+
+    <SpeedInsights />
+  </body>
+</html>
+
+<script is:inline>
+  // ── Admin Service Worker Registration ────────────────────────
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' })
+        .then(reg => {
+          reg.update();
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (nw) {
+              nw.addEventListener('statechange', () => {
+                if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                  nw.postMessage('skipWaiting');
+                }
+              });
+            }
+          });
+        })
+        .catch(err => console.warn('[AdminSW] Registration failed:', err));
+    });
+  }
+
+  // ── PWA Install Prompt ────────────────────────────────────────
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+
+    // Show sidebar install button
+    const sideBtn = document.getElementById('pwa-install-btn');
+    if (sideBtn) sideBtn.classList.remove('hidden');
+
+    // Show toast after 3s (don't be intrusive)
+    const dismissed = sessionStorage.getItem('pwa-toast-dismissed');
+    if (!dismissed) {
+      setTimeout(() => {
+        const toast = document.getElementById('pwa-toast');
+        if (toast) toast.classList.remove('hidden');
+      }, 3000);
+    }
+  });
+
+  async function triggerInstall() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    if (outcome === 'accepted') {
+      document.getElementById('pwa-install-btn')?.classList.add('hidden');
+      document.getElementById('pwa-toast')?.classList.add('hidden');
+    }
+  }
+
+  // Define updateConnectionStatus outside to be used anywhere
+  function updateConnectionStatus() {
+    const online = navigator.onLine;
+    const badge = document.getElementById('connection-badge');
+    const offlineIndicator = document.getElementById('offline-indicator');
+
+    if (badge) badge.classList.toggle('hidden', online);
+    if (offlineIndicator) offlineIndicator.classList.toggle('hidden', online);
+  }
+
+  let adminGlobalListenersBound = false;
+
+  document.addEventListener('astro:page-load', () => {
+    // ── Reset any stuck scroll locks from previous pages ────────
+    document.body.style.overflow = '';
+
+    // ── PWA DOM Bindings ────────────────────────────────────────
+    document.getElementById('pwa-install-btn')?.addEventListener('click', triggerInstall);
+    document.getElementById('pwa-toast-install')?.addEventListener('click', triggerInstall);
+    document.getElementById('pwa-toast-dismiss')?.addEventListener('click', () => {
+      document.getElementById('pwa-toast')?.classList.add('hidden');
+      sessionStorage.setItem('pwa-toast-dismissed', '1');
+    });
+
+    if (!adminGlobalListenersBound) {
+      window.addEventListener('appinstalled', () => {
+        document.getElementById('pwa-install-btn')?.classList.add('hidden');
+        document.getElementById('pwa-toast')?.classList.add('hidden');
+      });
+      window.addEventListener('online', updateConnectionStatus);
+      window.addEventListener('offline', updateConnectionStatus);
+      adminGlobalListenersBound = true;
+    }
+    updateConnectionStatus();
+
+    // ── Notification Badge ───────────────────────────────────────
+    // Fetch unread count and show on bell icon
+  fetch('/api/admin/notifications/unread-count', { credentials: 'include' })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data && data.count > 0) {
+        const badge = document.getElementById('notif-badge');
+        if (badge) {
+          badge.textContent = data.count > 9 ? '9+' : data.count;
+          badge.classList.remove('hidden');
+        }
+      }
+    })
+    .catch(() => {});
+    
+  // ── Mobile Menu Toggle ───────────────────────────────────────
+  const mobileMenuDrawer = document.getElementById('mobile-menu-drawer');
+  const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+  
+  document.getElementById('open-mobile-menu')?.addEventListener('click', () => {
+    mobileMenuOverlay?.classList.remove('hidden');
+    // slight delay for opacity transition
+    setTimeout(() => mobileMenuOverlay?.classList.remove('opacity-0'), 10);
+    mobileMenuDrawer?.classList.remove('-translate-x-full');
+    document.body.style.overflow = 'hidden'; // prevent background scrolling
+  });
+
+  document.getElementById('mobile-logo-menu-btn')?.addEventListener('click', () => {
+    mobileMenuOverlay?.classList.remove('hidden');
+    setTimeout(() => mobileMenuOverlay?.classList.remove('opacity-0'), 10);
+    mobileMenuDrawer?.classList.remove('-translate-x-full');
+    document.body.style.overflow = 'hidden';
+  });
+
+  function closeMobileMenu() {
+    mobileMenuDrawer?.classList.add('-translate-x-full');
+    mobileMenuOverlay?.classList.add('opacity-0');
+    setTimeout(() => mobileMenuOverlay?.classList.add('hidden'), 300);
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('close-mobile-menu')?.addEventListener('click', closeMobileMenu);
+  mobileMenuOverlay?.addEventListener('click', closeMobileMenu);
+
+  // ── Accordion Nav Logic ───────────────────────────────────────
+  document.querySelectorAll('.accordion-nav').forEach(nav => {
+    nav.addEventListener('click', (e) => {
+      const btn = e.target.closest('.group-btn');
+      if (!btn) return;
+      
+      const group = btn.closest('.nav-group');
+      const submenu = group.querySelector('.submenu');
+      const chevron = group.querySelector('.chevron');
+      
+      const isExpanded = submenu.classList.contains('max-h-[1200px]');
+      
+      // Close all other groups to keep it clean like Shopdeck
+      nav.querySelectorAll('.nav-group').forEach(otherGroup => {
+        if (otherGroup !== group) {
+          otherGroup.querySelector('.submenu')?.classList.remove('max-h-[1200px]', 'opacity-100', 'mt-1');
+          otherGroup.querySelector('.submenu')?.classList.add('max-h-0', 'opacity-0');
+          otherGroup.querySelector('.chevron')?.classList.remove('rotate-180');
+        }
+      });
+
+      // Toggle current group
+      if (isExpanded) {
+        submenu.classList.remove('max-h-[1200px]', 'opacity-100', 'mt-1');
+        submenu.classList.add('max-h-0', 'opacity-0');
+        chevron.classList.remove('rotate-180');
+      } else {
+        submenu.classList.remove('max-h-0', 'opacity-0');
+        submenu.classList.add('max-h-[1200px]', 'opacity-100', 'mt-1');
+        chevron.classList.add('rotate-180');
+      }
+    });
+  });
+
+  // ── Avatar Dropdown Toggle ───────────────────────────────────
+  const avatarBtn  = document.getElementById('avatar-dropdown-btn');
+  const avatarMenu = document.getElementById('avatar-dropdown-menu');
+
+  avatarBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    avatarMenu?.classList.toggle('hidden');
+  });
+  document.addEventListener('click', () => avatarMenu?.classList.add('hidden'));
+
+  // ── Change Password Modal ────────────────────────────────────
+  const cpModal = document.getElementById('change-password-modal');
+
+  window.openChangePasswordModal = function() {
+    avatarMenu?.classList.add('hidden');
+    cpModal?.classList.remove('hidden');
+    cpModal?.classList.add('flex');
+    document.getElementById('cp-error')?.classList.add('hidden');
+    document.getElementById('change-password-form')?.reset();
+  };
+  window.closeChangePasswordModal = function() {
+    cpModal?.classList.add('hidden');
+    cpModal?.classList.remove('flex');
+  };
+  document.getElementById('cp-backdrop')?.addEventListener('click', window.closeChangePasswordModal);
+
+  window.handleChangePassword = async function(e) {
+    e.preventDefault();
+    const current  = document.getElementById('cp-current').value;
+    const newPwd   = document.getElementById('cp-new').value;
+    const confirm  = document.getElementById('cp-confirm').value;
+    const errEl    = document.getElementById('cp-error');
+    const submitBtn = document.getElementById('cp-submit-btn');
+
+    errEl.classList.add('hidden');
+    if (newPwd !== confirm) {
+      errEl.textContent = 'New passwords do not match.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    if (newPwd.length < 6) {
+      errEl.textContent = 'Password must be at least 6 characters.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    // Read staff id from meta tag injected by layout
+    const staffId = document.querySelector('meta[name="admin-id"]')?.getAttribute('content') || '';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Updating...';
+
+    try {
+      const res  = await fetch('/api/admin/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'change_password', id: staffId, current_password: current, new_password: newPwd }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.closeChangePasswordModal();
+        alert('✅ Password changed successfully! Please log in again with your new password.');
+      } else {
+        errEl.textContent = data.error || 'Failed to update password.';
+        errEl.classList.remove('hidden');
+      }
+    } catch {
+      errEl.textContent = 'Network error. Please try again.';
+      errEl.classList.remove('hidden');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Update Password';
+    }
+  };
+
+  // ── Recovery Request Modal ────────────────────────────────────
+  const rrModal = document.getElementById('recovery-request-modal');
+
+  window.openRecoveryRequestModal = function() {
+    avatarMenu?.classList.add('hidden');
+    rrModal?.classList.remove('hidden');
+    rrModal?.classList.add('flex');
+    document.getElementById('rr-message').value = '';
+  };
+  window.closeRecoveryRequestModal = function() {
+    rrModal?.classList.add('hidden');
+    rrModal?.classList.remove('flex');
+  };
+  document.getElementById('rr-backdrop')?.addEventListener('click', window.closeRecoveryRequestModal);
+
+  window.submitRecoveryRequest = async function() {
+    const message = document.getElementById('rr-message').value;
+    const staffId   = document.querySelector('meta[name="admin-id"]')?.getAttribute('content') || '';
+    const staffName = document.querySelector('meta[name="admin-name"]')?.getAttribute('content') || '';
+    const staffLevel = parseInt(document.querySelector('meta[name="admin-hierarchy"]')?.getAttribute('content') || '5', 10);
+    const recoveryMethod = document.querySelector('meta[name="admin-recovery"]')?.getAttribute('content') || 'contact_super';
+
+    try {
+      const res = await fetch('/api/admin/password-recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'request',
+          requester_id: staffId,
+          requester_name: staffName,
+          requester_level: staffLevel,
+          recovery_method: recoveryMethod,
+          message,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.closeRecoveryRequestModal();
+        alert('✅ Recovery request sent! Your admin will reset your password and notify you.');
+      } else {
+        alert('Error: ' + (data.error || 'Failed to send request.'));
+      }
+    } catch {
+      alert('Network error. Please try again.');
+    }
+  };
+
+  });
+</script>

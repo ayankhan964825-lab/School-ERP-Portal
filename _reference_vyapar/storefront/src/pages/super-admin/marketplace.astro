@@ -1,0 +1,222 @@
+---
+import { getPermissionContext, canApproveMarketplace } from '../../lib/permissions';
+import { supabaseAdmin } from '../../lib/database';
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import type { MarketplaceListing } from '../../lib/types/admin';
+import { getCsrfToken } from '../../lib/csrf';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canApproveMarketplace(ctx)) {
+  return Astro.redirect('/super-admin/login');
+}
+
+if (!supabaseAdmin) {
+    return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Fetch pending reviews
+let pendingListings = [];
+try {
+    const { data, error } = await supabaseAdmin
+        .from('marketplace_listings')
+        .select(`
+            id,
+            status,
+            created_at,
+            products:product_id (id, name, image, price, original_price, category),
+            stores:store_id (id, name)
+        `)
+        .eq('status', 'pending_review')
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+    if (error) throw error;
+    pendingListings = data || [];
+} catch (error) {
+    console.error('Error fetching marketplace listings:', error);
+}
+
+const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
+};
+
+interface MarketplaceListing {
+    id: string;
+    status: string;
+    created_at: string;
+    products: any;
+    stores: any;
+}
+---
+
+<SuperAdminLayout title="Marketplace Approvals | VyaparPe">
+    <meta name="csrf-token" content={csrfToken} />
+    <div class="mb-8">
+        <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Marketplace Approvals</h1>
+        <p class="text-sm text-slate-500 mt-1">Review products submitted by sellers before they appear on vyaparpe.com</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 bg-white flex justify-between items-center">
+            <h2 class="text-[15px] font-semibold text-slate-900">Pending Reviews ({pendingListings?.length || 0})</h2>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                    <tr>
+                        <th class="px-6 py-3 font-medium">Product</th>
+                        <th class="px-6 py-3 font-medium">Store</th>
+                        <th class="px-6 py-3 font-medium">Pricing</th>
+                        <th class="px-6 py-3 font-medium">Submitted</th>
+                        <th class="px-6 py-3 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {pendingListings && pendingListings.length > 0 ? pendingListings.map((listing: MarketplaceListing) => {
+                        const product = listing.products;
+                        const store = listing.stores;
+                        return (
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center gap-4">
+                                        <div class="h-12 w-12 flex-shrink-0 bg-gray-100 rounded-md overflow-hidden border border-gray-200">
+                                            <img src={product.image} alt={product.name} class="h-full w-full object-cover" onerror="this.src='/placeholder-product.webp'" />
+                                        </div>
+                                        <div>
+                                            <div class="font-medium text-slate-900 text-[14px]">{product.name}</div>
+                                            <div class="text-[12px] text-slate-500 mt-0.5">{product.category}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="font-medium text-[13px] text-slate-700">{store?.name || 'Unknown Store'}</div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="font-semibold text-[13px] text-slate-900">{formatCurrency(product.price)}</div>
+                                    {product.original_price > product.price && (
+                                        <div class="text-[11px] text-slate-400 line-through mt-0.5">{formatCurrency(product.original_price)}</div>
+                                    )}
+                                </td>
+                                <td class="px-6 py-4 text-[12px] text-slate-500 whitespace-nowrap">
+                                    {new Date(listing.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <button 
+                                            onclick={`handleReview('${listing.id}', 'approved')`}
+                                            class="inline-flex items-center justify-center rounded bg-green-50 px-2.5 py-1.5 text-[12px] font-medium text-green-700 hover:bg-green-100 transition-colors border border-green-200">
+                                            Approve
+                                        </button>
+                                        <button 
+                                            onclick={`handleReview('${listing.id}', 'rejected')`}
+                                            class="inline-flex items-center justify-center rounded bg-red-50 px-2.5 py-1.5 text-[12px] font-medium text-red-700 hover:bg-red-100 transition-colors border border-red-200">
+                                            Reject
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    }) : (
+                        <tr>
+                            <td colspan="5" class="px-6 py-12 text-center text-slate-500 text-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                No products pending review. Great job!
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Reject Modal -->
+    <div id="reject-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 opacity-0 pointer-events-none transition-opacity">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 transform scale-95 transition-transform" id="reject-content">
+            <h3 class="text-lg font-semibold text-slate-900 mb-1">Reject Listing</h3>
+            <p class="text-sm text-slate-500 mb-5">Provide a reason for rejection so the seller can fix it.</p>
+            
+            <form id="reject-form" class="space-y-4">
+                <input type="hidden" id="modal-listing-id" />
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Rejection Reason</label>
+                    <textarea id="modal-reason" required rows="3" class="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none" placeholder="e.g. Image quality is too low..."></textarea>
+                </div>
+                
+                <div class="pt-2 flex justify-end gap-3">
+                    <button type="button" onclick="closeRejectModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-md transition-colors">Cancel</button>
+                    <button type="submit" id="btn-submit-reject" class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md shadow-sm transition-colors flex items-center gap-2">
+                        Reject Product
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script is:inline>
+        const rejectModal = document.getElementById('reject-modal');
+        const rejectContent = document.getElementById('reject-content');
+        const listingIdInput = document.getElementById('modal-listing-id');
+        const reasonInput = document.getElementById('modal-reason');
+
+        function closeRejectModal() {
+            rejectModal.classList.add('opacity-0', 'pointer-events-none');
+            rejectContent.classList.add('scale-95');
+        }
+
+        async function handleReview(listingId, action) {
+            if (action === 'rejected') {
+                listingIdInput.value = listingId;
+                reasonInput.value = '';
+                rejectModal.classList.remove('opacity-0', 'pointer-events-none');
+                rejectContent.classList.remove('scale-95');
+                reasonInput.focus();
+                return;
+            }
+
+            if (action === 'approved') {
+                if (!confirm("Are you sure you want to approve this product to be listed publicly on VyaparPe?")) return;
+                await submitReview(listingId, 'approved', '');
+            }
+        }
+
+        document.getElementById('reject-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-submit-reject');
+            btn.disabled = true;
+            btn.innerText = 'Rejecting...';
+            
+            await submitReview(listingIdInput.value, 'rejected', reasonInput.value);
+            
+            btn.disabled = false;
+            btn.innerText = 'Reject Product';
+        });
+
+        async function submitReview(listingId, status, adminNotes) {
+            try {
+                const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                const res = await fetch('/api/super-admin/approve-marketplace-listing', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-csrf-token': token
+                    },
+                    body: JSON.stringify({ listing_id: listingId, status, admin_notes: adminNotes })
+                });
+                
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json();
+                    alert(data.error || 'Failed to update listing');
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+        }
+    </script>
+</SuperAdminLayout>

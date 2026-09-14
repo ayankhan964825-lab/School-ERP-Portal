@@ -1,0 +1,362 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings } from '../../../lib/database';
+import { getPermissionContext } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (ctx.adminRole !== 'super_admin' && ctx.permissions['settings'] !== 'manage') {
+  return Astro.redirect('/admin?error=unauthorized');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+
+// Helper to safely parse booleans stored as strings in DB
+const isTrue = (val: any) => val === true || val === 'true';
+
+const whatsappConfig = {
+  enabled: isTrue(settings?.whatsapp_enabled),
+  provider: settings?.whatsapp_api_provider || 'interakt',
+  apiKey: settings?.whatsapp_api_key || '',
+  fromNumber: settings?.whatsapp_from_number || '',
+  notifyOrderPlaced: isTrue(settings?.whatsapp_notify_order_placed),
+  notifyOrderShipped: isTrue(settings?.whatsapp_notify_order_shipped),
+  notifyAbandonedCart: isTrue(settings?.whatsapp_notify_abandoned_cart),
+  abandonedCartDelay: settings?.whatsapp_abandoned_cart_delay || '15',
+  templateOrderPlaced: settings?.whatsapp_template_order_placed || '',
+  templateOrderShipped: settings?.whatsapp_template_order_shipped || '',
+  templateAbandonedCart: settings?.whatsapp_template_abandoned_cart || '',
+};
+---
+
+<AdminLayout title="WhatsApp Automation | Admin Panel" description="Configure automatic WhatsApp notifications for your customers.">
+  <div class="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-serif font-bold text-secondary">WhatsApp Automation</h1>
+      <p class="text-secondary/60 mt-1">Send automatic order updates and abandoned cart recovery messages via WhatsApp.</p>
+    </div>
+    <button id="save-whatsapp-btn" class="btn-primary !px-8 !py-3 !rounded-xl font-bold flex items-center gap-2 shadow-sm hover:shadow-md transition-all">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+      Save Configuration
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-20">
+    
+    <!-- Left Column: Settings -->
+    <div class="xl:col-span-2 space-y-8">
+      
+      <!-- General Settings -->
+      <div class="bg-white rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 overflow-hidden">
+        <div class="p-6 sm:p-8 flex items-center justify-between border-b border-gray-100">
+          <div>
+            <h2 class="text-xl font-bold text-secondary flex items-center gap-2">
+              <svg class="w-6 h-6 text-[#25D366]" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+              API Integration
+            </h2>
+            <p class="text-sm text-secondary/60 mt-1">Connect your WhatsApp Business API provider.</p>
+          </div>
+          
+          <label class="flex items-center gap-3 cursor-pointer group bg-gray-50 px-4 py-2 rounded-xl border border-gray-200">
+            <span class="text-sm font-bold text-secondary">Enable</span>
+            <div class="relative flex items-center justify-center mt-0.5">
+              <input type="checkbox" id="wa_enabled" class="peer sr-only" checked={whatsappConfig.enabled} />
+              <div class="w-12 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#25D366]"></div>
+            </div>
+          </label>
+        </div>
+        
+        <div class="p-6 sm:p-8 space-y-6 transition-opacity duration-300" id="wa-setup-container" style={whatsappConfig.enabled ? '' : 'opacity: 0.4; pointer-events: none;'}>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-sm font-bold text-secondary mb-2">Provider</label>
+              <select id="wa_provider" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-secondary">
+                <option value="interakt" selected={whatsappConfig.provider === 'interakt'}>Interakt (Recommended)</option>
+                <option value="wati" selected={whatsappConfig.provider === 'wati'}>WATI</option>
+                <option value="twilio" selected={whatsappConfig.provider === 'twilio'}>Twilio WhatsApp</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-secondary mb-2">Sender Number</label>
+              <input type="text" id="wa_from_number" value={whatsappConfig.fromNumber} placeholder="+919876543210" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-secondary" />
+            </div>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-bold text-secondary mb-2">API Key / Token</label>
+            <input type="password" id="wa_api_key" value={whatsappConfig.apiKey} placeholder="Enter your secret API token" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-secondary font-mono" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Message Triggers -->
+      <div class="bg-white rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 overflow-hidden">
+        <div class="p-6 sm:p-8 border-b border-gray-100">
+          <h2 class="text-xl font-bold text-secondary flex items-center gap-2">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+            Automated Triggers
+          </h2>
+          <p class="text-sm text-secondary/60 mt-1">Configure when messages should be sent and which templates to use.</p>
+        </div>
+        
+        <div class="p-6 sm:p-8 space-y-8">
+          <!-- Trigger: Order Placed -->
+          <div class="group">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <span class="text-lg font-bold text-secondary block">Order Confirmation</span>
+                <span class="text-sm text-secondary/60 block mt-1">Sent immediately when a customer successfully places an order.</span>
+              </div>
+              <label class="relative flex items-center justify-center mt-1 cursor-pointer">
+                <input type="checkbox" id="notify_placed" class="peer sr-only wa-trigger-toggle" checked={whatsappConfig.notifyOrderPlaced} />
+                <div class="w-12 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            
+            <div class="template-settings pl-4 border-l-2 border-gray-100 transition-all duration-300 origin-top" style={whatsappConfig.notifyOrderPlaced ? '' : 'display: none;'}>
+              <label class="block text-xs font-bold text-secondary mb-2 uppercase tracking-wider">Approved Template Name</label>
+              <input type="text" id="wa_template_placed" value={whatsappConfig.templateOrderPlaced} placeholder="e.g. order_confirmation_01" class="w-full sm:w-1/2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none text-sm text-secondary focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+              <p class="text-xs text-secondary/50 mt-2">
+                Variables supported: <code>&#123;&#123;1&#125;&#125;</code> Name, <code>&#123;&#123;2&#125;&#125;</code> Order ID, <code>&#123;&#123;3&#125;&#125;</code> Amount
+              </p>
+            </div>
+          </div>
+
+          <hr class="border-gray-100" />
+
+          <!-- Trigger: Order Shipped -->
+          <div class="group">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <span class="text-lg font-bold text-secondary block">Shipping Alert</span>
+                <span class="text-sm text-secondary/60 block mt-1">Notifies the customer when you dispatch their order, including the tracking link.</span>
+              </div>
+              <label class="relative flex items-center justify-center mt-1 cursor-pointer">
+                <input type="checkbox" id="notify_shipped" class="peer sr-only wa-trigger-toggle" checked={whatsappConfig.notifyOrderShipped} />
+                <div class="w-12 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            
+            <div class="template-settings pl-4 border-l-2 border-gray-100 transition-all duration-300 origin-top" style={whatsappConfig.notifyOrderShipped ? '' : 'display: none;'}>
+              <label class="block text-xs font-bold text-secondary mb-2 uppercase tracking-wider">Approved Template Name</label>
+              <input type="text" id="wa_template_shipped" value={whatsappConfig.templateOrderShipped} placeholder="e.g. order_shipped_alert" class="w-full sm:w-1/2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none text-sm text-secondary focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+              <p class="text-xs text-secondary/50 mt-2">
+                Variables supported: <code>&#123;&#123;1&#125;&#125;</code> Name, <code>&#123;&#123;2&#125;&#125;</code> Order ID, <code>&#123;&#123;3&#125;&#125;</code> Tracking URL
+              </p>
+            </div>
+          </div>
+
+          <hr class="border-gray-100" />
+
+          <!-- Trigger: Abandoned Cart -->
+          <div class="group">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <span class="text-lg font-bold text-secondary flex items-center gap-3">
+                  Abandoned Cart Recovery
+                  <span class="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">High ROI</span>
+                </span>
+                <span class="text-sm text-secondary/60 block mt-1">Sends a reminder message with a checkout link if a user leaves items in their cart.</span>
+              </div>
+              <label class="relative flex items-center justify-center mt-1 cursor-pointer">
+                <input type="checkbox" id="notify_abandoned" class="peer sr-only wa-trigger-toggle" checked={whatsappConfig.notifyAbandonedCart} />
+                <div class="w-12 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            
+            <div class="template-settings pl-4 border-l-2 border-gray-100 transition-all duration-300 origin-top space-y-4" style={whatsappConfig.notifyAbandonedCart ? '' : 'display: none;'}>
+              <div class="w-full sm:w-1/2">
+                <label class="block text-xs font-bold text-secondary mb-2 uppercase tracking-wider">Delay Before Sending</label>
+                <select id="wa_abandoned_delay" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none text-sm text-secondary focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all">
+                  <option value="15" selected={whatsappConfig.abandonedCartDelay === '15'}>15 Minutes</option>
+                  <option value="30" selected={whatsappConfig.abandonedCartDelay === '30'}>30 Minutes</option>
+                  <option value="60" selected={whatsappConfig.abandonedCartDelay === '60'}>1 Hour</option>
+                  <option value="1440" selected={whatsappConfig.abandonedCartDelay === '1440'}>24 Hours</option>
+                </select>
+              </div>
+              
+              <div>
+                <label class="block text-xs font-bold text-secondary mb-2 uppercase tracking-wider">Approved Template Name</label>
+                <input type="text" id="wa_template_abandoned" value={whatsappConfig.templateAbandonedCart} placeholder="e.g. cart_recovery" class="w-full sm:w-1/2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none text-sm text-secondary focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+                <p class="text-xs text-secondary/50 mt-2">
+                  Variables supported: <code>&#123;&#123;1&#125;&#125;</code> Name, <code>&#123;&#123;2&#125;&#125;</code> Checkout URL
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Previews -->
+    <div>
+      <div class="sticky top-6">
+        <h3 class="font-bold text-secondary mb-6 flex items-center gap-2">
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+          Live Preview
+        </h3>
+        
+        <!-- Mock WhatsApp Phone -->
+        <div class="bg-[#efeae2] w-full rounded-[2.5rem] border-[8px] border-gray-900 shadow-2xl overflow-hidden aspect-[9/18.5] flex flex-col relative mx-auto max-w-[320px]">
+          <!-- Notch -->
+          <div class="absolute top-0 inset-x-0 h-6 bg-gray-900 rounded-b-2xl w-32 mx-auto z-20"></div>
+          
+          <!-- Header -->
+          <div class="bg-[#075e54] text-white pt-10 pb-3 px-4 flex items-center gap-3 z-10 shadow-sm">
+            <svg class="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+            <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center p-1">
+              <img src="/favicon.ico" alt="Logo" class="w-full h-full object-contain" onerror="this.src='data:image/svg+xml;utf8,<svg viewBox=%220 0 100 100%22 xmlns=%22http://www.w3.org/2000/svg%22><circle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%2322c55e%22/></svg>'" />
+            </div>
+            <div>
+              <p class="font-bold text-[13px] leading-tight tracking-wide">Your Brand</p>
+              <p class="text-[10px] text-white/70">Verified Business Account</p>
+            </div>
+          </div>
+
+          <!-- Chat Area -->
+          <div class="flex-1 p-4 overflow-y-auto" style="background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); background-size: cover; background-attachment: fixed;">
+            
+            <!-- Date -->
+            <div class="flex justify-center mb-5">
+              <span class="bg-[#e1f3fb] text-secondary/70 text-[10px] px-3 py-1 rounded-lg shadow-sm">TODAY</span>
+            </div>
+
+            <!-- Message 1 (Order Confirmation) -->
+            <div class="bg-white rounded-xl rounded-tl-sm p-3 shadow-sm max-w-[85%] mb-4 relative animate-fade-in-up">
+              <svg class="absolute top-0 -left-2 text-white w-3 h-3" viewBox="0 0 8 13"><path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"/></svg>
+              <p class="text-[13px] text-[#111b21] leading-relaxed">
+                ✅ *Order Confirmed!*<br/><br/>
+                Hi Rahul, thank you for shopping with Your Brand! Your order *#ND-4921* of ₹1,299 has been received and is being processed.<br/><br/>
+                We'll notify you once it ships.
+              </p>
+              <p class="text-[10px] text-gray-400 text-right mt-1 font-medium">10:42 AM</p>
+            </div>
+
+            <!-- Message 2 (Abandoned Cart) -->
+            <div class="bg-white rounded-xl rounded-tl-sm p-3 shadow-sm max-w-[85%] mb-4 relative animate-fade-in-up" style="animation-delay: 1.5s; opacity: 0; animation-fill-mode: forwards;">
+              <svg class="absolute top-0 -left-2 text-white w-3 h-3" viewBox="0 0 8 13"><path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"/></svg>
+              <p class="text-[13px] text-[#111b21] leading-relaxed">
+                🛒 *You left something behind!*<br/><br/>
+                Hi Rahul, we noticed you left some premium dry fruits in your cart. <br/><br/>
+                Complete your purchase now and get an extra 5% off! Use code: *RECOVER5*
+              </p>
+              <div class="mt-3 pt-2 border-t border-gray-100 flex justify-center">
+                <span class="text-[#00a884] font-bold text-[13px] flex items-center gap-1.5 cursor-pointer">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                  Return to Checkout
+                </span>
+              </div>
+              <p class="text-[10px] text-gray-400 text-right mt-1 font-medium">11:15 AM</p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<style>
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in-up {
+    animation: fadeInUp 0.5s ease-out forwards;
+  }
+</style>
+
+<script data-astro-rerun>
+  const enableToggle = document.getElementById('wa_enabled');
+  const setupContainer = document.getElementById('wa-setup-container');
+
+  enableToggle?.addEventListener('change', (e) => {
+    if (setupContainer) {
+      if (e.target.checked) {
+        setupContainer.style.opacity = '1';
+        setupContainer.style.pointerEvents = 'auto';
+      } else {
+        setupContainer.style.opacity = '0.4';
+        setupContainer.style.pointerEvents = 'none';
+      }
+    }
+  });
+
+  // Toggle template settings visibility smoothly when trigger is toggled
+  document.querySelectorAll('.wa-trigger-toggle').forEach(toggle => {
+    toggle.addEventListener('change', (e) => {
+      const container = e.target.closest('.group')?.querySelector('.template-settings');
+      if (container) {
+        if (e.target.checked) {
+          container.style.display = 'block';
+          // Small timeout to allow display:block to apply before animating opacity
+          setTimeout(() => { container.style.opacity = '1'; }, 10);
+        } else {
+          container.style.opacity = '0';
+          setTimeout(() => { container.style.display = 'none'; }, 300);
+        }
+      }
+    });
+  });
+
+  document.getElementById('save-whatsapp-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('save-whatsapp-btn');
+    if(btn) { btn.innerHTML = 'Saving...'; btn.disabled = true; }
+    
+    const wa_enabled = document.getElementById('wa_enabled');
+    const wa_provider = document.getElementById('wa_provider');
+    const wa_api_key = document.getElementById('wa_api_key');
+    const wa_from_number = document.getElementById('wa_from_number');
+    const notify_placed = document.getElementById('notify_placed');
+    const notify_shipped = document.getElementById('notify_shipped');
+    const notify_abandoned = document.getElementById('notify_abandoned');
+    const wa_abandoned_delay = document.getElementById('wa_abandoned_delay');
+    const wa_template_placed = document.getElementById('wa_template_placed');
+    const wa_template_shipped = document.getElementById('wa_template_shipped');
+    const wa_template_abandoned = document.getElementById('wa_template_abandoned');
+
+    const updates = {
+      whatsapp_enabled: wa_enabled ? wa_enabled.checked : false,
+      whatsapp_api_provider: wa_provider ? wa_provider.value : 'interakt',
+      whatsapp_api_key: wa_api_key ? wa_api_key.value : '',
+      whatsapp_from_number: wa_from_number ? wa_from_number.value : '',
+      whatsapp_notify_order_placed: notify_placed ? notify_placed.checked : false,
+      whatsapp_notify_order_shipped: notify_shipped ? notify_shipped.checked : false,
+      whatsapp_notify_abandoned_cart: notify_abandoned ? notify_abandoned.checked : false,
+      whatsapp_abandoned_cart_delay: wa_abandoned_delay ? wa_abandoned_delay.value : '15',
+      whatsapp_template_order_placed: wa_template_placed ? wa_template_placed.value : '',
+      whatsapp_template_order_shipped: wa_template_shipped ? wa_template_shipped.value : '',
+      whatsapp_template_abandoned_cart: wa_template_abandoned ? wa_template_abandoned.value : '',
+    };
+
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', settings: updates })
+      });
+      const data = await res.json();
+      if(data.success) {
+        // Provide subtle visual feedback instead of an annoying alert
+        const originalHtml = btn?.innerHTML;
+        if (btn) {
+          btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Saved!`;
+          btn.classList.add('bg-green-600');
+          setTimeout(() => {
+            btn.innerHTML = originalHtml || '';
+            btn.classList.remove('bg-green-600');
+          }, 2000);
+        }
+      } else {
+        alert('Error saving configuration: ' + data.error);
+      }
+    } catch(err) {
+      alert('Network error while saving.');
+    } finally {
+      if(btn) { 
+        btn.disabled = false; 
+      }
+    }
+  });
+</script>
+</AdminLayout>

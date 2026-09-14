@@ -1,0 +1,631 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+---
+
+<AdminLayout title="Bulk Upload | Admin Panel" description="Bulk upload products using various methods.">
+  <div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center gap-4 mb-8">
+      <a href="/admin/products" class="p-2 rounded-lg border border-gray-200 text-secondary hover:bg-gray-50 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+      </a>
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary flex items-center gap-2">
+          Bulk Upload Products
+        </h1>
+        <p class="text-sm text-secondary/60 mt-1">Upload multiple products at once via AI Chat, File Upload, or JSON.</p>
+      </div>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="bulk-upload"
+    title="Bulk Upload Assistant"
+      pageDataJson="{}"
+      guideTitleEn="Bulk Upload Guide"
+      guideTitleHi="Bulk Upload Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>AI Chat:</strong> Just type what you want to add, and the AI will generate the product details.</li>
+        <li><strong>Excel/CSV:</strong> Download the template, fill it, and upload it back.</li>
+        <li><strong>JSON BYO-AI:</strong> Use ChatGPT or Claude to generate JSON and paste it here.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>AI Chat:</strong> AI assistant ko bataein ki aapko kya products add karne hain.</li>
+        <li><strong>Excel/CSV:</strong> Badi lists ke liye template download karein aur usey bharke upload karein.</li>
+        <li><strong>JSON BYO-AI:</strong> Kisi bhi AI tool se JSON generate karke direct paste karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '💬 AI Assistant', query: 'ai chat tab kholo' },
+        { label: '📁 Excel Upload', query: 'excel tab kholo' },
+        { label: '🤖 BYO-AI', query: 'json tab kholo' }
+      ]}
+    />
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-200 mb-8 overflow-x-auto hide-scrollbar">
+      <button class="tab-btn active px-6 py-3 text-sm font-medium border-b-2 border-primary text-primary whitespace-nowrap transition-colors" data-target="tab-chat">
+        💬 AI Chat Assistant
+      </button>
+      <button class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-secondary/60 hover:text-secondary whitespace-nowrap transition-colors" data-target="tab-excel">
+        📁 Excel + ZIP (Bulk)
+      </button>
+      <button class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-secondary/60 hover:text-secondary whitespace-nowrap transition-colors" data-target="tab-json">
+        🤖 Bring Your Own AI (JSON)
+      </button>
+    </div>
+
+    <div class="tab-content relative">
+      
+      <!-- TAB 1: AI CHAT ASSISTANT -->
+      <div id="tab-chat" class="tab-pane block">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[550px]">
+          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center shrink-0">
+            <div>
+              <h2 class="font-bold text-secondary flex items-center gap-2">
+                Gemini 2.5 Pro Assistant
+              </h2>
+              <p class="text-xs text-secondary/60">Type a prompt to add products. The AI analyzes your existing catalog for context.</p>
+            </div>
+            <span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> Connected
+            </span>
+          </div>
+          
+          <div class="flex-1 p-6 overflow-y-auto space-y-4" id="chat-messages">
+            <!-- AI Welcome Message -->
+            <div class="flex gap-4">
+              <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg shrink-0">✨</div>
+              <div class="bg-gray-50 rounded-2xl rounded-tl-none px-4 py-3 text-sm text-secondary border border-gray-100 max-w-[80%]">
+                <p>Hello! I'm your catalog assistant powered by Gemini 2.5 Pro. I have analyzed your existing products to understand your brand tone.</p>
+                <p class="mt-2">How can I help you add new products today?</p>
+                <div class="mt-3 space-y-1">
+                  <p class="text-xs font-medium text-secondary/70">Examples you can try:</p>
+                  <p class="text-xs text-secondary/50 bg-white p-1.5 rounded border border-gray-100">"Add a 250g variant of Beetroot powder for ₹200."</p>
+                  <p class="text-xs text-secondary/50 bg-white p-1.5 rounded border border-gray-100">"Create a new product 'Organic Turmeric Flakes' in Spices category with 100g, 250g variants."</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="p-4 border-t border-gray-100 shrink-0">
+            <form id="chat-form" class="flex gap-2 relative">
+              <input type="text" id="chat-input" placeholder="Describe the product you want to add..." class="flex-1 px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:ring-primary focus:border-primary text-sm shadow-sm" required autocomplete="off" />
+              <button type="submit" class="absolute right-2 top-1.5 bottom-1.5 px-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center" id="chat-submit-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: EXCEL + ZIP (BULK) -->
+      <div id="tab-excel" class="tab-pane hidden">
+        <!-- How it works -->
+        <div class="bg-primary/5 border border-primary/20 rounded-2xl p-6 mb-8 flex flex-col sm:flex-row gap-4 sm:items-center justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-primary mb-2">How Excel + AI Bulk Upload works:</h3>
+            <ol class="text-sm text-secondary/70 space-y-1 list-decimal list-inside">
+              <li>Download the template and fill it with basic product details.</li>
+              <li>Upload the completed template along with a ZIP of your images.</li>
+              <li>Gemini AI will automatically write descriptions, map images, and add specifications.</li>
+            </ol>
+          </div>
+          <!-- Download Template Button - real CSV -->
+          <a href="/api/admin/download-template" download="Your Brand-bulk-upload-template.csv" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center justify-center gap-2 shrink-0 py-2 px-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Download CSV Template
+          </a>
+        </div>
+
+
+        <form id="bulk-upload-form" class="space-y-6">
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h2 class="text-base font-bold text-secondary mb-1">1. Product Data (Excel/CSV)</h2>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+              <input type="file" required accept=".xlsx,.xls,.csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" id="data-file" />
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 group-hover:text-primary mx-auto mb-3 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <div class="text-sm font-medium text-secondary mb-1">Drag and drop your data file here</div>
+              <div class="text-xs text-secondary/50" id="data-file-name">Supports .xlsx, .csv</div>
+            </div>
+          </div>
+
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h2 class="text-base font-bold text-secondary mb-1">2. Product Images (ZIP)</h2>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+              <input type="file" required accept=".zip" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" id="zip-file" />
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-400 group-hover:text-primary mx-auto mb-3 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <div class="text-sm font-medium text-secondary mb-1">Drag and drop your images .zip file here</div>
+              <div class="text-xs text-secondary/50" id="zip-file-name">Max size: 50MB per upload batch</div>
+            </div>
+          </div>
+
+          <div id="processing-status" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div class="flex items-center gap-3 mb-4">
+              <svg class="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <h2 class="text-base font-bold text-secondary" id="process-title">Gemini AI is processing...</h2>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-1.5 mt-6 overflow-hidden">
+              <div class="bg-primary h-1.5 rounded-full w-0 transition-all duration-500" id="progress-bar"></div>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-4">
+            <button type="submit" class="btn-primary !px-8 !py-2.5 !rounded-lg flex items-center gap-2" id="start-btn">
+              <span class="text-lg">✨</span> Start AI Processing
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- TAB 3: JSON BYO-AI -->
+      <div id="tab-json" class="tab-pane hidden">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+            <h2 class="font-bold text-secondary">Bring Your Own AI (BYO-AI)</h2>
+            <p class="text-xs text-secondary/60">Use ChatGPT, Claude, or any other AI to generate your catalog data, then paste the JSON here.</p>
+          </div>
+          
+          <div class="p-6">
+            <!-- Step 1 -->
+            <div class="mb-8">
+              <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+                <span class="flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-xs">1</span> 
+                Copy this prompt and send it to your AI
+              </h3>
+              <div class="relative bg-gray-900 rounded-xl p-5 group">
+                <button type="button" class="absolute top-3 right-3 p-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 hover:text-white transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('ai-prompt').innerText); const icon = this.querySelector('svg'); const oldPath = icon.innerHTML; icon.innerHTML = '<path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M5 13l4 4L19 7\' />'; setTimeout(() => { icon.innerHTML = oldPath; }, 2000);" title="Copy to clipboard">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </button>
+                <pre id="ai-prompt" class="text-xs text-gray-300 whitespace-pre-wrap font-mono leading-relaxed">{`I want to list new products for an e-commerce store selling premium products.
+Please generate a valid JSON array of objects representing the products.
+Follow this exact schema for each product object:
+
+{
+  "name": "Product Name",
+  "category": "One of: superfoods | herbs-floral | fruits | spices-herbs",
+  "description": "Short 1-2 line description for product cards.",
+  "long_description": "A high-quality, professional 3-4 paragraph description highlighting organic, premium, and healthy aspects.",
+  "bullet_points": ["Point 1: ...", "Point 2: ..."],
+  "badges": ["100% Natural", "Best Seller"],
+  "specifications": {
+    "Ingredients": "...",
+    "Shelf Life": "...",
+    "Storage": "..."
+  },
+  "variant_options": [
+    { "name": "Size", "values": ["Small", "Large"] },
+    { "name": "Color", "values": ["Red", "Blue"] }
+  ],
+  "variants": [
+    { "weight": "Small / Red", "price": 1000, "mrp": 1200 },
+    { "weight": "Small / Blue", "price": 1000, "mrp": 1200 },
+    { "weight": "Large / Red", "price": 1200, "mrp": 1500 },
+    { "weight": "Large / Blue", "price": 1200, "mrp": 1500 }
+  ]
+}
+
+Do not wrap the JSON in markdown blocks, just output the raw JSON array starting with [ and ending with ].`}</pre>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div>
+              <h3 class="text-sm font-bold text-secondary mb-3 flex items-center gap-2">
+                <span class="flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-xs">2</span> 
+                Paste the generated JSON here
+              </h3>
+              <textarea id="json-paste-area" rows="10" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary focus:border-primary text-sm font-mono placeholder:text-gray-400 bg-gray-50/50 focus:bg-white transition-colors" placeholder='[\n  {\n    "name": "Organic Beetroot Powder",\n    "category": "Superfoods",\n    "description": "..."\n  }\n]'></textarea>
+            </div>
+            
+            <div class="flex justify-end mt-6 pt-6 border-t border-gray-100">
+              <button type="button" class="btn-primary !px-8 !py-2.5 !rounded-lg flex items-center gap-2" id="json-import-btn">
+                Import JSON Catalog
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" is:inline data-astro-rerun></script>
+<script is:inline data-astro-rerun>
+  // Tab Switching Logic
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Reset all tabs
+      tabBtns.forEach(b => {
+        b.classList.remove('border-primary', 'text-primary', 'active');
+        b.classList.add('border-transparent', 'text-secondary/60');
+      });
+      tabPanes.forEach(p => p.classList.add('hidden'));
+      tabPanes.forEach(p => p.classList.remove('block'));
+
+      // Activate clicked tab
+      btn.classList.remove('border-transparent', 'text-secondary/60');
+      btn.classList.add('border-primary', 'text-primary', 'active');
+      const target = btn.getAttribute('data-target');
+      document.getElementById(target as string)?.classList.remove('hidden');
+      document.getElementById(target as string)?.classList.add('block');
+    });
+  });
+
+  // ==========================================
+  // CHAT ASSISTANT (Placeholder Logic)
+  // ==========================================
+  const chatForm = document.getElementById('chat-form');
+  const chatInput = document.getElementById('chat-input');
+  const chatMessages = document.getElementById('chat-messages');
+  const chatSubmitBtn = document.getElementById('chat-submit-btn');
+
+  function addMessage(text, isUser) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `flex gap-4 ${isUser ? 'flex-row-reverse' : ''}`;
+    
+    if (isUser) {
+      msgDiv.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-secondary text-sm shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+        </div>
+        <div class="bg-primary text-white rounded-2xl rounded-tr-none px-4 py-3 text-sm max-w-[80%] shadow-sm">
+          <p>${text}</p>
+        </div>
+      `;
+    } else {
+      msgDiv.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg shrink-0">✨</div>
+        <div class="bg-gray-50 rounded-2xl rounded-tl-none px-4 py-3 text-sm text-secondary border border-gray-100 max-w-[80%]">
+          ${text}
+        </div>
+      `;
+    }
+    
+    chatMessages?.appendChild(msgDiv);
+    chatMessages?.scrollTo(0, chatMessages.scrollHeight);
+  }
+
+  chatForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const val = chatInput.value.trim();
+    if (!val) return;
+    
+    // Add user message
+    addMessage(val, true);
+    chatInput.value = '';
+    chatInput.disabled = true;
+    chatSubmitBtn.disabled = true;
+    
+    // Add typing indicator
+    const typingId = 'typing-' + Date.now();
+    const typingDiv = document.createElement('div');
+    typingDiv.id = typingId;
+    typingDiv.className = 'flex gap-4';
+    typingDiv.innerHTML = `
+      <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg shrink-0">✨</div>
+      <div class="bg-gray-50 rounded-2xl rounded-tl-none px-4 py-4 border border-gray-100 flex gap-1 items-center">
+        <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
+        <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+        <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+      </div>
+    `;
+    chatMessages?.appendChild(typingDiv);
+    chatMessages?.scrollTo(0, chatMessages.scrollHeight);
+
+    try {
+      // Real API Call to Gemini
+      const res = await fetch('/api/admin/generate-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: val })
+      });
+      
+      if (!res.ok) throw new Error('API failed');
+      const data = await res.json();
+      
+      // Save to database
+      const saveRes = await fetch('/api/admin/bulk_upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([data])
+      });
+      
+      document.getElementById(typingId)?.remove();
+
+      if (saveRes.ok) {
+        const successHtml = `
+          <p class="font-medium text-green-700 flex items-center gap-1 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            Product Generated & Saved!
+          </p>
+          <p>I have successfully generated and added <strong>"${data.name}"</strong> to your catalog.</p>
+          <p class="text-xs text-secondary/60 mt-2">Category: ${data.category} | Variants: ${data.variants?.length || 0}</p>
+        `;
+        addMessage(successHtml, false);
+      } else {
+        throw new Error('Failed to save to DB');
+      }
+    } catch (err) {
+      document.getElementById(typingId)?.remove();
+      addMessage(`<p class="text-red-600">Sorry, there was an error processing your request. Ensure Gemini API key is configured.</p>`, false);
+    } finally {
+      chatInput.disabled = false;
+      chatSubmitBtn.disabled = false;
+      chatInput.focus();
+    }
+  });
+
+  // ==========================================
+  // EXCEL + ZIP UPLOAD (Placeholder Logic)
+  // ==========================================
+  const bulkForm = document.getElementById('bulk-upload-form');
+  const startBtn = document.getElementById('start-btn');
+  const statusBox = document.getElementById('processing-status');
+  const processTitle = document.getElementById('process-title');
+  const progressBar = document.getElementById('progress-bar');
+  
+  // File input display names
+  const dataFile = document.getElementById('data-file');
+  const dataFileName = document.getElementById('data-file-name');
+  dataFile?.addEventListener('change', (e) => {
+    if (dataFile.files && dataFile.files[0]) {
+      dataFileName.textContent = dataFile.files[0].name;
+      dataFileName.parentElement.classList.add('border-primary', 'bg-primary/5');
+    }
+  });
+
+  const zipFile = document.getElementById('zip-file');
+  const zipFileName = document.getElementById('zip-file-name');
+  zipFile?.addEventListener('change', (e) => {
+    if (zipFile.files && zipFile.files[0]) {
+      zipFileName.textContent = zipFile.files[0].name;
+      zipFileName.parentElement.classList.add('border-primary', 'bg-primary/5');
+    }
+  });
+
+  bulkForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    startBtn.disabled = true;
+    statusBox?.classList.remove('hidden');
+    
+    // Read and parse CSV file
+    const file = dataFile.files?.[0];
+    if (!file) {
+      alert('Please select a CSV or Excel file first.');
+      startBtn.disabled = false;
+      statusBox?.classList.add('hidden');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      // Simple CSV parser
+      const rows = text.split('\\n').filter(r => r.trim());
+      const headers = rows[0].split(',').map(h => h.replace(/["\\r]/g, '').trim());
+      
+      const products = [];
+      
+      for (let i = 1; i < rows.length; i++) {
+        // Handle quotes in CSV
+        const rowString = rows[i];
+        const cells = [];
+        let currentCell = '';
+        let inQuotes = false;
+        
+        for (let j = 0; j < rowString.length; j++) {
+          const char = rowString[j];
+          if (char === '"' && rowString[j+1] === '"') { currentCell += '"'; j++; }
+          else if (char === '"') { inQuotes = !inQuotes; }
+          else if (char === ',' && !inQuotes) { cells.push(currentCell.trim()); currentCell = ''; }
+          else { currentCell += char; }
+        }
+        cells.push(currentCell.replace(/\\r/g, '').trim());
+
+        const row: any = {};
+        headers.forEach((h, idx) => row[h] = cells[idx] || '');
+        
+        if (!row.name) continue; // Skip empty rows
+
+        // Build rich product object
+        const variants = [];
+        for (let v = 1; v <= 3; v++) {
+          if (row[`variant_${v}_weight`]) {
+            variants.push({
+              weight: row[`variant_${v}_weight`],
+              price: parseFloat(row[`variant_${v}_price`]) || 0,
+              mrp: parseFloat(row[`variant_${v}_mrp`]) || 0,
+              id: row['variant_' + v + '_sku'] || 'VAR-' + v
+            });
+          }
+        }
+
+        const specifications: any = {};
+        if (row.spec_shelf_life) specifications['Shelf Life'] = row.spec_shelf_life;
+        if (row.spec_storage) specifications['Storage Instructions'] = row.spec_storage;
+        if (row.spec_origin) specifications['Country Of Origin'] = row.spec_origin;
+        if (row.spec_processing) specifications['Processing Method'] = row.spec_processing;
+
+        // Automatically map any column starting with _section_ or _seo_
+        headers.forEach((h) => {
+          if ((h.startsWith('_section_') || h.startsWith('_seo_')) && row[h]) {
+            specifications[h] = row[h];
+          }
+        });
+
+        products.push({
+          name: row.name,
+          slug: row.slug || undefined,
+          category: row.category || 'uncategorized',
+          description: row.description || '',
+          long_description: row.long_description || '',
+          bullet_points: row.bullet_points ? row.bullet_points.split('|').map((b: string) => b.trim()).filter(Boolean) : [],
+          badges: row.badge ? row.badge.split('|').map((b: string) => b.trim()).filter(Boolean) : [],
+          variants,
+          specifications,
+          _temp_image_filename: row.image_filename,
+          image: row.image_filename ? '/products/' + row.image_filename : undefined,
+          rating_value: parseFloat(row.rating_value) || 0,
+          rating_count: parseInt(row.rating_count) || 0,
+          is_in_stock: row.is_out_of_stock !== 'TRUE' && row.is_out_of_stock !== 'true',
+          tags: row.tags ? row.tags.split('|').map((t: string) => t.trim()).filter(Boolean) : []
+        });
+      }
+
+      setTimeout(() => { progressBar.style.width = '20%'; processTitle.textContent = 'Extracting and Uploading Images from ZIP...'; }, 500);
+
+      const zipArchive = zipFile.files?.[0];
+      const uploadedImageMap: Record<string, string> = {};
+      
+      if (zipArchive && (window as any).JSZip) {
+         try {
+           const zip = await (window as any).JSZip.loadAsync(zipArchive);
+           const files = Object.keys(zip.files).filter(name => !zip.files[name].dir && !name.startsWith('__MACOSX'));
+           
+           let processed = 0;
+           for (const filename of files) {
+             const blob = await zip.files[filename].async("blob");
+             const cleanName = filename.split('/').pop() || filename;
+             
+             // Upload blob to Supabase bucket
+             const formData = new FormData();
+             formData.append('file', blob, cleanName);
+             
+             try {
+                const upRes = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+                const upJson = await upRes.json();
+                if (upJson.success && upJson.url) {
+                   uploadedImageMap[cleanName] = upJson.url;
+                }
+             } catch(e) { console.error('Upload failed for', cleanName); }
+             
+             processed++;
+             const progress = 20 + Math.floor((processed / files.length) * 60);
+             progressBar.style.width = progress + '%';
+           }
+         } catch(e) {
+           console.error("ZIP processing failed", e);
+         }
+      }
+
+      // Map uploaded images back to products
+      products.forEach(p => {
+         if (p._temp_image_filename && uploadedImageMap[p._temp_image_filename]) {
+             p.image = uploadedImageMap[p._temp_image_filename];
+         }
+         delete p._temp_image_filename;
+      });
+
+      progressBar.style.width = '85%';
+      processTitle.textContent = 'Saving products to database...';
+
+      // Send JSON to Bulk Upload API
+      const res = await fetch('/api/admin/bulk_upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(products)
+      });
+      const data = await res.json();
+      
+      progressBar.style.width = '100%'; 
+      
+      if (data.success) {
+        processTitle.textContent = '✅ Success! Imported ' + data.count + ' products.'; 
+        setTimeout(() => {
+          alert('Upload flow completed successfully. ' + data.count + ' products saved to database.');
+          window.location.href = '/admin/products?refresh=true';
+        }, 1000);
+      } else {
+        processTitle.textContent = '❌ Upload Failed';
+        alert('Failed to import products: ' + data.error);
+        startBtn.disabled = false;
+        statusBox?.classList.add('hidden');
+        progressBar.style.width = '0%';
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert('Error parsing or uploading CSV: ' + err.message);
+      startBtn.disabled = false;
+      statusBox?.classList.add('hidden');
+    }
+  });
+
+  // ==========================================
+  // JSON BYO-AI IMPORT (API Hooked)
+  // ==========================================
+  const jsonImportBtn = document.getElementById('json-import-btn');
+  const jsonPasteArea = document.getElementById('json-paste-area');
+
+  jsonImportBtn?.addEventListener('click', async () => {
+    const val = jsonPasteArea.value.trim();
+    if (!val) {
+      alert('Please paste some JSON first!');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(val);
+      if (!Array.isArray(parsed)) {
+        alert('Error: JSON must be an array of product objects starting with [ and ending with ].');
+        return;
+      }
+      
+      const count = parsed.length;
+      jsonImportBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...`;
+      
+      try {
+        const res = await fetch('/api/admin/bulk_upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed)
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          alert(`Success! Imported ${data.count} products via API.`);
+          jsonPasteArea.value = '';
+        } else {
+          alert('Failed to import products: ' + data.error);
+        }
+      } catch (err) {
+        console.error('API Error:', err);
+        alert('Failed to connect to the bulk upload API.');
+      } finally {
+        jsonImportBtn.innerHTML = 'Import JSON Catalog';
+      }
+
+    } catch (e) {
+      alert('Invalid JSON format. Please ensure it is a valid JSON array. Error: ' + e.message);
+    }
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    } else if (action === 'switch_tab' && params.tabId) {
+       const tabBtn = document.querySelector(`.tab-btn[data-target="${params.tabId}"]`);
+       if (tabBtn) tabBtn.click();
+    }
+  });
+
+</script>
+
+</AdminLayout>

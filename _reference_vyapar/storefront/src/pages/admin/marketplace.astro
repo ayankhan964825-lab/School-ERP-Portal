@@ -1,0 +1,174 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+import { getPermissionContext, canViewSection } from '../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canViewSection(ctx, 'marketing')) return Astro.redirect('/admin');
+
+// Fetch current store's marketplace application status
+const storeId = ctx.storeId || ''; // Depending on how you handle multitenancy
+
+const { data: application } = await supabaseAdmin
+  .from('marketplace_applications')
+  .select('*')
+  .eq('store_id', storeId)
+  .single();
+
+---
+
+<AdminLayout title="Marketplace Hub | Admin">
+  <div class="max-w-4xl">
+    <div class="mb-6">
+      <h1 class="text-2xl font-serif font-bold text-secondary">Marketplace Hub</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage your listing on the VyaparPe Global Marketplace.</p>
+    </div>
+
+    {!application && (
+      <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
+        <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        </div>
+        <h2 class="text-xl font-bold text-secondary mb-2">Sell on VyaparPe Marketplace</h2>
+        <p class="text-sm text-secondary/60 mb-6 max-w-md mx-auto">Get your products in front of millions of buyers. Apply for KYC verification to list your products on our global marketplace.</p>
+        
+        <div class="max-w-md mx-auto text-left space-y-4 relative">
+          <div class="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-xl">
+            <span class="bg-indigo-600 text-white font-bold px-6 py-3 rounded-full shadow-lg border border-indigo-500/50 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Coming Soon
+            </span>
+          </div>
+        <form action="/api/admin/marketplace-apply" method="POST" class="opacity-40 pointer-events-none select-none">
+          <div>
+            <label class="block text-sm font-medium text-secondary mb-1">Business Name</label>
+            <input type="text" name="business_name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" disabled />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">GSTIN</label>
+              <input type="text" name="gstin" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" disabled />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">PAN Card</label>
+              <input type="text" name="pan" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm uppercase" disabled />
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary mb-1">Bank Name</label>
+            <input type="text" name="bank_name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" disabled />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">Account Number</label>
+              <input type="text" name="bank_account_no" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" disabled />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-secondary mb-1">IFSC Code</label>
+              <input type="text" name="bank_ifsc" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm uppercase" disabled />
+            </div>
+          </div>
+          <button type="submit" class="w-full bg-gray-300 text-gray-500 py-2.5 rounded-xl font-bold" disabled>Submit Application</button>
+        </form>
+        </div>
+      </div>
+    )}
+
+    {application?.status === 'pending' && (
+      <div class="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center">
+        <div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h2 class="text-xl font-bold text-amber-900 mb-2">Application Pending Review</h2>
+        <p class="text-sm text-amber-700 max-w-md mx-auto">Your KYC details are currently being reviewed by our compliance team. We will notify you once approved.</p>
+        <div class="mt-6 inline-block bg-white px-4 py-2 rounded-lg border border-amber-200 text-sm font-mono text-amber-800">
+          Applied On: {new Date(application.applied_at).toLocaleDateString()}
+        </div>
+      </div>
+    )}
+
+    {application?.status === 'rejected' && (
+      <div class="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h2 class="text-xl font-bold text-red-900 mb-2">Application Rejected</h2>
+        <p class="text-sm text-red-700 max-w-md mx-auto mb-4">Your KYC application was not approved.</p>
+        {application.review_notes && (
+          <div class="bg-white p-4 rounded-lg border border-red-200 text-sm text-red-800 max-w-md mx-auto text-left">
+            <strong>Reason:</strong> {application.review_notes}
+          </div>
+        )}
+        {import.meta.env.MARKETPLACE_ENABLED === 'true' && (
+          <form action="/api/admin/marketplace-apply" method="POST" class="mt-6 text-sm">
+            <input type="hidden" name="action" value="reapply" />
+            <button type="submit" class="text-indigo-600 hover:underline font-medium">Re-apply</button>
+          </form>
+        )}
+      </div>
+    )}
+
+    {application?.status === 'approved' && (
+      <div class="space-y-6">
+        <div class="bg-green-50 border border-green-200 rounded-2xl p-6 flex items-center gap-4">
+          <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-green-900">Marketplace Active</h2>
+            <p class="text-sm text-green-700">Your store is verified and listed on the VyaparPe Global Marketplace.</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+           <h3 class="font-bold text-secondary mb-4">Marketplace Performance</h3>
+           <div class="grid grid-cols-3 gap-4">
+             <div class="p-4 bg-gray-50 rounded-xl">
+               <p class="text-xs text-secondary/60">Total Views</p>
+               <p class="text-2xl font-bold text-secondary">0</p>
+             </div>
+             <div class="p-4 bg-gray-50 rounded-xl">
+               <p class="text-xs text-secondary/60">Orders</p>
+               <p class="text-2xl font-bold text-secondary">0</p>
+             </div>
+             <div class="p-4 bg-gray-50 rounded-xl">
+               <p class="text-xs text-secondary/60">Revenue</p>
+               <p class="text-2xl font-bold text-secondary">₹0</p>
+             </div>
+           </div>
+        </div>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<script data-astro-rerun>
+  document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      // Allow confirmed deletes to pass if they don't have action
+      if (!form.action) return;
+      e.preventDefault();
+      const btn = form.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
+
+      try {
+        const formData = new FormData(form);
+        const res = await fetch(form.action, {
+          method: form.method || 'POST',
+          headers: { 'Accept': 'application/json' },
+          body: formData
+        });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          alert(data.error || 'Operation failed');
+        }
+      } catch (err) {
+        alert('An error occurred');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  });
+</script>

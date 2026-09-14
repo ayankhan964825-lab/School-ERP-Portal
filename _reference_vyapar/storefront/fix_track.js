@@ -1,0 +1,1 @@
+const fs = require('fs'); const c = fs.readFileSync('c:/Users/faisa/vyaparpe/the nutridry/storefront/src/pages/track-order.astro', 'utf8'); fs.writeFileSync('c:/Users/faisa/vyaparpe/the nutridry/storefront/src/pages/track-rider.astro', c.replace(/<form[^]*?<\/form>/, '').replace(/{searchedId && searchedPhone && !order && \([^]*?\)}/, ''));

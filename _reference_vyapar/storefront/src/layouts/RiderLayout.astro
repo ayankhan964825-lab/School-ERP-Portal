@@ -1,0 +1,129 @@
+---
+import { SEO } from 'astro-seo';
+import { getSettings } from '../lib/database';
+import { optimizeImage } from '../lib/image-utils';
+import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
+
+export interface Props {
+  title: string;
+  description?: string;
+  bodyClass?: string;
+}
+
+const {
+  title,
+  description = "VyaparPe Delivery Rider App",
+  bodyClass = "bg-gray-50",
+} = Astro.props;
+
+const forceStoreId = Astro.locals.storeId;
+const siteSettings = await getSettings(forceStoreId);
+
+const brandName = siteSettings?.brand_name || 'VyaparPe';
+const rawFavicon = siteSettings?.favicon_url || siteSettings?.brand_favicon || siteSettings?.logo_url || siteSettings?.brand_logo || null;
+const dynamicFaviconUrl = rawFavicon ? optimizeImage(rawFavicon, { width: 96, height: 96, quality: 100, format: 'png', resize: 'contain' }) : null;
+
+let themePreset = 'warpdeal';
+try {
+  if (siteSettings?.website_theme) {
+    const parsed = typeof siteSettings.website_theme === 'string' ? JSON.parse(siteSettings.website_theme) : siteSettings.website_theme;
+    themePreset = parsed.active_preset || 'warpdeal';
+  }
+} catch (e) {}
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    {dynamicFaviconUrl && <link rel="icon" type="image/png" href={dynamicFaviconUrl} />}
+    <meta name="theme-color" content="#9333ea" /> <!-- Purple theme for Rider app -->
+    <link rel="manifest" href="/rider-manifest.json" />
+    
+    <SEO
+      title={title}
+      description={description}
+      noindex={true}
+      nofollow={true}
+    />
+    <ClientRouter />
+    <slot name="head" />
+  </head>
+  <body class={`${bodyClass} theme-${themePreset}`}>
+    <!-- Strict mobile overflow wrapper -->
+    <div class="overflow-x-hidden max-w-[100vw] w-full relative min-h-screen flex flex-col">
+      <main class="flex-grow flex flex-col">
+        <slot />
+      </main>
+    </div>
+
+
+
+    <script is:inline>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/rider-sw.js').then((reg) => {
+            console.log('Rider ServiceWorker registration successful with scope: ', reg.scope);
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (newWorker) {
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    newWorker.postMessage('skipWaiting');
+                  }
+                });
+              }
+            });
+          }).catch((err) => {
+            console.error('Rider ServiceWorker registration failed: ', err);
+          });
+        });
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+          }
+        });
+      }
+
+      // PWA Install Prompt
+      let deferredPrompt;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        const dismissed = sessionStorage.getItem('rider-pwa-toast-dismissed');
+        if (!dismissed) {
+          setTimeout(() => {
+            document.getElementById('pwa-toast')?.classList.remove('hidden');
+          }, 2000);
+        }
+      });
+
+      function triggerInstall() {
+        if (!deferredPrompt) return;
+        document.getElementById('pwa-toast')?.classList.add('hidden');
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('User accepted the Rider A2HS prompt');
+          }
+          deferredPrompt = null;
+        });
+      }
+
+      document.getElementById('pwa-toast-install')?.addEventListener('click', triggerInstall);
+      document.getElementById('pwa-toast-dismiss')?.addEventListener('click', () => {
+        document.getElementById('pwa-toast')?.classList.add('hidden');
+        sessionStorage.setItem('rider-pwa-toast-dismissed', '1');
+      });
+
+      window.addEventListener('appinstalled', () => {
+        document.getElementById('pwa-toast')?.classList.add('hidden');
+      });
+    </script>
+  </body>
+</html>

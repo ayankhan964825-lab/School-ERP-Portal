@@ -1,0 +1,589 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+---
+
+<AdminLayout title="Image & Video Converter | Admin Panel" description="Convert JPG/PNG to WebP and compress videos for the store.">
+  <div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="mb-4">
+      <h1 class="text-2xl font-serif font-bold text-secondary">Media Manager</h1>
+      <p class="text-sm text-secondary/60 mt-1">Convert product images to WebP, compress videos, or bulk upload media to the server.</p>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="media"
+    title="Media Assistant"
+      pageDataJson="{}"
+      guideTitleEn="Media Manager Guide"
+      guideTitleHi="Media Manager Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Image to WebP:</strong> Convert images to WebP before uploading.</li>
+        <li><strong>Video Compression:</strong> Compress videos for the store.</li>
+        <li><strong>Bulk Upload:</strong> Directly upload multiple images/videos or a ZIP file to your server and get public URLs.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Image to WebP:</strong> Images ko WebP mein convert karein.</li>
+        <li><strong>Video Compression:</strong> Videos check/compress karein.</li>
+        <li><strong>Bulk Upload:</strong> Ek saath bahut saari images server par upload karein aur unke links copy karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '🖼️ Image Converter', query: 'image convert tab kholo' },
+        { label: '🎬 Video Preview', query: 'video tab kholo' },
+        { label: '📤 Bulk Upload', query: 'bulk upload tab kholo' }
+      ]}
+    />
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-6 border-b border-gray-100 overflow-x-auto hide-scrollbar">
+      <button id="tab-img" class="converter-tab px-5 py-2.5 text-sm font-semibold text-primary border-b-2 border-primary -mb-px whitespace-nowrap">🖼️ Image → WebP</button>
+      <button id="tab-vid" class="converter-tab px-5 py-2.5 text-sm font-medium text-secondary/60 border-b-2 border-transparent -mb-px hover:text-primary transition-colors whitespace-nowrap">🎬 Video Compress</button>
+      <button id="tab-bulk" class="converter-tab px-5 py-2.5 text-sm font-medium text-secondary/60 border-b-2 border-transparent -mb-px hover:text-primary transition-colors whitespace-nowrap">📤 Bulk Upload to Server</button>
+    </div>
+
+    <!-- IMAGE CONVERTER -->
+    <div id="panel-img">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+        <!-- Settings Row -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-secondary/60">Quality</label>
+            <select id="img-quality" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary outline-none">
+              <option value="90">90% — Best</option>
+              <option value="85" selected>85% — Recommended</option>
+              <option value="75">75% — Balanced</option>
+              <option value="60">60% — Smallest</option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-secondary/60">Max Width (px)</label>
+            <select id="img-maxwidth" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary outline-none">
+              <option value="2400">2400 — Original</option>
+              <option value="1200" selected>1200 — Product</option>
+              <option value="800">800 — Thumbnail</option>
+              <option value="400">400 — Mini</option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-secondary/60">Output Format</label>
+            <select id="img-format" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary outline-none">
+              <option value="webp" selected>WebP (Recommended)</option>
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-secondary/60">Background</label>
+            <select id="img-bg" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary outline-none">
+              <option value="transparent">Transparent</option>
+              <option value="white" selected>White</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Drop Zone -->
+        <div
+          id="img-dropzone"
+          class="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-all cursor-pointer relative"
+        >
+          <input type="file" id="img-input" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          <div class="text-4xl mb-3">🖼️</div>
+          <p class="text-secondary font-medium">Drop images here or <span class="text-primary underline">click to browse</span></p>
+          <p class="text-xs text-secondary/50 mt-2">Supports JPG, PNG, HEIC, AVIF, GIF, BMP, TIFF — Max 10MB each</p>
+        </div>
+
+        <!-- Progress / Results -->
+        <div id="img-results" class="space-y-3 hidden">
+          <div class="flex justify-between items-center">
+            <h3 class="text-sm font-semibold text-secondary">Converted Files</h3>
+            <button id="btn-download-all" class="btn-primary !py-1.5 !px-4 !text-xs hidden">⬇ Download All</button>
+          </div>
+          <div id="img-file-list" class="space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- How it works -->
+      <div class="mt-4 bg-primary/5 rounded-xl p-4 text-xs text-secondary/70 space-y-1">
+        <p class="font-semibold text-primary">💡 How it works:</p>
+        <p>• Conversion happens <strong>in your browser</strong> using Canvas API — no upload to server needed</p>
+        <p>• WebP is 30-80% smaller than JPG with same visual quality — faster page loads</p>
+        <p>• Upload converted images to <code class="bg-white px-1 rounded">/public/products/</code> folder named as <code class="bg-white px-1 rounded">product-slug.webp</code></p>
+      </div>
+    </div>
+
+    <!-- VIDEO COMPRESSOR -->
+    <div id="panel-vid" class="hidden">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-secondary/60">Max Resolution</label>
+            <select id="vid-res" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary outline-none">
+              <option value="1080">1080p</option>
+              <option value="720" selected>720p — Recommended</option>
+              <option value="480">480p — Smallest</option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-medium text-secondary/60">Usage</label>
+            <select id="vid-usage" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary outline-none">
+              <option value="product">Product Demo</option>
+              <option value="hero" selected>Hero Background</option>
+              <option value="blog">Blog / Story</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Drop Zone -->
+        <div
+          id="vid-dropzone"
+          class="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-all cursor-pointer relative"
+        >
+          <input type="file" id="vid-input" accept="video/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          <div class="text-4xl mb-3">🎬</div>
+          <p class="text-secondary font-medium">Drop a video here or <span class="text-primary underline">click to browse</span></p>
+          <p class="text-xs text-secondary/50 mt-2">Supports MP4, MOV, WebM, AVI — Max 200MB</p>
+        </div>
+
+        <!-- Video Preview -->
+        <div id="vid-preview-box" class="hidden space-y-3">
+          <div class="rounded-xl overflow-hidden bg-black aspect-video">
+            <video id="vid-preview" controls class="w-full h-full object-contain"></video>
+          </div>
+          <div id="vid-info" class="grid grid-cols-3 gap-3 text-center text-xs">
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="font-bold text-secondary" id="vid-orig-size">—</div>
+              <div class="text-secondary/50 mt-0.5">Original Size</div>
+            </div>
+            <div class="bg-green-50 rounded-lg p-3">
+              <div class="font-bold text-green-700" id="vid-new-size">—</div>
+              <div class="text-secondary/50 mt-0.5">Browser Preview</div>
+            </div>
+            <div class="bg-primary/5 rounded-lg p-3">
+              <div class="font-bold text-primary" id="vid-duration">—</div>
+              <div class="text-secondary/50 mt-0.5">Duration</div>
+            </div>
+          </div>
+          <a id="vid-download" class="btn-primary w-full justify-center hidden" download>
+            ⬇ Download Video
+          </a>
+        </div>
+      </div>
+
+      <div class="mt-4 bg-amber-50 rounded-xl p-4 text-xs text-secondary/70 space-y-1">
+        <p class="font-semibold text-amber-700">⚠️ Note on Video Compression:</p>
+        <p>Browser-based video compression is limited. For best results, use <strong>HandBrake</strong> (free) or <strong>FFmpeg</strong> to compress videos before uploading.</p>
+        <p>For hero/background videos: aim for <strong>&lt; 5MB, 720p, 30fps</strong> for fast loading.</p>
+      </div>
+    </div>
+    
+    <!-- BULK UPLOAD TO SERVER -->
+    <div id="panel-bulk" class="hidden">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+        
+        <div class="bg-primary/5 border border-primary/20 rounded-xl p-4 text-sm text-secondary/80">
+          <strong class="text-primary block mb-1">Upload Media to Server</strong>
+          Drop multiple images/videos or a ZIP file here. They will be uploaded directly to your storage bucket and public URLs will be generated for you to use in the catalog or blog.
+        </div>
+        
+        <!-- Drop Zone -->
+        <div
+          id="bulk-dropzone"
+          class="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-all cursor-pointer relative"
+        >
+          <input type="file" id="bulk-input" accept="image/*,video/*,.zip" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          <div class="text-4xl mb-3">📤</div>
+          <p class="text-secondary font-medium">Drop files or ZIP here, or <span class="text-primary underline">click to browse</span></p>
+          <p class="text-xs text-secondary/50 mt-2">Supports Images, Videos, and ZIP files</p>
+        </div>
+
+        <div id="bulk-progress" class="hidden w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-primary h-1.5 rounded-full w-0 transition-all duration-300" id="bulk-progress-bar"></div>
+        </div>
+
+        <!-- Results -->
+        <div id="bulk-results" class="space-y-3 hidden">
+          <div class="flex justify-between items-center">
+            <h3 class="text-sm font-semibold text-secondary">Uploaded Files</h3>
+            <button id="btn-copy-all" class="btn-primary !py-1.5 !px-4 !text-xs">📋 Copy All URLs</button>
+          </div>
+          <div id="bulk-file-list" class="space-y-2 max-h-96 overflow-y-auto pr-2 custom-scrollbar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" is:inline data-astro-rerun></script>
+<script data-astro-rerun>
+  // ── TAB SWITCHING ─────────────────────────────────────
+  const tabImg = document.getElementById('tab-img');
+  const tabVid = document.getElementById('tab-vid');
+  const tabBulk = document.getElementById('tab-bulk');
+  const panelImg = document.getElementById('panel-img');
+  const panelVid = document.getElementById('panel-vid');
+  const panelBulk = document.getElementById('panel-bulk');
+
+  function switchTab(active) {
+    const isImg = active === 'img';
+    const isVid = active === 'vid';
+    const isBulk = active === 'bulk';
+    
+    panelImg.classList.toggle('hidden', !isImg);
+    panelVid.classList.toggle('hidden', !isVid);
+    panelBulk.classList.toggle('hidden', !isBulk);
+    
+    [tabImg, tabVid, tabBulk].forEach(tab => {
+      tab.classList.remove('font-semibold', 'text-primary', 'border-primary');
+      tab.classList.add('font-medium', 'text-secondary/60', 'border-transparent');
+    });
+    
+    if (isImg) tabImg.classList.add('font-semibold', 'text-primary', 'border-primary');
+    else if (isVid) tabVid.classList.add('font-semibold', 'text-primary', 'border-primary');
+    else if (isBulk) tabBulk.classList.add('font-semibold', 'text-primary', 'border-primary');
+  }
+
+  tabImg.addEventListener('click', () => switchTab('img'));
+  tabVid.addEventListener('click', () => switchTab('vid'));
+  tabBulk.addEventListener('click', () => switchTab('bulk'));
+
+  // ── IMAGE CONVERTER (Client-side Canvas) ──────────────
+  const imgInput = document.getElementById('img-input');
+  const imgResults = document.getElementById('img-results');
+  const imgFileList = document.getElementById('img-file-list');
+  const btnDownloadAll = document.getElementById('btn-download-all');
+  const qualityEl = document.getElementById('img-quality');
+  const maxWidthEl = document.getElementById('img-maxwidth');
+  const formatEl = document.getElementById('img-format');
+  const bgEl = document.getElementById('img-bg');
+
+  const convertedBlobs = [];
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  async function convertImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const maxW = parseInt((maxWidthEl).value);
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+
+        if (w > maxW) {
+          h = Math.round(h * (maxW / w));
+          w = maxW;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+
+        // Background fill for JPEG
+        const fmt = (formatEl).value;
+        if (fmt === 'jpeg' || (bgEl).value === 'white') {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+        }
+
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const mimeType = fmt === 'webp' ? 'image/webp' : fmt === 'jpeg' ? 'image/jpeg' : 'image/png';
+        const quality = parseInt((qualityEl).value) / 100;
+        const ext = fmt === 'png' ? 'png' : fmt === 'jpeg' ? 'jpg' : 'webp';
+        const outputName = file.name.replace(/\.[^.]+$/, '') + '.' + ext;
+
+        canvas.toBlob((blob) => {
+          if (blob) resolve({ blob, name: outputName });
+          else reject(new Error('Conversion failed'));
+        }, mimeType, quality);
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = url;
+    });
+  }
+
+  async function processFiles(files) {
+    if (!files.length) return;
+    imgResults.classList.remove('hidden');
+    convertedBlobs.length = 0;
+    imgFileList.innerHTML = '';
+
+    for (const file of Array.from(files)[]) {
+      // Create row with spinner
+      const rowId = `row_${Math.random().toString(36).substr(2,6)}`;
+      imgFileList.insertAdjacentHTML('beforeend', `
+        <div id="${rowId}" class="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+          <div class="w-12 h-12 rounded-lg bg-gray-200 animate-pulse flex-shrink-0"></div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-secondary truncate">${file.name}</p>
+            <p class="text-xs text-secondary/50">${formatBytes(file.size)} → Converting...</p>
+          </div>
+          <svg class="animate-spin h-5 w-5 text-primary flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        </div>
+      `);
+
+      try {
+        const { blob, name } = await convertImage(file) as any;
+        const blobUrl = URL.createObjectURL(blob);
+        const saving = Math.round((1 - blob.size / file.size) * 100);
+        convertedBlobs.push({ name, url: blobUrl });
+
+        const row = document.getElementById(rowId);
+        const preview = URL.createObjectURL(file);
+        row.innerHTML = `
+          <img src="${preview}" class="w-12 h-12 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-secondary truncate">${name}</p>
+            <p class="text-xs text-secondary/50">${formatBytes(file.size)} → <span class="text-green-600 font-semibold">${formatBytes(blob.size)}</span>${saving > 0 ? ` <span class="text-green-700 font-bold">(${saving}% smaller!)</span>` : ''}</p>
+          </div>
+          <a href="${blobUrl}" download="${name}" class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg hover:bg-primary/90 transition-colors">
+            ⬇ Download
+          </a>
+        `;
+      } catch (err) {
+        const row = document.getElementById(rowId);
+        row.innerHTML = `
+          <div class="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center text-red-500 flex-shrink-0">✕</div>
+          <div class="flex-1">
+            <p class="text-sm font-medium text-secondary">${file.name}</p>
+            <p class="text-xs text-red-500">Conversion failed</p>
+          </div>
+        `;
+      }
+    }
+
+    if (convertedBlobs.length > 1) btnDownloadAll.classList.remove('hidden');
+  }
+
+  imgInput.addEventListener('change', (e) => {
+    const files = (e.target).files;
+    if (files) processFiles(files);
+  });
+
+  // Drag and drop
+  const dropzone = document.getElementById('img-dropzone');
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('border-primary', 'bg-primary/5'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-primary', 'bg-primary/5'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('border-primary', 'bg-primary/5');
+    if (e.dataTransfer?.files) processFiles(e.dataTransfer.files);
+  });
+
+  btnDownloadAll.addEventListener('click', async () => {
+    for (const { name, url } of convertedBlobs) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      await new Promise(r => setTimeout(r, 200));
+    }
+  });
+
+  // ── VIDEO PREVIEW ─────────────────────────────────────
+  const vidInput = document.getElementById('vid-input');
+  const vidPreviewBox = document.getElementById('vid-preview-box');
+  const vidPreview = document.getElementById('vid-preview');
+  const vidOrigSize = document.getElementById('vid-orig-size');
+  const vidNewSize = document.getElementById('vid-new-size');
+  const vidDuration = document.getElementById('vid-duration');
+  const vidDownload = document.getElementById('vid-download');
+
+  vidInput.addEventListener('change', (e) => {
+    const file = (e.target).files?.[0];
+    if (!file) return;
+
+    if (file.size > 200 * 1024 * 1024) {
+      alert('Video too large. Max 200MB allowed.');
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    vidPreview.src = url;
+    vidOrigSize.textContent = formatBytes(file.size);
+    vidNewSize.textContent = 'Preview only';
+
+    vidPreview.onloadedmetadata = () => {
+      const mins = Math.floor(vidPreview.duration / 60);
+      const secs = Math.floor(vidPreview.duration % 60);
+      vidDuration.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    vidDownload.href = url;
+    vidDownload.download = file.name;
+    vidDownload.classList.remove('hidden');
+    vidPreviewBox.classList.remove('hidden');
+  });
+
+  const vidDropzone = document.getElementById('vid-dropzone');
+  vidDropzone.addEventListener('dragover', (e) => { e.preventDefault(); vidDropzone.classList.add('border-primary'); });
+  vidDropzone.addEventListener('dragleave', () => vidDropzone.classList.remove('border-primary'));
+  vidDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    vidDropzone.classList.remove('border-primary');
+    const file = e.dataTransfer?.files[0];
+    if (file && file.type.startsWith('video/')) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      vidInput.files = dt.files;
+      vidInput.dispatchEvent(new Event('change'));
+    }
+  });
+  
+  // ── BULK UPLOAD TO SERVER ─────────────────────────────
+  const bulkInput = document.getElementById('bulk-input');
+  const bulkDropzone = document.getElementById('bulk-dropzone');
+  const bulkResults = document.getElementById('bulk-results');
+  const bulkFileList = document.getElementById('bulk-file-list');
+  const bulkProgress = document.getElementById('bulk-progress');
+  const bulkProgressBar = document.getElementById('bulk-progress-bar');
+  const btnCopyAll = document.getElementById('btn-copy-all');
+  
+  const uploadedUrls = [];
+
+  async function uploadFileToServer(blob, name) {
+    const formData = new FormData();
+    formData.append('file', blob, name);
+    try {
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (json.success) return json.url;
+      throw new Error(json.error || 'Upload failed');
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  async function processBulkUploads(files: FileList | File[]) {
+    if (!files.length) return;
+    bulkResults.classList.remove('hidden');
+    bulkProgress.classList.remove('hidden');
+    
+    let processed = 0;
+    const total = files.length;
+    
+    // First, check if there's a ZIP file to extract
+    let flatFiles = [];
+    for (const file of Array.from(files)) {
+      if (file.name.endsWith('.zip')) {
+         try {
+           const zip = await (window as any).JSZip.loadAsync(file);
+           const zipFiles = Object.keys(zip.files).filter(name => !zip.files[name].dir && !name.startsWith('__MACOSX'));
+           for (const filename of zipFiles) {
+              const blob = await zip.files[filename].async("blob");
+              const cleanName = filename.split('/').pop() || filename;
+              flatFiles.push(new File([blob], cleanName, { type: blob.type }));
+           }
+         } catch(e) {
+           console.error("Failed to parse zip", e);
+         }
+      } else {
+        flatFiles.push(file);
+      }
+    }
+    
+    const flatTotal = flatFiles.length;
+    bulkProgressBar.style.width = '0%';
+    
+    for (const file of flatFiles) {
+       const rowId = `bulk_${Math.random().toString(36).substr(2,6)}`;
+       bulkFileList.insertAdjacentHTML('beforeend', `
+        <div id="${rowId}" class="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
+          <svg class="animate-spin h-5 w-5 text-primary flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-secondary truncate">${file.name}</p>
+            <p class="text-xs text-secondary/50">Uploading...</p>
+          </div>
+        </div>
+      `);
+      
+      try {
+        const url = await uploadFileToServer(file, file.name);
+        uploadedUrls.push(url);
+        document.getElementById(rowId).innerHTML = `
+          <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 flex-shrink-0 text-sm">✓</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-secondary truncate">${file.name}</p>
+            <a href="${url}" target="_blank" class="text-xs text-primary hover:underline truncate block">${url}</a>
+          </div>
+          <button type="button" class="btn-copy-single px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold rounded-lg transition-colors" data-url="${url}">
+            Copy URL
+          </button>
+        `;
+      } catch(e) {
+        document.getElementById(rowId).innerHTML = `
+          <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-500 flex-shrink-0 text-sm">✕</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-secondary truncate">${file.name}</p>
+            <p class="text-xs text-red-500">Upload failed</p>
+          </div>
+        `;
+      }
+      
+      processed++;
+      bulkProgressBar.style.width = `${(processed / flatTotal) * 100}%`;
+    }
+    
+    // Setup individual copy buttons
+    document.querySelectorAll('.btn-copy-single').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+         const url = (e.currentTarget).getAttribute('data-url');
+         navigator.clipboard.writeText(url);
+         const originalText = btn.textContent;
+         btn.textContent = 'Copied!';
+         btn.classList.replace('bg-gray-200', 'bg-green-100');
+         btn.classList.replace('text-gray-700', 'text-green-700');
+         setTimeout(() => {
+           btn.textContent = originalText;
+           btn.classList.replace('bg-green-100', 'bg-gray-200');
+           btn.classList.replace('text-green-700', 'text-gray-700');
+         }, 2000);
+      });
+    });
+  }
+
+  bulkInput.addEventListener('change', (e) => {
+    const files = (e.target).files;
+    if (files) processBulkUploads(files);
+  });
+
+  bulkDropzone.addEventListener('dragover', (e) => { e.preventDefault(); bulkDropzone.classList.add('border-primary', 'bg-primary/5'); });
+  bulkDropzone.addEventListener('dragleave', () => bulkDropzone.classList.remove('border-primary', 'bg-primary/5'));
+  bulkDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    bulkDropzone.classList.remove('border-primary', 'bg-primary/5');
+    if (e.dataTransfer?.files) processBulkUploads(e.dataTransfer.files);
+  });
+  
+  btnCopyAll.addEventListener('click', () => {
+    if (uploadedUrls.length > 0) {
+       navigator.clipboard.writeText(uploadedUrls.join('\\n'));
+       const originalText = btnCopyAll.textContent;
+       btnCopyAll.textContent = '📋 Copied ' + uploadedUrls.length + ' URLs!';
+       setTimeout(() => { btnCopyAll.textContent = originalText; }, 2000);
+    }
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = (e as any).detail.action;
+    var params = (e as any).detail.params || {};
+
+    if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    } else if (action === 'switch_tab' && params.tabId) {
+      if (params.tabId === 'tab-chat' || params.tabId === 'img') switchTab('img');
+      if (params.tabId === 'tab-excel' || params.tabId === 'vid') switchTab('vid');
+      if (params.tabId === 'tab-bulk' || params.tabId === 'bulk') switchTab('bulk');
+    }
+  });
+</script>
+
+</AdminLayout>

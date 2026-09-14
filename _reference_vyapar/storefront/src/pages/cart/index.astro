@@ -1,0 +1,23 @@
+---
+import { getSettings } from '../../lib/database';
+
+const settings = await getSettings(Astro.locals?.storeId as string);
+
+let qcThemeActive = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string'
+      ? JSON.parse(settings.website_configuration)
+      : settings.website_configuration;
+    if (parsed.theme === 'qcommerce') qcThemeActive = true;
+  }
+} catch (e) {}
+
+if (qcThemeActive) {
+  // Redirect to home and trigger cart drawer
+  return Astro.redirect('/?open_cart=true');
+} else {
+  // Standard theme normally redirects to checkout for "cart page" since there's a side drawer for cart
+  return Astro.redirect('/checkout');
+}
+---

@@ -1,0 +1,251 @@
+---
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+import { getPermissionContext, canManageSuperAdmins } from '../../lib/permissions';
+import { getCsrfToken } from '../../lib/csrf';
+import type { SuperAdminRole, SuperAdminStaff } from '../../lib/types/admin';
+
+const ctx = getPermissionContext(Astro.cookies);
+// Requires the specific permission to manage super admins
+if (!canManageSuperAdmins(ctx)) {
+  return Astro.redirect('/super-admin');
+}
+
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Fetch roles and staff
+let roles = [];
+let staff = [];
+
+try {
+  const { data: rolesData, error: rolesError } = await supabaseAdmin.from('super_admin_roles').select('*').order('created_at', { ascending: true });
+  if (rolesError) throw rolesError;
+  roles = rolesData || [];
+
+  const { data: staffData, error: staffError } = await supabaseAdmin.from('super_admins').select('*, super_admin_roles(name)').order('created_at', { ascending: true });
+  if (staffError) throw staffError;
+  staff = staffData || [];
+} catch (error) {
+  console.error("Error fetching RBAC data:", error);
+}
+---
+
+<SuperAdminLayout title="RBAC Management | VyaparPe">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Role-Based Access Control (RBAC)</h1>
+      <p class="text-slate-500 text-sm mt-1">Manage platform team members and their specific permissions.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    
+    <!-- Roles Section -->
+    <div class="lg:col-span-1 space-y-6">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-bold text-slate-900">Admin Roles</h2>
+        <button onclick="document.getElementById('role-modal').classList.remove('hidden')" class="text-sm font-medium text-indigo-600 hover:text-indigo-700">+ New Role</button>
+      </div>
+
+      <div class="space-y-4">
+        {roles?.map((role: SuperAdminRole) => (
+          <div class="bg-white rounded-lg border border-slate-200 p-4 hover:border-indigo-200 transition-colors cursor-pointer group" onclick="editRole(this)" data-role={JSON.stringify(role)}>
+            <div class="flex justify-between items-start mb-2">
+              <h3 class="font-bold text-slate-900">{role.name}</h3>
+              <span class="text-xs text-slate-400 group-hover:text-indigo-500 font-medium">Edit</span>
+            </div>
+            <div class="flex flex-wrap gap-1 mt-2">
+              {Object.entries(role.permissions || {}).filter(([_, v]) => v === true).map(([k]) => (
+                <span class="text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{k.replace('can_', '')}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- Staff Section -->
+    <div class="lg:col-span-2 space-y-6">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-bold text-slate-900">Team Members</h2>
+        <button onclick="document.getElementById('staff-modal').classList.remove('hidden')" class="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors">+ Invite Member</button>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+          <thead class="bg-slate-50 border-b border-slate-200 text-slate-500">
+            <tr>
+              <th class="px-4 py-3 font-medium">Name</th>
+              <th class="px-4 py-3 font-medium">Phone (Login)</th>
+              <th class="px-4 py-3 font-medium">Role</th>
+              <th class="px-4 py-3 font-medium">Status</th>
+              <th class="px-4 py-3 font-medium text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {staff?.map((member: SuperAdminStaff) => (
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-4 py-3">
+                  <div class="font-medium text-slate-900">{member.name}</div>
+                  <div class="text-xs text-slate-500">{member.email || 'No email'}</div>
+                </td>
+                <td class="px-4 py-3 font-mono text-slate-600">{member.phone}</td>
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+                    {member.super_admin_roles?.name || 'Unassigned'}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  {member.is_active 
+                    ? <span class="text-green-600 text-xs font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active</span>
+                    : <span class="text-red-600 text-xs font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Suspended</span>
+                  }
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <button onclick="editStaff(this)" data-staff={JSON.stringify(member)} class="text-indigo-600 hover:text-indigo-800 font-medium text-sm">Edit</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role Modal -->
+  <div id="role-modal" class="fixed inset-0 bg-slate-900/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md">
+      <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+        <h2 class="text-lg font-bold text-slate-900" id="role-modal-title">Create Role</h2>
+        <button onclick="document.getElementById('role-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <form action="/api/super-admin/rbac" method="POST" class="p-5" id="role-form">
+        <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name="action" value="save_role" />
+        <input type="hidden" name="role_id" id="role_id" value="" />
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Role Name</label>
+          <input type="text" name="name" id="role_name" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="e.g. Support Agent" />
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-slate-700 mb-3">Permissions</label>
+          <div class="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="perm_can_create_stores" id="perm_can_create_stores" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Provision & Manage Stores</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="perm_can_manage_plans" id="perm_can_manage_plans" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Manage Subscription Plans</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="perm_can_process_payouts" id="perm_can_process_payouts" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Process Seller Payouts (Finance)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="perm_can_approve_marketplace" id="perm_can_approve_marketplace" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Approve KYC & Marketplace</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="perm_can_manage_super_admins" id="perm_can_manage_super_admins" class="rounded border-slate-300 text-red-600 focus:ring-red-500" />
+              <span class="text-sm text-slate-700 font-medium">Manage Admin Staff (Dangerous)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <button type="button" onclick="document.getElementById('role-modal').classList.add('hidden')" class="px-4 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm font-medium hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">Save Role</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Staff Modal -->
+  <div id="staff-modal" class="fixed inset-0 bg-slate-900/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md">
+      <div class="p-5 border-b border-slate-100 flex justify-between items-center">
+        <h2 class="text-lg font-bold text-slate-900" id="staff-modal-title">Invite Team Member</h2>
+        <button onclick="document.getElementById('staff-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <form action="/api/super-admin/rbac" method="POST" class="p-5" id="staff-form">
+        <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name="action" value="save_staff" />
+        <input type="hidden" name="staff_id" id="staff_id" value="" />
+        
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+          <input type="text" name="name" id="staff_name" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+          <input type="email" name="email" id="staff_email" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+          <input type="text" name="phone" id="staff_phone" required placeholder="+91..." class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" />
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Password <span class="text-xs text-slate-400 font-normal">(Leave blank to keep current)</span></label>
+          <input type="password" name="password" id="staff_password" minlength="6" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Assign Role</label>
+          <select name="role_id" id="staff_role_id" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            {roles?.map(r => (
+              <option value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <button type="button" onclick="document.getElementById('staff-modal').classList.add('hidden')" class="px-4 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm font-medium hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-medium hover:bg-slate-800">Add Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script is:inline>
+    function editRole(btn) {
+      const role = JSON.parse(btn.getAttribute('data-role'));
+      document.getElementById('role_id').value = role.id;
+      document.getElementById('role_name').value = role.name;
+      
+      const p = role.permissions || {};
+      document.getElementById('perm_can_create_stores').checked = !!p.can_create_stores;
+      document.getElementById('perm_can_manage_plans').checked = !!p.can_manage_plans;
+      document.getElementById('perm_can_process_payouts').checked = !!p.can_process_payouts;
+      document.getElementById('perm_can_approve_marketplace').checked = !!p.can_approve_marketplace;
+      document.getElementById('perm_can_manage_super_admins').checked = !!p.can_manage_super_admins;
+
+      document.getElementById('role-modal-title').innerText = 'Edit Role';
+      document.getElementById('role-modal').classList.remove('hidden');
+    }
+
+    function editStaff(btn) {
+      const member = JSON.parse(btn.getAttribute('data-staff'));
+      document.getElementById('staff_id').value = member.id;
+      document.getElementById('staff_name').value = member.name;
+      document.getElementById('staff_email').value = member.email || '';
+      document.getElementById('staff_phone').value = member.phone || '';
+      document.getElementById('staff_password').value = '';
+      if (member.role_id) document.getElementById('staff_role_id').value = member.role_id;
+      
+      document.getElementById('staff-modal-title').innerText = 'Edit Team Member';
+      document.getElementById('staff-modal').classList.remove('hidden');
+    }
+  </script>
+</SuperAdminLayout>

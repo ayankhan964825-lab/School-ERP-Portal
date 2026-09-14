@@ -1,0 +1,203 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings } from '../../../lib/database';
+import { getPermissionContext } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!ctx.adminRole || ctx.adminRole === 'guest') {
+  return Astro.redirect('/admin/login');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+
+let flows = [];
+try {
+  if (settings?.website_flows) {
+    const parsed = typeof settings.website_flows === 'string' 
+      ? JSON.parse(settings.website_flows) 
+      : settings.website_flows;
+    flows = Array.isArray(parsed) ? parsed : [];
+  }
+} catch (e) {
+  console.error("Failed to parse website flows", e);
+}
+
+const flowsStr = JSON.stringify(flows);
+---
+
+<AdminLayout title="Customisation Flows | Admin Panel" description="Rule-based customer journey configurations.">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Customisation Flows</h1>
+      <p class="text-sm text-secondary/60 mt-1">Configure automated rules for customer journeys and popups.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="add-flow-btn" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center gap-2 !px-4 !py-2.5 !rounded-xl text-sm font-bold shadow-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+        Add Rule
+      </button>
+      <button id="save-flows-btn" class="btn-primary !px-6 !py-2.5 !rounded-xl text-sm font-bold flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+        Save Flows
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 flex items-start gap-3">
+    <div class="text-blue-500 mt-0.5">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    </div>
+    <div class="text-sm text-blue-800">
+      <p class="font-bold mb-1">How Flows Work</p>
+      <p class="opacity-90">Flows allow you to define a <strong>Trigger</strong> (e.g., when a user visits the homepage for the first time) and an <strong>Action</strong> (e.g., show a welcome popup). Multiple active rules will be evaluated simultaneously on the storefront.</p>
+    </div>
+  </div>
+
+  <div id="flows-container" class="space-y-4">
+    <!-- Rendered via JS -->
+  </div>
+
+<script define:vars={{ flowsStr }} data-astro-rerun>
+  let state = JSON.parse(flowsStr);
+  
+  const triggersList = [
+    { value: 'first_visit', label: 'First Time Visit' },
+    { value: 'exit_intent', label: 'Exit Intent (Mouse leaves window)' },
+    { value: 'scroll_50', label: 'Scroll to 50% of page' },
+    { value: 'add_to_cart', label: 'Item added to Cart' }
+  ];
+
+  const actionsList = [
+    { value: 'show_welcome_popup', label: 'Show Welcome Popup' },
+    { value: 'show_exit_popup', label: 'Show Exit Discount Popup' },
+    { value: 'trigger_confetti', label: 'Trigger Confetti Animation' },
+    { value: 'show_sticky_banner', label: 'Show Sticky Bottom Banner' }
+  ];
+
+  const genId = () => Math.random().toString(36).substr(2, 9);
+
+  function renderFlows() {
+    const container = document.getElementById('flows-container');
+    if (!container) return;
+
+    if (state.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-16 bg-white border border-dashed border-gray-300 rounded-2xl">
+          <p class="text-secondary/50 font-medium mb-2">No flows created yet</p>
+          <button onclick="addFlow()" class="text-sm text-primary hover:underline">Create your first rule</button>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    state.forEach((flow, index) => {
+      html += `
+        <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm relative group transition-all hover:border-gray-300">
+          <div class="absolute top-5 right-5 flex items-center gap-2">
+            <label class="flex items-center cursor-pointer mr-3">
+              <span class="mr-2 text-xs font-bold ${flow.active ? 'text-green-600' : 'text-gray-400'}">${flow.active ? 'Active' : 'Paused'}</span>
+              <div class="relative">
+                <input type="checkbox" class="sr-only peer" ${flow.active ? 'checked' : ''} onchange="updateFlow(${index}, 'active', this.checked)">
+                <div class="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+              </div>
+            </label>
+            <button onclick="removeFlow(${index})" class="text-gray-300 hover:text-red-500 transition-colors p-1" title="Delete Rule">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-center mt-2">
+            
+            <!-- TRIGGER -->
+            <div>
+              <label class="block text-xs font-bold text-secondary/60 uppercase tracking-wider mb-1.5">When (Trigger)</label>
+              <select class="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-medium transition-colors" onchange="updateFlow(${index}, 'trigger', this.value)">
+                ${triggersList.map(t => `<option value="${t.value}" ${flow.trigger === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- ARROW -->
+            <div class="hidden md:flex flex-col items-center justify-center pt-5 text-gray-300">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+            </div>
+
+            <!-- ACTION -->
+            <div>
+              <label class="block text-xs font-bold text-secondary/60 uppercase tracking-wider mb-1.5">Then (Action)</label>
+              <select class="w-full px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-medium transition-colors" onchange="updateFlow(${index}, 'action', this.value)">
+                ${actionsList.map(a => `<option value="${a.value}" ${flow.action === a.value ? 'selected' : ''}>${a.label}</option>`).join('')}
+              </select>
+            </div>
+
+          </div>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  }
+
+  window.addFlow = () => {
+    state.unshift({
+      id: genId(),
+      trigger: 'first_visit',
+      action: 'show_welcome_popup',
+      active: true
+    });
+    renderFlows();
+  };
+
+  window.updateFlow = (index, field, value) => {
+    state[index][field] = value;
+    if (field === 'active') renderFlows(); // Re-render to update the Active/Paused label
+  };
+
+  window.removeFlow = (index) => {
+    if(confirm('Delete this rule?')) {
+      state.splice(index, 1);
+      renderFlows();
+    }
+  };
+
+  function initFlows() {
+    const addFlowBtn = document.getElementById('add-flow-btn');
+    if (addFlowBtn) addFlowBtn.onclick = window.addFlow;
+
+    const saveBtn = document.getElementById('save-flows-btn') as HTMLButtonElement;
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        saveBtn.innerHTML = 'Saving...';
+        saveBtn.disabled = true;
+        
+        try {
+          const res = await fetch('/api/admin/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', settings: { website_flows: JSON.stringify(state) } })
+          });
+          const data = await res.json();
+          if(data.success) {
+            alert('Flows saved successfully!');
+          } else {
+            alert('Error saving flows: ' + data.error);
+          }
+        } catch(err) {
+          alert('Network error while saving.');
+        } finally {
+          saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Save Flows`; 
+          saveBtn.disabled = false; 
+        }
+      };
+    }
+
+    // Init
+    renderFlows();
+  }
+
+  document.addEventListener('DOMContentLoaded', initFlows);
+  document.addEventListener('astro:page-load', initFlows);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initFlows();
+  }
+</script>
+</AdminLayout>

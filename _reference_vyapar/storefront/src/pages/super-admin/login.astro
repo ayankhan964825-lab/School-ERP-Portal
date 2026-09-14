@@ -1,0 +1,142 @@
+---
+import '../../styles/global.css';
+import { getSettings, supabaseAdmin } from '../../lib/database';
+import { getSuperAdminToken, hashPassword, signAdminSession } from '../../lib/permissions';
+
+let hasError = false;
+
+if (Astro.request.method === "POST") {
+  try {
+    const formData = await Astro.request.formData();
+    const email = formData.get('email')?.toString().trim().toLowerCase() || '';
+    const password = formData.get('password')?.toString() || '';
+
+    const adminEmail = import.meta.env.ADMIN_EMAIL || process.env.ADMIN_EMAIL || '';
+    const envAdminPassword = import.meta.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || '';
+
+    let isSuperAdmin = false;
+    let staffName = 'Master Admin';
+    let rbacPerms = {};
+    let hierarchy = '0';
+    let superAdminId = getSuperAdminToken();
+
+    // 1. Try DB Authentication (super_admins table)
+    const { data: staff } = await supabaseAdmin
+      .from('super_admins')
+      .select('*, super_admin_roles(permissions)')
+      .eq('email', email)
+      .eq('is_active', true)
+      .single();
+
+    if (staff && staff.password_hash === hashPassword(password)) {
+      isSuperAdmin = true;
+      staffName = staff.name || 'Admin';
+      rbacPerms = staff.super_admin_roles?.permissions || {};
+      superAdminId = staff.id;
+      // If it matches the ENV email, treat as hierarchy 0 (Original Admin), otherwise hierarchy 1 (Staff)
+      hierarchy = (email === adminEmail.toLowerCase()) ? '0' : '1';
+    } 
+    // 2. Try .ENV Fallback Authentication
+    else if (email && adminEmail && email === adminEmail.toLowerCase() && password === envAdminPassword) {
+      isSuperAdmin = true;
+      hierarchy = '0';
+    }
+
+    if (isSuperAdmin) {
+      const adminSessionToken = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+      const rbacPermsString = JSON.stringify(rbacPerms);
+      Astro.cookies.set('admin_auth', 'true', { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_role', 'super_admin', { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_permissions', encodeURIComponent(rbacPermsString), { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_hierarchy', hierarchy, { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_name', encodeURIComponent(staffName), { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_id', superAdminId, { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_signature', signAdminSession(superAdminId, 'super_admin', 'SUPER_ADMIN_BYPASS', rbacPermsString), { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_store', 'SUPER_ADMIN_BYPASS', { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+      Astro.cookies.set('admin_session_token', adminSessionToken, { path: '/', maxAge: 60 * 60 * 24 * 7, httpOnly: true, secure: Astro.request.url.startsWith("https"), sameSite: 'lax' });
+
+      Astro.response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      
+      return Astro.redirect('/super-admin');
+    }
+    hasError = true;
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
+    hasError = true;
+  }
+} else {
+  if (Astro.cookies.has('admin_auth') && Astro.cookies.get('admin_role')?.value === 'super_admin') {
+    return Astro.redirect('/super-admin');
+  }
+  hasError = Astro.url.searchParams.get('error') === 'invalid';
+}
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Admin Login | VyaparPe</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 selection:bg-slate-200">
+  <div class="sm:mx-auto sm:w-full sm:max-w-md">
+    <div class="flex justify-center items-center gap-2">
+      <div class="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+      </div>
+      <span class="text-3xl font-bold text-slate-900 tracking-tight">VyaparPe</span>
+    </div>
+    <h2 class="mt-6 text-center text-2xl font-bold text-slate-900">
+      Platform Root Access
+    </h2>
+    <p class="mt-2 text-center text-sm text-slate-500">
+      Restricted to Super Administrators only
+    </p>
+  </div>
+
+  <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+    <div class="bg-white py-8 px-4 shadow-sm sm:rounded-2xl sm:px-10 border border-slate-200">
+      
+      {hasError && (
+        <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium mb-6 text-center">
+          Invalid master credentials. Access denied.
+        </div>
+      )}
+      
+      {Astro.url.searchParams.get('error') === 'multidevice' && (
+        <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium mb-6 text-center">
+          <strong class="block mb-1">Session Expired</strong>
+          You have been automatically logged out because your account was accessed from a new device. Only one active session is allowed.
+        </div>
+      )}
+
+      <form class="space-y-6" action="/super-admin/login" method="POST">
+          <div>
+              <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Master Email Address</label>
+              <input id="email" name="email" type="email" required placeholder="admin@vyaparpe.com" class="appearance-none block w-full px-4 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-900 focus:border-slate-900 sm:text-sm" />
+          </div>
+
+          <div>
+              <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Master Password</label>
+              <input id="password" name="password" type="password" required placeholder="••••••••" class="appearance-none block w-full px-4 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-900 focus:border-slate-900 sm:text-sm" />
+          </div>
+
+          <div>
+              <button type="submit" class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors">
+              Authorize Access
+              </button>
+          </div>
+      </form>
+      
+      <div class="mt-6 text-center">
+        <a href="/admin/login" class="text-sm text-slate-500 hover:text-slate-900 transition-colors">Return to Tenant Login</a>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

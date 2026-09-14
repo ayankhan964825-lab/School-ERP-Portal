@@ -1,0 +1,387 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import { getStorefrontProducts, getStorefrontProductsCount, getCategories, getSettings } from '../../lib/database';
+import categoryIcons from '../../data/categoryIcons';
+
+// Smart cache: serve from CDN for 60s, revalidate in background
+Astro.response.headers.set('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
+Astro.response.headers.set('Vary', 'Host');
+
+const forceStoreId = Astro.locals.storeId;
+
+// 1. Get query params
+const rawPage = parseInt(Astro.url.searchParams.get('page') || '1', 10);
+const page = isNaN(rawPage) ? 1 : Math.max(1, rawPage);
+const limit = 30;
+const urlSort = Astro.url.searchParams.get('sort') || 'default';
+const isDeals = Astro.url.searchParams.get('deals') === 'true';
+
+// 2. Fetch categories and settings first
+const [dbCategories, settings] = await Promise.all([
+  getCategories(forceStoreId), 
+  getSettings(forceStoreId)
+]);
+
+// ===== Q-COMMERCE THEME INTERCEPT =====
+const isGlobalRoot = Astro.url.hostname === 'vyaparpe.com' || Astro.url.hostname === 'www.vyaparpe.com' || Astro.url.hostname === 'vyaparpe.in' || Astro.url.hostname === 'www.vyaparpe.in' || Astro.url.hostname === 'localhost';
+if (!isGlobalRoot) {
+  let qcWebConfig: any = {};
+  if (settings?.website_configuration) {
+    try {
+      qcWebConfig = typeof settings.website_configuration === 'string'
+        ? JSON.parse(settings.website_configuration)
+        : settings.website_configuration;
+    } catch(e) {}
+  }
+  if (qcWebConfig?.theme === 'qcommerce') {
+    return Astro.rewrite(new URL(`/qcommerce-category${Astro.url.search}`, Astro.url));
+  }
+}
+// ======================================
+
+let urlCategory = Astro.url.searchParams.get('category') || 'all';
+
+const topLevelCats = dbCategories.filter((c: any) => !c.parent_id);
+
+// For filtering: when a parent category is selected, include products from all its child slugs
+const parentChildSlugMap: Record<string, string[]> = {};
+topLevelCats.forEach((c: any) => {
+  const childSlugs = dbCategories.filter((ch: any) => ch.parent_id === c.id).map((ch: any) => ch.slug);
+  parentChildSlugMap[c.slug] = [c.slug, ...childSlugs];
+});
+
+// Check if urlCategory exists in dbCategories
+if (urlCategory !== 'all') {
+  const catExists = dbCategories.some((c: any) => c.slug === urlCategory);
+  if (!catExists) {
+    urlCategory = 'all';
+  }
+}
+
+const categorySlugs = urlCategory !== 'all' ? (parentChildSlugMap[urlCategory] || [urlCategory]) : undefined;
+
+// Calculate Q-Commerce coverage early so we can pass it to the count function
+let hasQCommerceCoverage = false;
+if (settings?.is_pure_q_commerce === 'true' || settings?.is_pure_q_commerce === true) {
+  hasQCommerceCoverage = true;
+} else {
+  const customerPincode = Astro.cookies.get('delivery_pincode')?.value;
+  const qcEligibleCookie = Astro.cookies.get('qc_eligible')?.value;
+  if (customerPincode) {
+    const { getQCommercePincodes } = await import('../../lib/database');
+    const eligiblePincodes = await getQCommercePincodes(forceStoreId);
+    hasQCommerceCoverage = eligiblePincodes.includes(customerPincode.trim());
+  }
+  if (!hasQCommerceCoverage && (qcEligibleCookie === '1' || qcEligibleCookie === 'true')) {
+    hasQCommerceCoverage = true;
+  }
+}
+
+// 3. Fetch products and count concurrently using DB-level pagination and filtering
+const [allProductsRaw, totalProductsCount] = await Promise.all([
+  getStorefrontProducts(
+    forceStoreId, 
+    Astro.cookies.get('delivery_pincode')?.value, 
+    Astro.cookies.get('qc_eligible')?.value, 
+    limit, 
+    (page - 1) * limit, 
+    categorySlugs, 
+    undefined, 
+    urlSort
+  ),
+  getStorefrontProductsCount(forceStoreId, categorySlugs, undefined, !hasQCommerceCoverage)
+]);
+
+let hideOutOfStock = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string' 
+      ? JSON.parse(settings.website_configuration) 
+      : settings.website_configuration;
+    if (parsed.hide_out_of_stock === true || parsed.hide_out_of_stock === 'true') {
+      hideOutOfStock = true;
+    }
+  }
+} catch (e) {}
+
+// Optional: further in-memory filtering for out-of-stock items (since they are calculated dynamically based on variants)
+let sortedProducts = allProductsRaw
+  .map((p: any) => ({ ...p, variants: p.variants?.filter((v: any) => !v.is_hidden) || [] }))
+  .filter((p: any) => p.is_active !== false && p.variants.length > 0)
+  .filter((p: any) => {
+    if (!hideOutOfStock) return true;
+    return (p.variants || []).some((v: any) => !v.is_hidden && !v.is_out_of_stock);
+  });
+
+const categoryImages: Record<string, string> = {};
+
+let sortedTopLevelCats = [...topLevelCats];
+if (urlCategory && urlCategory !== 'all') {
+  const selectedIndex = sortedTopLevelCats.findIndex((c: any) => c.slug === urlCategory);
+  if (selectedIndex > -1) {
+    const [selectedCat] = sortedTopLevelCats.splice(selectedIndex, 1);
+    sortedTopLevelCats.unshift(selectedCat);
+  }
+}
+
+const categories = [
+  { id: 'all', name: 'All Products' },
+  ...sortedTopLevelCats.map((c: any) => ({ id: c.slug, name: c.name, image: c.image || categoryImages[c.slug] || null }))
+];
+
+const totalPages = Math.ceil(totalProductsCount / limit);
+
+// Build subcategory pills for the selected parent category
+const selectedParentCat = dbCategories.find((c: any) => c.slug === urlCategory && !c.parent_id);
+const subcategories = selectedParentCat
+  ? dbCategories
+      .filter((c: any) => c.parent_id === selectedParentCat.id)
+      .map((c: any) => ({ id: c.slug, name: c.name }))
+  : [];
+
+
+---
+
+<Layout bodyClass="bg-surface" title={settings?.page_seo_products?.title || "Shop All Products"} description={settings?.page_seo_products?.desc || `Browse our premium selection of 100% natural and pure products at ${settings?.brand_name || settings?.store_name || 'our store'}.`} keywords={settings?.seo_keywords || `buy products online, premium quality, natural, pure, ${settings?.brand_name || settings?.store_name || ''}`}>
+  <!-- Hero -->
+  <div class="bg-primary pb-14 text-center pt-12 pb-12">
+    <div class="max-w-2xl mx-auto px-4">
+      <h1 class="font-serif text-4xl sm:text-5xl font-bold text-surface mb-4">
+        {isDeals ? 'Top Deals' : 'Our Products'}
+      </h1>
+      <p class="text-surface/75 text-lg">
+        {isDeals ? 'Grab the best discounts before they are gone.' : '100% pure, natural, and preservative-free. From our farms to your kitchen.'}
+      </p>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 pt-10 pb-[100px] md:pb-10 w-full">
+    <!-- Category Filter Tabs — DB se dynamic -->
+    <div class="category-carousel-container w-full min-w-0 max-w-full flex overflow-x-auto pb-4 pt-2 px-2 no-scrollbar mb-6 overscroll-x-contain touch-pan-x" style="scroll-behavior: auto; -webkit-overflow-scrolling: touch;">
+      <div class="carousel-set flex gap-3 sm:gap-6 md:gap-8 pr-3 sm:pr-6 md:pr-8 shrink-0">
+        {categories.map(cat => (
+          <button
+            class={`category-btn flex flex-col items-center flex-shrink-0 group w-16 sm:w-24 transition-all duration-300 ${urlCategory === cat.id ? 'opacity-100 scale-105' : 'opacity-80 hover:opacity-100'}`}
+            data-category={cat.id}
+            id={`cat-btn-${cat.id}`}
+          >
+            <div class={`w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden flex items-center justify-center shadow-sm border transition-all duration-300 mb-1.5 ${urlCategory === cat.id ? 'bg-primary border-primary text-surface' : 'bg-white border-background-alt text-secondary group-hover:border-primary'}`}>
+              {cat.image ? (
+                <img src={cat.image} alt={cat.name} class="w-full h-full object-cover" loading="lazy" />
+              ) : (
+                <span class="[&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-7 sm:[&>svg]:h-7 transition-colors duration-300" set:html={categoryIcons[cat.id] || categoryIcons['default']} />
+              )}
+            </div>
+            <p class={`font-medium text-[9px] sm:text-xs transition-colors duration-200 text-center leading-tight ${urlCategory === cat.id ? 'text-primary font-bold' : 'text-secondary group-hover:text-primary'}`}>
+              {cat.name}
+            </p>
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {/* Subcategory pills — only shown when a parent category with children is selected */}
+    {subcategories.length > 0 && (
+      <div class="flex flex-wrap gap-2 mb-6" id="subcategory-pills">
+        <button class="subcategory-btn px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 bg-primary text-surface border-primary" data-subcategory="all">
+          All {selectedParentCat?.name}
+        </button>
+        {subcategories.map((sub: any) => (
+          <button class="subcategory-btn px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 bg-white text-secondary border-gray-200 hover:border-primary hover:text-primary" data-subcategory={sub.id}>
+            {sub.name} <span class="text-secondary/40 ml-1">({sub.count})</span>
+          </button>
+        ))}
+      </div>
+    )}
+
+    <!-- Results count + Controls -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 w-full min-w-0">
+      <p id="results-count" class="text-sm text-secondary/50 font-medium">
+        Showing {sortedProducts.length} Products {totalPages > 1 ? `(Page ${page} of ${totalPages})` : ''}
+      </p>
+
+      <div class="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0 hide-scrollbar min-w-0">
+        <!-- Sort By -->
+        <select 
+          id="sort-by" 
+          class="px-3 py-2 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-xs sm:text-sm text-secondary bg-white min-w-[140px] shrink-0"
+          onchange="window.location.search = new URLSearchParams(Object.assign(Object.fromEntries(new URLSearchParams(window.location.search)), {sort: this.value})).toString()"
+        >
+          <option value="default" selected={urlSort === 'default'}>Sort by: Default</option>
+          <option value="price-asc" selected={urlSort === 'price-asc'}>Price: Low to High</option>
+          <option value="price-desc" selected={urlSort === 'price-desc'}>Price: High to Low</option>
+          <option value="rating-desc" selected={urlSort === 'rating-desc'}>Highest Rated</option>
+          <option value="name-asc" selected={urlSort === 'name-asc'}>Alphabetical: A-Z</option>
+        </select>
+
+        <!-- Grid Toggle (mobile only) -->
+        <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-xl sm:hidden shrink-0">
+          <!-- 1 Column -->
+          <button
+            id="grid-1col"
+            aria-label="Single column view"
+            class="grid-toggle-btn p-2 rounded-lg transition-all duration-200"
+            title="Large view"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="8" rx="2" />
+              <rect x="3" y="13" width="18" height="8" rx="2" />
+            </svg>
+          </button>
+          <!-- 2 Columns -->
+          <button
+            id="grid-2col"
+            aria-label="Two column view"
+            class="grid-toggle-btn p-2 rounded-lg transition-all duration-200"
+            title="Grid view"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="9" height="9" rx="1.5" />
+              <rect x="12" y="3" width="9" height="9" rx="1.5" />
+              <rect x="3" y="12" width="9" height="9" rx="1.5" />
+              <rect x="12" y="12" width="9" height="9" rx="1.5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Product Grid -->
+    <div id="product-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+      {sortedProducts.map((product: any, i: number) => {
+        const defaultPrice = product.variants?.[0]?.price || 0;
+        const ratingVal = product.rating?.value || 5.0;
+        return (
+        <div
+          class="product-wrapper reveal min-w-0 w-full"
+          data-category={product.category || 'uncategorized'}
+          data-price={defaultPrice}
+          data-rating={ratingVal}
+          data-name={product.name}
+          style={`transition-delay: ${(i % 8) * 0.06}s`}
+        >
+          <ProductCard
+            id={product.id}
+            name={product.name}
+            slug={product.slug}
+            description={product.description}
+            variants={product.variants}
+            image={product.image}
+            badge={product.badges?.[0] ?? product.badge ?? null}
+            rating={product.rating}
+            track_inventory={product.track_inventory}
+            is_q_commerce_only={product.is_q_commerce_only}
+          />
+        </div>
+      )})}
+    </div>
+
+    {totalPages > 1 && (
+      <div class="mt-12 flex justify-center items-center gap-2">
+        {page > 1 ? (
+          <a href={`?category=${urlCategory}&page=${page - 1}`} class="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-sm font-medium transition-colors">
+            Previous
+          </a>
+        ) : (
+          <button disabled class="px-4 py-2 border border-gray-100 bg-gray-50 text-gray-400 rounded-xl text-sm font-medium cursor-not-allowed">
+            Previous
+          </button>
+        )}
+        
+        <div class="px-4 py-2 text-sm font-medium text-secondary">
+          Page {page} of {totalPages}
+        </div>
+
+        {page < totalPages ? (
+          <a href={`?category=${urlCategory}&page=${page + 1}`} class="px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 text-sm font-medium transition-colors">
+            Next
+          </a>
+        ) : (
+          <button disabled class="px-4 py-2 border border-gray-100 bg-gray-50 text-gray-400 rounded-xl text-sm font-medium cursor-not-allowed">
+            Next
+          </button>
+        )}
+      </div>
+    )}
+
+    <div id="no-products" class="hidden text-center ">
+      <div class="text-5xl mb-4 text-primary/40 flex justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </div>
+      <p class="text-secondary/60 text-lg font-medium">No products found in this category.</p>
+      <button class="category-btn mt-4 text-primary underline underline-offset-4" data-category="all">View all products</button>
+    </div>
+<script is:inline data-astro-rerun>
+  function initProductsPage() {
+    var categoryBtns = document.querySelectorAll('.category-btn');
+    var subBtns = document.querySelectorAll('.subcategory-btn');
+    
+    // Category Button Navigation
+    categoryBtns.forEach(function(btn) {
+      var newBtn = btn.cloneNode(true);
+      if (btn.parentNode) btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function() {
+        var cat = newBtn.dataset.category || 'all';
+        var newUrl = new URL(window.location.href);
+        if (cat === 'all') newUrl.searchParams.delete('category');
+        else newUrl.searchParams.set('category', cat);
+        newUrl.searchParams.delete('page');
+        window.location.href = newUrl.toString();
+      });
+    });
+
+    // Subcategory Pill Navigation
+    subBtns.forEach(function(btn) {
+      var newBtn = btn.cloneNode(true);
+      if (btn.parentNode) btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function() {
+        var sub = newBtn.dataset.subcategory || 'all';
+        var newUrl = new URL(window.location.href);
+        if (sub === 'all') {
+          // If "All {Parent}" is clicked, we need to know the parent slug. 
+          // For now, it stays on current URL or goes to parent. We just keep it simple:
+          // The parent category button click handles main switching. 
+          // We can just strip the subcategory if 'all' but Astro already shows the parent if subcategory is removed.
+        } else {
+          newUrl.searchParams.set('category', sub);
+          newUrl.searchParams.delete('page');
+          window.location.href = newUrl.toString();
+        }
+      });
+    });
+
+    // Grid Toggle (Mobile only)
+    var grid = document.getElementById('product-grid');
+    var btn1 = document.getElementById('grid-1col');
+    var btn2 = document.getElementById('grid-2col');
+    var GRID_KEY = `vyaparpe-grid-cols-${window.location.hostname}`;
+
+    function setGrid(cols) {
+      if (!grid) return;
+      if (cols === 1) {
+        grid.classList.remove('grid-cols-2');
+        grid.classList.add('grid-cols-1');
+        if (btn1) { btn1.classList.add('bg-white', 'shadow-sm', 'text-primary'); btn1.classList.remove('text-secondary/50'); }
+        if (btn2) { btn2.classList.remove('bg-white', 'shadow-sm', 'text-primary'); btn2.classList.add('text-secondary/50'); }
+      } else {
+        grid.classList.add('grid-cols-2');
+        grid.classList.remove('grid-cols-1');
+        if (btn2) { btn2.classList.add('bg-white', 'shadow-sm', 'text-primary'); btn2.classList.remove('text-secondary/50'); }
+        if (btn1) { btn1.classList.remove('bg-white', 'shadow-sm', 'text-primary'); btn1.classList.add('text-secondary/50'); }
+      }
+      try { localStorage.setItem(GRID_KEY, String(cols)); } catch(e) {}
+    }
+
+    var savedCols = 2;
+    try { savedCols = parseInt(localStorage.getItem(GRID_KEY) || '2'); } catch(e) {}
+    setGrid(savedCols);
+
+    if (btn1) { var nb1 = btn1.cloneNode(true); btn1.parentNode.replaceChild(nb1, btn1); nb1.addEventListener('click', function() { setGrid(1); }); }
+    if (btn2) { var nb2 = btn2.cloneNode(true); btn2.parentNode.replaceChild(nb2, btn2); nb2.addEventListener('click', function() { setGrid(2); }); }
+  }
+
+  initProductsPage();
+</script>
+
+</Layout>

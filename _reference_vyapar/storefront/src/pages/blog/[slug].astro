@@ -1,0 +1,182 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getBlogPostBySlug, getBlogPosts } from '../../lib/database';
+
+export const prerender = false;
+
+// Smart cache: serve from CDN for 60s, refresh in background
+Astro.response.headers.set('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
+
+const { slug } = Astro.params;
+const post = await getBlogPostBySlug(slug || '', Astro.locals?.storeId);
+
+if (!post || post.is_published === false) {
+  return Astro.redirect('/blog');
+}
+
+const allPosts = await getBlogPosts();
+const relatedPosts = allPosts
+  .filter((p: any) => p.is_published !== false && p.slug !== slug)
+  .slice(0, 3);
+
+import { getSettings } from '../../lib/database';
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const brandName = settings?.brand_name || 'Our Store';
+
+// Support both field names
+const imageUrl = post.cover_image || post.featured_image_url;
+const category = post.category || (post.tags && post.tags[0]) || 'Article';
+
+const isRecipe = category.toLowerCase().includes('recipe') || (post.tags && post.tags.some((t: string) => t.toLowerCase().includes('recipe')));
+---
+
+<Layout
+  bodyClass="bg-surface"
+  title={`${post.seo_title || post.title} | Blog`}
+  description={post.seo_description || post.excerpt}
+  ogImage={imageUrl}
+>
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(isRecipe ? {
+    "@context": "https://schema.org/",
+    "@type": "Recipe",
+    "name": post.title,
+    "image": [
+      imageUrl ? (imageUrl.startsWith('http') ? imageUrl : `${Astro.url.origin}${imageUrl}`) : `${Astro.url.origin}/logo.png`
+    ],
+    "author": {
+      "@type": "Person",
+      "name": post.author || brandName
+    },
+    "datePublished": new Date(post.created_at).toISOString(),
+    "description": post.seo_description || post.excerpt,
+    "recipeYield": "1 serving",
+    "recipeIngredient": [
+      `${brandName} Powder`
+    ],
+    "recipeInstructions": [
+      {
+        "@type": "HowToStep",
+        "text": "Mix powder with water or base ingredient."
+      }
+    ]
+  } : {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": post.title,
+    "image": imageUrl ? (imageUrl.startsWith('http') ? imageUrl : `${Astro.url.origin}${imageUrl}`) : `${Astro.url.origin}/logo.png`,
+    "datePublished": new Date(post.created_at).toISOString(),
+    "dateModified": post.updated_at ? new Date(post.updated_at).toISOString() : new Date(post.created_at).toISOString(),
+    "author": {
+      "@type": "Person",
+      "name": post.author || brandName
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": brandName,
+      "logo": {
+        "@type": "ImageObject",
+        "url": settings?.logo_url ? (settings.logo_url.startsWith('http') ? settings.logo_url : `${Astro.url.origin}${settings.logo_url}`) : (settings?.brand_logo ? settings.brand_logo : `${Astro.url.origin}/logo.png`)
+      }
+    }
+  }).replace(/</g, '\\u003c')} />
+
+  <article class="bg-surface min-h-screen pt-12 pb-12">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6">
+
+      <!-- Back link -->
+      <a href="/blog" class="inline-flex items-center text-sm text-primary hover:underline mb-8">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Back to Blog
+      </a>
+
+      <!-- Header -->
+      <div class="mb-8">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-xs font-medium text-primary bg-primary/10 px-2.5 py-0.5 rounded-full capitalize">{category}</span>
+          <span class="text-xs text-secondary/40">
+            {new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </span>
+          {post.author && (
+            <span class="text-xs text-secondary/40">· {post.author}</span>
+          )}
+        </div>
+        <h1 class="text-3xl md:text-4xl font-serif font-bold text-secondary leading-tight">{post.title}</h1>
+        {post.excerpt && <p class="text-lg text-secondary/60 mt-4">{post.excerpt}</p>}
+      </div>
+
+      <!-- Featured Image -->
+      {imageUrl && (
+        <div class="aspect-[16/9] rounded-2xl overflow-hidden mb-10 bg-gray-100">
+          <img
+            src={imageUrl}
+            alt={post.title}
+            class="w-full h-full object-cover"
+            onerror="this.style.display='none'"
+          />
+        </div>
+      )}
+
+      <!-- Content -->
+      <div class="prose prose-lg max-w-none text-secondary/80 leading-relaxed
+        prose-headings:font-serif prose-headings:text-secondary
+        prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
+        prose-p:mb-4 prose-li:mb-1
+        prose-a:text-primary prose-a:no-underline hover:prose-a:underline"
+        set:html={post.content}
+      />
+
+      <!-- Tags -->
+      {post.tags && post.tags.length > 0 && (
+        <div class="mt-10 pt-6 border-t border-gray-200">
+          <div class="flex flex-wrap gap-2">
+            {post.tags.map((tag: string) => (
+              <span class="text-xs bg-primary/10 text-primary px-3 py-1 rounded-full capitalize">{tag}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <!-- Share -->
+      <div class="mt-8 pt-6 border-t border-gray-200">
+        <p class="text-sm font-medium text-secondary mb-3">Share this article</p>
+        <div class="flex gap-3">
+          <a href={`https://wa.me/?text=${encodeURIComponent(post.title + ' - ' + Astro.url.href)}`} target="_blank" rel="noopener" class="text-xs bg-green-100 text-green-700 px-4 py-2 rounded-full hover:bg-green-200 transition-colors font-medium">WhatsApp</a>
+          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(post.title)}&url=${encodeURIComponent(Astro.url.href)}`} target="_blank" rel="noopener" class="text-xs bg-sky-100 text-sky-700 px-4 py-2 rounded-full hover:bg-sky-200 transition-colors font-medium">Twitter</a>
+          <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(Astro.url.href)}`} target="_blank" rel="noopener" class="text-xs bg-blue-100 text-blue-700 px-4 py-2 rounded-full hover:bg-blue-200 transition-colors font-medium">Facebook</a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Related Posts -->
+    {relatedPosts.length > 0 && (
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 mt-16 pt-12 border-t border-gray-200">
+        <h2 class="text-2xl font-serif font-bold text-secondary mb-8 text-center">Related Articles</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {relatedPosts.map((rp: any) => {
+            const rpImg = rp.cover_image || rp.featured_image_url || '/placeholder-product.webp';
+            return (
+              <a href={`/blog/${rp.slug}`} class="group block bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                <div class="aspect-[16/10] bg-gray-100 overflow-hidden">
+                  <img
+                    src={rpImg}
+                    alt={rp.title}
+                    class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    onerror={`this.src='https://placehold.co/400x250/e2e8f0/64748b?text=${encodeURIComponent(brandName)}'`}
+                  />
+                </div>
+                <div class="p-4">
+                  <h3 class="font-serif font-bold text-secondary group-hover:text-primary transition-colors line-clamp-2 text-sm">{rp.title}</h3>
+                  <div class="mt-2 text-xs font-medium text-primary">Read More →</div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    )}
+  </article>
+</Layout>

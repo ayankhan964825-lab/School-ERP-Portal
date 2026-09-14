@@ -1,0 +1,810 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ReviewModal from '../../components/ReviewModal.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import ProductActions from '../../components/react/ProductActions.tsx';
+import DeliveryPromise from '../../components/react/DeliveryPromise.tsx';
+import { getProductBySlug, getStorefrontProducts, getApprovedProductReviews, getSettings } from '../../lib/database';
+
+const { slug } = Astro.params;
+const forceStoreId = Astro.locals.storeId;
+
+// 301 redirects for renamed product slugs (NutriDry tenant only — preserves SEO ranking juice)
+const NUTRIDRY_STORE_ID = '00000000-0000-0000-0000-000000000002';
+const SLUG_REDIRECTS: Record<string, string> = {
+  'the-nutridry-premium-red-onion-flakes': 'red-onion-flakes',
+  'dried-pudina-leaves': 'mint-pudina-leaves',
+};
+if (slug && SLUG_REDIRECTS[slug] && forceStoreId === NUTRIDRY_STORE_ID) {
+  return Astro.redirect(`/products/${SLUG_REDIRECTS[slug]}`, 301);
+}
+
+// canWriteReview check is done below after product is resolved
+
+// Fetch the specific product directly from the database
+const [productRaw, productReviews, settings] = await Promise.all([
+  getProductBySlug(slug as string, forceStoreId),
+  getApprovedProductReviews(slug as string, forceStoreId), 
+  getSettings(forceStoreId)
+]);
+
+const globalTrackingEnabled = settings?.global_inventory_tracking !== false;
+
+if (!productRaw || productRaw.is_active === false) {
+  return Astro.redirect('/404');
+}
+
+const product = {
+  ...productRaw,
+  variants: productRaw.variants?.filter((v: any) => !v.is_hidden) || []
+};
+
+if (product.variants.length === 0) {
+  return Astro.redirect('/404');
+}
+
+// Smart cache: serve from CDN for 60s, revalidate in background
+Astro.response.headers.set('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
+Astro.response.headers.set('Vary', 'Host');
+
+const avgRating = productReviews.length > 0 ? (productReviews.reduce((sum: number, r: any) => sum + Number(r.rating || 0), 0) / productReviews.length).toFixed(1) : (product.rating?.value || '5.0');
+const reviewCount = productReviews.length > 0 ? productReviews.length : (product.rating?.count || 0);
+
+const defaultVariant = product.variants[0];
+const discount = Math.round(((defaultVariant.mrp - defaultVariant.price) / defaultVariant.mrp) * 100);
+const isFakeDbPlaceholderImages = product.image?.startsWith('/products/') && product.image?.endsWith('.webp');
+const validMainImageForGallery = (product.image && !isFakeDbPlaceholderImages) ? product.image : null;
+const defaultImages = (defaultVariant.images && defaultVariant.images.length > 0) 
+  ? defaultVariant.images 
+  : [validMainImageForGallery || `/products/${product.slug}.webp`];
+
+// Ensure WhatsApp/Share preview always uses the primary catalog image
+const isFakeDbPlaceholder = product.image?.startsWith('/products/') && product.image?.endsWith('.webp');
+const validMainImage = (product.image && !isFakeDbPlaceholder) ? product.image : null;
+const ogImagePreview = validMainImage || (defaultVariant?.images?.[0]) || `/products/${product.slug}.webp`;
+
+// Fetch related products from same category dynamically
+const relatedProductsRaw = await getStorefrontProducts(forceStoreId, Astro.cookies.get('delivery_pincode')?.value, Astro.cookies.get('qc_eligible')?.value, 5, 0, [product.category]);
+
+const relatedProducts = relatedProductsRaw
+  .filter((p: any) => p.id !== product.id && p.is_active !== false)
+  .map((p: any) => ({ ...p, variants: p.variants?.filter((v: any) => !v.is_hidden) || [] }))
+  .filter((p: any) => p.variants.length > 0)
+  .slice(0, 4);
+
+const brandName = settings?.brand_name || settings?.store_name || 'Your Brand';
+---
+
+<Layout bodyClass="bg-surface" title={product.specifications?._seo_title || `Buy ${product.name} Online | ${brandName}`} description={product.specifications?._seo_description || product.description} keywords={product.specifications?._seo_keywords || product.specifications?._tags || product.name} ogImage={ogImagePreview} hideBottomNav={true} showBackBtn={true} productOg={{
+  id: (defaultVariant && defaultVariant.id !== 'default') ? `${product.id}-${defaultVariant.id}` : product.id,
+  price: defaultVariant.price,
+  currency: 'INR',
+  availability: defaultVariant.is_out_of_stock ? 'out of stock' : 'in stock',
+  brand: brandName
+}}>
+  <!-- Product & Breadcrumb JSON-LD -->
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Product",
+        "name": product.name,
+        "description": product.description || undefined,
+        "image": (() => {
+          const allImgs = [
+            ...(validMainImage ? [validMainImage] : []),
+            ...(defaultVariant?.images || []),
+          ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+          const absImgs = allImgs.length > 0 ? allImgs : [`/products/${product.slug}.webp`];
+          return absImgs.map((src: string) => ({
+            "@type": "ImageObject",
+            "url": src.startsWith('/') ? `${Astro.url.origin}${src}` : src,
+            "name": product.name
+          }));
+        })(),
+        "brand": { "@type": "Brand", "name": brandName },
+        "sku": product.id,
+        "offers": product.variants.map((v: any) => ({
+          "@type": "Offer",
+          "name": `${product.name} - ${v.weight}`,
+          "price": v.price,
+          "priceCurrency": "INR",
+          "availability": v.is_out_of_stock ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+          "url": `${Astro.url.origin}/products/${product.slug}`,
+          "sku": v.id !== 'default' ? `${product.id}-${v.id}` : product.id,
+        })),
+        "aggregateRating": reviewCount > 0 ? {
+          "@type": "AggregateRating",
+          "ratingValue": avgRating,
+          "reviewCount": reviewCount
+        } : undefined
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": Astro.url.origin
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Products",
+            "item": `${Astro.url.origin}/products`
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": product.name,
+            "item": `${Astro.url.origin}/products/${product.slug}`
+          }
+        ]
+      }
+    ]
+  }).replace(/</g, '\\u003c')} />
+
+  <!-- Product Page Data for Client Scripts -->
+  <script id="product-page-data" type="application/json" set:html={JSON.stringify({ product, defaultVariant }).replace(/</g, '\\u003c')} />
+  <!-- dataLayer: ViewContent (Google Ads + Meta Pixel via GTM) -->
+  <script>
+    document.addEventListener('astro:page-load', () => {
+      try {
+        const dataEl = document.getElementById('product-page-data');
+        if (!dataEl) return;
+        const { product, defaultVariant } = JSON.parse(dataEl.textContent);
+
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({ ecommerce: null }); // clear previous
+        window.dataLayer.push({
+          event: 'view_item',           // Google Ads / GA4
+          event_id: `vc_${product.id}_${Date.now()}`,
+          ecommerce: {
+            currency: 'INR',
+            value: defaultVariant.price,
+            items: [{
+              item_id: product.id,
+              item_name: product.name,
+              item_category: product.category || 'General',
+              price: defaultVariant.price,
+              quantity: 1,
+            }],
+          },
+          content_ids: [(defaultVariant && defaultVariant.id !== 'default') ? `${product.id}-${defaultVariant.id}` : product.id],
+          content_name: product.name,
+          content_type: 'product',
+          value: defaultVariant.price,
+          currency: 'INR',
+        });
+        // Direct fbq call if Pixel loaded outside GTM
+        if (typeof fbq === 'function') {
+          fbq('track', 'ViewContent', {
+            content_ids: [(defaultVariant && defaultVariant.id !== 'default') ? `${product.id}-${defaultVariant.id}` : product.id],
+            content_name: product.name,
+            content_type: 'product',
+            value: defaultVariant.price,
+            currency: 'INR',
+          });
+        }
+      } catch (e) {
+        console.error('Tracking script error:', e);
+      }
+    });
+  </script>
+
+  <!-- Breadcrumbs -->
+  <div class="bg-surface pb-3 md:pb-6 border-b border-background-alt pt-4 md:pt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12">
+      <nav class="flex text-xs md:text-sm text-secondary/60 overflow-x-auto whitespace-nowrap scrollbar-hide pb-1" aria-label="Breadcrumb">
+        <ol class="inline-flex items-center space-x-1 md:space-x-3">
+          <li class="inline-flex items-center">
+            <a href="/" class="hover:text-primary transition-colors">Home</a>
+          </li>
+          <li>
+            <div class="flex items-center">
+              <span class="mx-1 md:mx-2 text-secondary/40">/</span>
+              <a href="/products" class="hover:text-primary transition-colors">Products</a>
+            </div>
+          </li>
+          <li aria-current="page">
+            <div class="flex items-center">
+              <span class="mx-1 md:mx-2 text-secondary/40">/</span>
+              <span class="text-secondary font-medium truncate max-w-[120px] md:max-w-xs">{product.name}</span>
+            </div>
+          </li>
+        </ol>
+      </nav>
+    </div>
+  </div>
+
+  <!-- SEO: Visually hidden h1 for Google crawlers (product name rendered dynamically in React) -->
+  <h1 class="sr-only">{product.name}</h1>
+
+  <div class="bg-surface w-full overflow-hidden pb-24 md:pb-0">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 py-4 md:py-8">
+      <div class="grid lg:grid-cols-2 gap-6 lg:gap-16">
+        
+        <!-- Left: Image Gallery -->
+        <div class="flex flex-col gap-3 md:gap-4 relative w-full overflow-hidden">
+          
+          <!-- Discount Badge (Absolute top-left, shared) -->
+          {discount > 0 && (
+            <span class="absolute top-3 left-3 md:top-4 md:left-24 bg-red-500 text-white text-[10px] md:text-xs font-bold px-2 py-0.5 md:px-3 md:py-1 rounded-full z-10 shadow-sm pointer-events-none">
+              {discount}% OFF
+            </span>
+          )}
+          {product.variants.some((v: any) => v.isFlashSale) && (
+            <span class="absolute top-3 right-3 md:top-4 md:right-12 bg-gradient-to-r from-orange-400 to-rose-500 text-white shadow-sm shadow-rose-200 text-[10px] md:text-xs font-bold px-2 py-0.5 md:px-3 md:py-1 rounded-full z-10 flex items-center gap-1 animate-pulse">
+              ⚡ Flash Sale
+            </span>
+          )}
+
+          <!-- Desktop Layout (Dynamic Grid) -->
+          <div class="hidden md:grid grid-cols-2 gap-4" id="desktop-gallery">
+            {defaultImages.map((img: string, i: number) => (
+              <div class="aspect-[4/5] bg-background-alt rounded-2xl overflow-hidden border border-background-alt relative gallery-item">
+                <img src={img} alt={`${product.name} ${i+1}`} class="w-full h-full object-cover absolute inset-0 desktop-gallery-img" loading={i===0?'eager':'lazy'} decoding="async" onerror="this.src='/placeholder-product.webp'" />
+              </div>
+            ))}
+          </div>
+
+          <!-- Mobile Layout (Swipeable Carousel) -->
+          <div class="md:hidden relative w-full -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div class="flex overflow-x-auto snap-x snap-mandatory w-[100vw] sm:w-full -ml-4 px-4 sm:ml-0 sm:px-0 rounded-none sm:rounded-2xl gap-2" id="mobile-carousel" style="scrollbar-width: none;">
+              {defaultImages.map((img: string, i: number) => (
+                <div class="min-w-[85vw] sm:min-w-full snap-center snap-always bg-background-alt aspect-square relative mobile-gallery-item rounded-xl sm:rounded-none overflow-hidden border border-gray-100 sm:border-none">
+                  <img src={img} alt={`${product.name} ${i+1}`} class="w-full h-full object-cover absolute inset-0 mobile-gallery-img" loading={i===0?'eager':'lazy'} decoding="async" onerror="this.src='/placeholder-product.webp'" />
+                </div>
+              ))}
+            </div>
+            
+            <!-- Pagination Dots -->
+            <div class="flex justify-center gap-1.5 mt-3" id="carousel-dots">
+              {defaultImages.map((_: any, i: number) => (
+                <span class={`w-2 h-2 rounded-full transition-all duration-300 ${i===0?'bg-primary':'bg-primary/20'}`}></span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Product Details -->
+        <div class="flex flex-col mt-2 md:mt-0">
+          <!-- Dynamic Badges -->
+          {product.badges && product.badges.length > 0 && (
+            <div class="flex flex-wrap gap-1.5 mb-2 md:mb-3">
+              {product.badges.map((badge: string) => (
+                <span class="inline-flex items-center gap-1.5 text-[10px] md:text-xs font-semibold text-accent-orange uppercase tracking-[0.1em] md:tracking-[0.15em]">
+                  <span class="w-3 md:w-4 h-px bg-accent-orange"></span>
+                  {badge}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div class="flex items-start justify-between gap-3">
+            <h1 class="font-serif text-xl md:text-3xl lg:text-4xl font-bold text-secondary leading-tight md:mb-2">{product.name}</h1>
+            <!-- Share Button -->
+            <button
+              id="share-btn"
+              aria-label="Share this product"
+              class="flex-shrink-0 p-2 md:p-2.5 rounded-full border border-gray-200 text-secondary/60 hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all duration-200 relative z-50 pointer-events-auto cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 md:h-5 md:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+            </button>
+          </div>
+          
+          <!-- Dynamic Ratings -->
+          <div class="flex items-center gap-1.5 mb-4 md:mb-6 mt-1 md:mt-2">
+            <div class="flex gap-0.5 text-amber-400">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 md:w-[18px] md:h-[18px]" viewBox="0 0 24 24" fill={i < Math.floor(Number(avgRating)) ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              ))}
+            </div>
+            <span class="text-secondary/60 text-xs md:text-sm font-medium">
+              {avgRating} <span class="mx-1">•</span> <span class="underline decoration-dashed underline-offset-4">{reviewCount} Ratings</span>
+            </span>
+          </div>
+
+          <!-- Dynamic Short Description -->
+          <p class="text-secondary/80 text-sm leading-relaxed mb-5 md:mb-6">
+            {product.description}
+          </p>
+
+
+          <ProductActions client:load product={product} globalTracking={globalTrackingEnabled} />
+
+          <!-- Delivery ETA Banner -->
+          {!product.is_digital && <DeliveryPromise client:load variantId={defaultVariant.id} isQCommerceOnly={product.is_q_commerce_only} />}
+
+
+          <!-- Accordions -->
+          <div class="mt-6 md:mt-10 border-t border-background-alt divide-y divide-background-alt">
+            
+            <!-- Description Accordion (Open by default) -->
+            <details class="group py-4 md:py-6" open>
+              <summary class="flex justify-between items-center font-bold text-base md:text-lg text-secondary cursor-pointer list-none">
+                <span class="font-serif">Product Description</span>
+                <span class="transition group-open:rotate-180">
+                  <svg fill="none" height="24" shape-rendering="geometricPrecision" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24" width="24"><path d="M6 9l6 6 6-6"></path></svg>
+                </span>
+              </summary>
+              <div class="text-secondary/80 text-sm leading-relaxed space-y-4 mt-6 animate-in slide-in-from-top-2">
+                <div class="space-y-4">
+                  <div class="product-description-content" set:html={/<[a-z][\s\S]*>/i.test(product.long_description || product.description) ? (product.long_description || product.description) : (product.long_description || product.description).replace(/\n/g, '<br/>')}>
+                  </div>
+                </div>
+                {product.bullet_points && product.bullet_points.length > 0 && (
+                  <ul class="list-disc pl-5 space-y-2 mt-4 text-secondary/80">
+                    {product.bullet_points.map((point: string) => {
+                      const parts = point.split(':');
+                      if (parts.length > 1) {
+                        return (
+                          <li><strong class="text-secondary">{parts[0]}:</strong>{parts.slice(1).join(':')}</li>
+                        );
+                      }
+                      return <li>{point}</li>;
+                    })}
+                  </ul>
+                )}
+              </div>
+            </details>
+
+            <!-- Specifications Accordion -->
+            <details class="group py-4">
+              <summary class="flex justify-between items-center font-bold text-lg text-secondary cursor-pointer list-none">
+                <span class="font-serif">Specifications</span>
+                <span class="transition group-open:rotate-180">
+                  <svg fill="none" height="24" shape-rendering="geometricPrecision" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24" width="24"><path d="M6 9l6 6 6-6"></path></svg>
+                </span>
+              </summary>
+              <div class="mt-6 animate-in slide-in-from-top-2">
+                <div class="border border-background-alt rounded-xl overflow-hidden text-sm">
+                  {product.specifications && Object.entries(product.specifications).filter(([key]) => !key.startsWith('_')).map(([key, value]) => (
+                    <div class="grid grid-cols-3 border-b border-background-alt last:border-b-0">
+                      <div class="col-span-1 bg-surface/50 p-4 text-secondary/60 font-medium border-r border-background-alt">{key}</div>
+                      <div class="col-span-2 bg-white p-4 text-secondary font-medium">{value as string}</div>
+                    </div>
+                  ))}
+                  <div class="grid grid-cols-3">
+                    <div class="col-span-1 bg-surface/50 p-4 text-secondary/60 font-medium border-r border-background-alt">Options</div>
+                    <div class="col-span-2 bg-white p-4 text-secondary font-medium" id="pdp-info-weight">{defaultVariant.weight}</div>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- Dynamic Custom Sections (any key starting with _section_ becomes an accordion) -->
+            {product.specifications && Object.entries(product.specifications)
+              .filter(([key]) => key.startsWith('_section_'))
+              .map(([key, value]) => {
+                const sectionTitle = key.replace('_section_', '');
+                return (
+                  <details class="group py-4">
+                    <summary class="flex justify-between items-center font-bold text-lg text-secondary cursor-pointer list-none">
+                      <span class="font-serif">{sectionTitle}</span>
+                      <span class="transition group-open:rotate-180">
+                        <svg fill="none" height="24" shape-rendering="geometricPrecision" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24" width="24"><path d="M6 9l6 6 6-6"></path></svg>
+                      </span>
+                    </summary>
+                    <div class="text-secondary/80 text-sm leading-relaxed mt-6 space-y-2 animate-in slide-in-from-top-2">
+                      <div class="product-description-content" set:html={value as string}></div>
+                    </div>
+                  </details>
+                );
+              })
+            }
+
+            <!-- Shipping & Returns Accordion -->
+            <details class="group py-4">
+              <summary class="flex justify-between items-center font-bold text-lg text-secondary cursor-pointer list-none">
+                <span class="font-serif">Shipping & Returns</span>
+                <span class="transition group-open:rotate-180">
+                  <svg fill="none" height="24" shape-rendering="geometricPrecision" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24" width="24"><path d="M6 9l6 6 6-6"></path></svg>
+                </span>
+              </summary>
+              <div class="text-secondary/80 text-sm leading-relaxed mt-6 space-y-3 animate-in slide-in-from-top-2">
+                <p><strong>Fast Shipping:</strong> Dispatched within 24 hours. Delivery takes 3-5 business days.</p>
+                <p><strong>Cancellations:</strong> You can cancel COD orders before they are shipped. Prepaid orders cannot be cancelled.</p>
+                <p><strong>Returns:</strong> We do not accept returns on food products. If you receive a damaged item, please contact our support team within 48 hours.</p>
+              </div>
+            </details>
+          </div>
+
+          <!-- Reviews Section -->
+          <div class="mt-4 border-t border-background-alt pt-6">
+            <div class="flex justify-between items-center mb-6">
+              <h2 class="font-serif text-2xl font-bold text-secondary">Customer Reviews</h2>
+              <div id="review-action-container" class="animate-pulse flex items-center justify-center bg-gray-100 rounded-xl h-9 w-32"></div>
+            </div>
+            
+
+            <!-- Existing Reviews -->
+            {productReviews.length > 0 ? (
+              <div class="space-y-4">
+                {productReviews.map((r: any) => (
+                  <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+                    <div class="flex items-center gap-1.5 mb-2 text-amber-400">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={i < r.rating ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      ))}
+                    </div>
+                    <p class="font-bold text-secondary text-sm mb-1 flex items-center gap-2">
+                      {r.customer_name || r.customer}
+                      <span class="bg-green-100 text-green-700 text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider">Verified</span>
+                    </p>
+                    {r.title && <p class="font-semibold text-secondary/90 text-sm mb-1">{r.title}</p>}
+                    <p class="text-secondary/80 text-sm leading-relaxed">{r.comment || r.body}</p>
+                    <p class="text-xs text-secondary/40 mt-3">{new Date(r.created_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p class="text-secondary/50 text-sm italic">No reviews yet. Be the first to review this product!</p>
+            )}
+          </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Related Products -->
+  {relatedProducts.length > 0 && (
+    <div class="bg-background-alt pt-16 pb-[100px] md:pb-16">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="font-serif text-3xl font-bold text-secondary mb-10 text-center">You May Also Like</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          {relatedProducts.map((p: any) => (
+            <div class="product-wrapper animate-fade-in-up">
+              <ProductCard
+                id={p.id}
+                name={p.name}
+                slug={p.slug}
+                description={p.description}
+                variants={p.variants}
+                image={p.image}
+                badge={p.badges?.[0] ?? p.badge ?? null}
+                rating={p.rating}
+                track_inventory={p.track_inventory}
+                is_q_commerce_only={p.is_q_commerce_only}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )}
+
+  <!-- Mobile Action Bar is now handled by ProductActions inside React -->
+
+  <!-- Recently Viewed Products (rendered client-side from localStorage) -->
+  <div id="recently-viewed-section" class="hidden">
+    <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-12">
+      <h2 class="font-serif text-2xl font-bold text-secondary mb-6">Recently Viewed</h2>
+      <div id="recently-viewed-list" class="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"></div>
+    </div>
+  </div>
+
+  <!-- Share Sheet Modal -->
+  <div id="share-modal" class="fixed inset-0 hidden" style="z-index: 99999;" role="dialog" aria-modal="true" aria-label="Share product">
+    <!-- Backdrop -->
+    <div id="share-backdrop" class="absolute inset-0 bg-black/50 backdrop-blur-sm" style="z-index: 1;"></div>
+
+    <!-- Bottom Sheet -->
+    <div id="share-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl transform translate-y-full transition-transform duration-300 ease-out max-w-lg mx-auto" style="z-index: 2;">
+      <!-- Handle -->
+      <div class="flex justify-center pt-3 pb-1">
+        <div class="w-10 h-1 rounded-full bg-gray-200"></div>
+      </div>
+
+      <div class="px-6 pt-3 pb-8">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-5">
+          <h3 class="text-lg font-serif font-bold text-secondary">Share This Product</h3>
+          <button id="share-close" class="p-2 rounded-full text-secondary/40 hover:text-secondary hover:bg-gray-100 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Product preview -->
+        <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl mb-6">
+          <img
+            src={`/products/${product.slug}.webp`}
+            alt={product.name}
+            onerror="this.src='/placeholder-product.webp'"
+            class="w-14 h-14 rounded-xl object-cover border border-gray-100"
+          />
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-secondary truncate">{product.name}</p>
+            <p class="text-xs text-secondary/50 mt-0.5">Starting from ₹{defaultVariant.price}</p>
+          </div>
+        </div>
+
+        <!-- Share Options -->
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          <!-- WhatsApp -->
+          <button id="share-whatsapp" class="flex flex-col items-center gap-2 p-4 rounded-2xl bg-green-50 hover:bg-green-100 transition-colors group">
+            <div class="w-12 h-12 rounded-full bg-[#25D366] flex items-center justify-center shadow-lg shadow-green-200 group-hover:scale-105 transition-transform">
+              <svg class="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+            </div>
+            <span class="text-xs font-medium text-gray-700">WhatsApp</span>
+          </button>
+
+          <!-- More Apps (Native Share) -->
+          <button id="share-native" class="flex flex-col items-center gap-2 p-4 rounded-2xl bg-blue-50 hover:bg-blue-100 transition-colors group">
+            <div class="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center shadow-lg shadow-blue-200 group-hover:scale-105 transition-transform">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+            </div>
+            <span class="text-xs font-medium text-gray-700">More Apps</span>
+          </button>
+
+          <!-- Copy Link -->
+          <button id="share-copy" class="flex flex-col items-center gap-2 p-4 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors group">
+            <div class="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center shadow-lg shadow-gray-200 group-hover:scale-105 transition-transform">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <span class="text-xs font-medium text-gray-700" id="copy-label">Copy Link</span>
+          </button>
+        </div>
+
+        <!-- Link Preview Bar -->
+        <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-secondary/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          <span id="share-url-display" class="text-xs text-secondary/60 truncate flex-1 font-mono"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+<script>
+  document.addEventListener('astro:page-load', () => {
+    // ── Share Modal Functionality ─────────────────────────
+    const shareSheet = document.getElementById('share-sheet');
+    const shareModal = document.getElementById('share-modal');
+    
+    function closeShare() {
+      shareSheet?.classList.add('translate-y-full');
+      setTimeout(() => {
+        shareModal?.classList.add('hidden');
+        document.body.style.overflow = '';
+      }, 300);
+    }
+
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (target && typeof target.closest === 'function') {
+        if (target.closest('#share-close') || target.closest('#share-backdrop')) {
+          closeShare();
+        }
+      }
+    });
+
+    let startY = 0;
+    shareSheet?.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; }, { passive: true });
+    shareSheet?.addEventListener('touchend', (e) => {
+      if (e.changedTouches[0].clientY - startY > 80) closeShare();
+    }, { passive: true });
+
+    const dataEl = document.getElementById('product-page-data');
+    if (!dataEl) return;
+    
+    let product;
+    try {
+      const parsed = JSON.parse(dataEl.textContent);
+      product = parsed.product;
+    } catch (err) {
+      return;
+    }
+
+    const shareUrlDisplay = document.getElementById('share-url-display');
+    const productUrl = window.location.origin + '/products/' + product.slug;
+    const shareText = `Check out ${product.name}! 100% Pure & Natural.\n\n${productUrl}`;
+    if (shareUrlDisplay) shareUrlDisplay.textContent = productUrl;
+
+    const shareWhatsappBtn = document.getElementById('share-whatsapp');
+    if (shareWhatsappBtn && !shareWhatsappBtn.hasAttribute('data-attached')) {
+      shareWhatsappBtn.addEventListener('click', () => {
+        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+        closeShare();
+      });
+      shareWhatsappBtn.setAttribute('data-attached', 'true');
+    }
+
+    const shareNativeBtn = document.getElementById('share-native');
+    if (shareNativeBtn && !shareNativeBtn.hasAttribute('data-attached')) {
+      shareNativeBtn.addEventListener('click', () => {
+        if (navigator.share) {
+          navigator.share({
+            title: product.name,
+            text: `Check out ${product.name}! 100% Pure & Natural.`,
+            url: productUrl
+          }).then(() => closeShare()).catch(() => {});
+        } else {
+          window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+          closeShare();
+        }
+      });
+      shareNativeBtn.setAttribute('data-attached', 'true');
+    }
+
+    const shareCopyBtn = document.getElementById('share-copy');
+    if (shareCopyBtn && !shareCopyBtn.hasAttribute('data-attached')) {
+      shareCopyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(productUrl);
+          const label = document.getElementById('copy-label');
+          if (label) {
+            label.textContent = '✓ Copied!';
+            label.style.color = '#16a34a';
+            setTimeout(() => {
+              label.textContent = 'Copy Link';
+              label.style.color = '';
+            }, 2000);
+          }
+        } catch (e) {
+          const ta = document.createElement('textarea');
+          ta.value = productUrl;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          const label = document.getElementById('copy-label');
+          if (label) {
+            label.textContent = '✓ Copied!';
+            setTimeout(() => { label.textContent = 'Copy Link'; }, 2000);
+          }
+        }
+      });
+      shareCopyBtn.setAttribute('data-attached', 'true');
+    }
+
+
+
+    // ── Recently Viewed Products ─────────────────────────────────
+    const RV_KEY = `vyaparpe-recently-viewed-${window.location.hostname}`;
+    const MAX_RV = 8;
+
+    try {
+      const existing = JSON.parse(localStorage.getItem(RV_KEY) || '[]');
+      const current = {
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+        price: defaultVariant.price,
+        mrp: defaultVariant.mrp,
+        image: product.image || `/products/${product.slug}.webp`,
+      };
+      const filtered = existing.filter(p => p.slug !== product.slug);
+      filtered.unshift(current);
+      localStorage.setItem(RV_KEY, JSON.stringify(filtered.slice(0, MAX_RV)));
+    } catch(e) {}
+
+    try {
+      const viewed = JSON.parse(localStorage.getItem(RV_KEY) || '[]')
+        .filter(p => p.slug !== product.slug)
+        .slice(0, 4);
+
+      if (viewed.length > 0) {
+        const section = document.getElementById('recently-viewed-section');
+        const list = document.getElementById('recently-viewed-list');
+        if (section && list) {
+          section.classList.remove('hidden');
+          list.innerHTML = viewed.map(p => {
+            const disc = Math.round(((p.mrp - p.price) / p.mrp) * 100);
+            return `
+              <a href="/products/${p.slug}" class="flex-shrink-0 w-28 sm:w-36 group bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+                <div class="aspect-square bg-background-alt overflow-hidden">
+                  <img src="${p.image}" alt="${p.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.src='/placeholder-product.webp'" loading="lazy" />
+                </div>
+                <div class="p-2">
+                  <p class="text-[10px] sm:text-xs font-medium text-secondary line-clamp-2 leading-tight">${p.name}</p>
+                  <div class="flex items-center gap-1 mt-1">
+                    <span class="text-xs sm:text-sm font-bold text-primary">₹${p.price}</span>
+                    ${disc > 0 ? `<span class="text-[9px] sm:text-[10px] text-red-400 line-through">₹${p.mrp}</span>` : ''}
+                  </div>
+                </div>
+              </a>`;
+          }).join('');
+        }
+      }
+    } catch(e) {}
+
+  });
+
+  // Client-side review eligibility check
+  document.addEventListener('DOMContentLoaded', async () => {
+    const container = document.getElementById('review-action-container');
+    if (!container) return;
+    
+    try {
+      const slug = window.location.pathname.split('/').filter(Boolean).pop();
+      const res = await fetch(`/api/account/review-eligibility?slug=${slug}`);
+      if (!res.ok) throw new Error('API failed');
+      
+      const data = await res.json();
+      
+      container.classList.remove('animate-pulse', 'bg-gray-100');
+      
+      if (!data.loggedIn) {
+        container.innerHTML = `<a href="/account/login" class="text-xs text-primary underline">Login to review</a>`;
+      } else if (!data.canWriteReview) {
+        container.innerHTML = `<span class="text-xs text-secondary/50 bg-gray-50 px-3 py-1.5 rounded-xl">🛒 Buy to review</span>`;
+      } else if (data.alreadyReviewed) {
+        container.innerHTML = `<span class="text-xs text-green-600 font-semibold bg-green-50 px-3 py-1.5 rounded-xl">✓ You reviewed this</span>`;
+      } else {
+        const btn = document.createElement('button');
+        btn.id = 'write-review-btn';
+        btn.className = 'review-modal-trigger btn-primary !px-4 !py-2 text-sm';
+        btn.textContent = 'Write a Review';
+        
+        // Product name and ID must be grabbed from the DOM or URL since we are client-side
+        const productName = document.querySelector('h1')?.textContent || '';
+        const productIdInput = document.querySelector('input[name="product_id"]') as HTMLInputElement;
+        
+        btn.setAttribute('data-product', productName);
+        if (productIdInput) btn.setAttribute('data-product-id', productIdInput.value);
+        
+        container.innerHTML = '';
+        container.appendChild(btn);
+        
+        // Re-attach event listener since button is dynamically added
+        btn.addEventListener('click', () => {
+          document.getElementById('review-modal')?.classList.remove('hidden');
+          const pName = document.getElementById('review-modal-product');
+          if (pName) pName.textContent = productName;
+          const modalProductId = document.getElementById('review-product-id') as HTMLInputElement;
+          if (modalProductId && productIdInput) modalProductId.value = productIdInput.value;
+        });
+      }
+    } catch (e) {
+      container.innerHTML = '';
+    }
+  });
+  </script>
+  <ReviewModal />
+</Layout>
+
+<style is:global>
+  .product-description-content p {
+    margin-bottom: 1rem;
+  }
+  .product-description-content ul {
+    list-style-type: disc;
+    padding-left: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .product-description-content ol {
+    list-style-type: decimal;
+    padding-left: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .product-description-content a {
+    color: #234B34; /* primary */
+    text-decoration: underline;
+  }
+  .product-description-content h1, .product-description-content h2, .product-description-content h3 {
+    font-weight: 700;
+    color: #1E5B63; /* secondary */
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+</style>

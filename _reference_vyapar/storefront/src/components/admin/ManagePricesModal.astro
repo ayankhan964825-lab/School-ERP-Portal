@@ -1,0 +1,241 @@
+---
+---
+<!-- Manage Prices Modal -->
+<div id="manage-prices-modal" class="fixed inset-0 z-50 hidden bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+      <div>
+        <h2 class="text-lg font-bold text-secondary">Manage Custom Prices</h2>
+        <p class="text-xs text-secondary/60 mt-1">Quickly edit POS and B2B prices for all products. Leave blank to use standard price.</p>
+      </div>
+      <button type="button" id="btn-close-prices-modal" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    
+    <!-- Body -->
+    <div class="flex-1 overflow-y-auto p-6 bg-gray-50/30">
+      <div class="overflow-x-auto border border-gray-200 rounded-xl bg-white shadow-sm">
+        <table class="w-full text-sm text-left">
+          <thead class="bg-gray-50/80 text-xs text-secondary/60 uppercase tracking-wider border-b border-gray-200">
+            <tr>
+              <th class="px-4 py-3">Product / Variant</th>
+              <th class="px-4 py-3 w-32">Standard Price</th>
+              <th class="px-4 py-3 w-32">POS Price (₹)</th>
+              <th class="px-4 py-3 w-32">B2B Price (₹)</th>
+            </tr>
+          </thead>
+          <tbody id="manage-prices-tbody" class="divide-y divide-gray-100">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-white rounded-b-2xl">
+      <button type="button" id="btn-cancel-prices" class="px-4 py-2 text-sm font-semibold text-secondary bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
+      <button type="button" id="btn-save-prices" class="px-6 py-2 text-sm font-bold text-white bg-primary rounded-xl hover:bg-primary/90 transition-colors flex items-center gap-2">
+        Save Changes
+      </button>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  (function() {
+    const modal = document.getElementById('manage-prices-modal');
+    const btnOpen = document.getElementById('btn-manage-prices'); // Needs to exist on parent page
+    const btnClose = document.getElementById('btn-close-prices-modal');
+    const btnCancel = document.getElementById('btn-cancel-prices');
+    const btnSave = document.getElementById('btn-save-prices');
+    const tbody = document.getElementById('manage-prices-tbody');
+    
+    if (!modal || !tbody) return;
+    
+    // We expect `products` array to be available globally from pos-billing/bulk-bill script
+    let localProducts = [];
+    
+    function renderPricesTable() {
+       tbody.innerHTML = '';
+       // Grab products from window if available, or dataset
+       const pData = document.getElementById('page-data');
+       const pScript = document.getElementById('products-data');
+       if (pData && pData.dataset.products) {
+          localProducts = JSON.parse(pData.dataset.products);
+       } else if (pScript) {
+          localProducts = JSON.parse(pScript.textContent || '[]');
+       } else {
+          return;
+       }
+       
+       let index = 0;
+       const chunkSize = 20;
+
+       function renderChunk() {
+          const chunk = localProducts.slice(index, index + chunkSize);
+          if (chunk.length === 0) return;
+          
+          const fragment = document.createDocumentFragment();
+          
+          chunk.forEach(p => {
+             // Render Base Product
+             if (!p.hasVariants || p.variants.length === 0) {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                
+                let posPrice = p.specifications?._pos_price || '';
+                let b2bPrice = p.specifications?._b2b_price || '';
+                
+                tr.innerHTML = `
+                  <td class="px-4 py-3 font-semibold text-secondary">
+                    <div class="flex items-center gap-3">
+                      ${p.image ? `<img src="${p.image}" class="w-8 h-8 object-cover rounded-md border border-gray-200" />` : '<div class="w-8 h-8 bg-gray-100 rounded-md border border-gray-200"></div>'}
+                      <span>${p.name}</span>
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 text-secondary/70">₹${p.price}</td>
+                  <td class="px-4 py-3">
+                    <input type="number" step="0.01" min="0" data-pid="${p.id}" data-type="base-pos" value="${posPrice}" class="price-edit-input w-full px-2 py-1.5 text-sm border border-gray-200 rounded outline-none focus:border-primary text-right" placeholder="Optional" />
+                  </td>
+                  <td class="px-4 py-3">
+                    <input type="number" step="0.01" min="0" data-pid="${p.id}" data-type="base-b2b" value="${b2bPrice}" class="price-edit-input w-full px-2 py-1.5 text-sm border border-gray-200 rounded outline-none focus:border-primary text-right" placeholder="Optional" />
+                  </td>
+                `;
+                fragment.appendChild(tr);
+             } else {
+                // Render Group Header for Variant Product
+                const headerTr = document.createElement('tr');
+                headerTr.className = 'bg-gray-50/50';
+                headerTr.innerHTML = `
+                  <td colspan="4" class="px-4 py-2 font-semibold text-secondary text-xs uppercase">
+                    <div class="flex items-center gap-2">
+                      ${p.image ? `<img src="${p.image}" class="w-5 h-5 object-cover rounded shadow-sm" />` : ''}
+                      ${p.name}
+                    </div>
+                  </td>
+                `;
+                fragment.appendChild(headerTr);
+                
+                // Render Variants
+                p.variants.forEach((v, vIdx) => {
+                   const tr = document.createElement('tr');
+                   tr.className = 'hover:bg-gray-50';
+                   
+                   let posPrice = v.pos_price || '';
+                   let b2bPrice = v.b2b_price || '';
+                   
+                   tr.innerHTML = `
+                     <td class="px-4 py-2 pl-10 text-secondary/80 flex items-center gap-2">
+                       <div class="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
+                       ${v.weight || v.name || 'Variant ' + (vIdx+1)}
+                     </td>
+                     <td class="px-4 py-2 text-secondary/70">₹${v.price}</td>
+                     <td class="px-4 py-2">
+                       <input type="number" step="0.01" min="0" data-pid="${p.id}" data-vidx="${vIdx}" data-type="var-pos" value="${posPrice}" class="price-edit-input w-full px-2 py-1 text-sm border border-gray-200 rounded outline-none focus:border-primary text-right" placeholder="Optional" />
+                     </td>
+                     <td class="px-4 py-2">
+                       <input type="number" step="0.01" min="0" data-pid="${p.id}" data-vidx="${vIdx}" data-type="var-b2b" value="${b2bPrice}" class="price-edit-input w-full px-2 py-1 text-sm border border-gray-200 rounded outline-none focus:border-primary text-right" placeholder="Optional" />
+                     </td>
+                   `;
+                   fragment.appendChild(tr);
+                });
+             }
+          });
+          
+          tbody.appendChild(fragment);
+          index += chunkSize;
+          
+          if (index < localProducts.length) {
+              requestAnimationFrame(renderChunk);
+          }
+       }
+       
+       requestAnimationFrame(renderChunk);
+    }
+    
+    if (btnOpen) {
+       btnOpen.addEventListener('click', () => {
+          renderPricesTable();
+          modal.classList.remove('hidden');
+       });
+    }
+    
+    const closeModal = () => {
+       modal.classList.add('hidden');
+    };
+    
+    if (btnClose) btnClose.addEventListener('click', closeModal);
+    if (btnCancel) btnCancel.addEventListener('click', closeModal);
+    
+    if (btnSave) {
+       btnSave.addEventListener('click', async () => {
+          // Gather updates
+          const inputs = document.querySelectorAll('.price-edit-input');
+          const productUpdates = {};
+          
+          inputs.forEach(input => {
+             const val = input.value.trim();
+             // Optimization: Only gather inputs that have actually changed
+             if (val === input.defaultValue) {
+                 return;
+             }
+             
+             const pid = input.dataset.pid;
+             const type = input.dataset.type;
+             const vidx = input.dataset.vidx !== undefined ? parseInt(input.dataset.vidx) : null;
+             
+             if (!productUpdates[pid]) {
+                productUpdates[pid] = { id: pid, specifications: {}, variants: [] };
+             }
+             
+             if (type === 'base-pos') {
+                productUpdates[pid].specifications._pos_price = val;
+             } else if (type === 'base-b2b') {
+                productUpdates[pid].specifications._b2b_price = val;
+             } else if (type === 'var-pos' || type === 'var-b2b') {
+                let varObj = productUpdates[pid].variants.find(v => v.vIndex === vidx);
+                if (!varObj) {
+                   varObj = { vIndex: vidx };
+                   productUpdates[pid].variants.push(varObj);
+                }
+                if (type === 'var-pos') varObj.pos_price = val;
+                if (type === 'var-b2b') varObj.b2b_price = val;
+             }
+          });
+          
+          const updatesArray = Object.values(productUpdates);
+          
+          btnSave.disabled = true;
+          const origText = btnSave.innerHTML;
+          btnSave.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Saving...`;
+          
+          try {
+             const res = await fetch('/api/admin/products/batch-update-prices', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ updates: updatesArray })
+             });
+             
+             if (res.ok) {
+                const event = new CustomEvent('prices-updated', { detail: updatesArray });
+                document.dispatchEvent(event);
+                closeModal();
+                btnSave.disabled = false;
+                btnSave.innerHTML = origText;
+             } else {
+                const data = await res.json();
+                alert('Failed to save prices: ' + (data.error || 'Unknown error'));
+                btnSave.disabled = false;
+                btnSave.innerHTML = origText;
+             }
+          } catch (e) {
+             alert('Error saving prices: ' + e.message);
+             btnSave.disabled = false;
+             btnSave.innerHTML = origText;
+          }
+       });
+    }
+  })();
+</script>

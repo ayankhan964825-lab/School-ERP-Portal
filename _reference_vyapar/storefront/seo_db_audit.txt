@@ -1,0 +1,19 @@
+=== SEO DATABASE AUDIT ===
+Total Active Products: 293
+Missing _seo_keywords: 289 (98.6%)
+Missing _seo_title: 262 (89.4%)
+Missing _seo_description: 262 (89.4%)
+Missing _tags: 285 (97.3%)
+Completely missing ALL SEO metadata: 262
+
+Sample Products Missing Keywords:
+- Apples & Pears Product 1 (Slug: apples-pears-product-1-1)
+- Cheese Slices & Cubes Product 3 (Slug: cheese-slices-cubes-product-3-123)
+- Assorted Pudding Cups (Slug: assorted-pudding-cups)
+- Chicken Cuts Product 1 (Slug: chicken-cuts-product-1-221)
+- Fresh Pineapple Cake (Slug: fresh-pineapple-cake-1782726633128)
+- Premium Black Forest Cake (Slug: premium-black-forest-cake-1782726633128)
+- Neem Leaves Powder (Slug: neem-leaves-powder)
+- Savory Snacks Platter (Slug: savory-snacks-platter)
+- Soya Chicken Crunch Snack (Slug: soya-chicken-crunch-pickle)
+- Apples & Pears Product 3 (Slug: apples-pears-product-3-3)

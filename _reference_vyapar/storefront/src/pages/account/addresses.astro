@@ -1,0 +1,407 @@
+---
+import { verifyCustomerAuth } from '../../lib/auth';
+
+if (!verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value)) {
+  return Astro.redirect('/account/login');
+}
+import Layout from '../../layouts/Layout.astro';
+import QCommerceLayout from '../../layouts/QCommerceLayout.astro';
+import AccountSidebar from '../../components/AccountSidebar.astro';
+import { getCustomerById, getOrdersByCustomerId, getEnrichedAddresses, getSettings } from '../../lib/database';
+import { storeContext } from '../../lib/storeContext';
+
+const customerId = verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value) || '';
+
+let customer: any = null;
+let phone = '';
+let email = '';
+let myOrders: any[] = [];
+
+await storeContext.run({ storeId: Astro.locals.storeId as string }, async () => {
+  if (customerId) {
+    customer = await getCustomerById(customerId);
+    phone = customer?.phone || '';
+    email = customer?.email || '';
+  }
+  
+  if (customer && customer.id) {
+    myOrders = await getOrdersByCustomerId(customer.id);
+  }
+});
+
+const loginMethod = Astro.cookies.get('login_method')?.value || '';
+const isEmailAuth = loginMethod === 'email';
+const emailFromCookie = email;
+
+let addresses: any[] = [];
+if (customer && customer.id) {
+  await storeContext.run({ storeId: Astro.locals.storeId as string }, async () => {
+    const { getAddressesByCustomerId } = await import('../../lib/database');
+    const dbAddresses = await getAddressesByCustomerId(customer.id, Astro.locals.storeId as string);
+    // Mimic getEnrichedAddresses formatting if needed, but getAddressesByCustomerId already formats them mostly
+    addresses = dbAddresses.map((a: any) => ({
+      ...a,
+      formattedAddress: `${a.street_address || a.street}, ${a.city}, ${a.state} - ${a.pincode}`
+    }));
+  });
+}
+
+const displayId = customer?.name || (isEmailAuth ? emailFromCookie : phone);
+
+const settings = await getSettings(Astro.locals?.storeId as string);
+
+let qcThemeActive = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string'
+      ? JSON.parse(settings.website_configuration)
+      : settings.website_configuration;
+    if (parsed.theme === 'qcommerce') qcThemeActive = true;
+  }
+} catch (e) {}
+
+const ActiveLayout = qcThemeActive ? QCommerceLayout : Layout;
+---
+
+<ActiveLayout bodyClass="bg-background-alt" title="My Addresses" description="Manage your account, orders, and addresses." settings={settings}>
+  {qcThemeActive ? (
+    <div class="min-h-screen bg-[#f4f6f9] pb-24">
+      <div class="bg-white px-4 py-4 flex items-center gap-3 border-b border-gray-100 sticky top-0 z-10">
+        <a href="/account" class="p-1 -ml-1 text-gray-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        </a>
+        <h1 class="text-lg font-bold text-gray-900">Saved Addresses</h1>
+      </div>
+
+      <div class="p-4 space-y-4">
+        {addresses.length === 0 ? (
+          <div class="bg-white rounded-xl p-8 text-center border border-gray-100 shadow-sm">
+            <div class="w-16 h-16 rounded-full bg-green-50 text-green-500 mx-auto flex items-center justify-center mb-3">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </div>
+            <h3 class="font-bold text-gray-900">No saved addresses</h3>
+            <p class="text-sm text-gray-500 mt-1">Add a new address to make checkout faster.</p>
+          </div>
+        ) : (
+          addresses.map((address) => (
+            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm relative">
+              <div class="flex items-start justify-between">
+                <div>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-600 mb-2">
+                    {address.tag || 'Home'}
+                  </span>
+                  <p class="font-bold text-gray-900">{address.name || customer?.name}</p>
+                  <p class="text-sm text-gray-500 mt-1 leading-relaxed">
+                    {address.street_address || address.street}
+                    <br />
+                    {address.city}, {address.state} - {address.pincode}
+                  </p>
+                  <p class="text-sm text-gray-700 mt-2">
+                    <span class="text-gray-400">Phone:</span> {address.phone_number || phone}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  ) : (
+  <div class="min-h-screen bg-background-alt pt-16 pb-16">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+
+      <!-- Page Header -->
+      <div class="mb-8 pt-6">
+        <h1 class="text-2xl font-serif font-bold text-secondary">My Account</h1>
+        <p class="text-sm text-secondary/50 mt-1">Welcome back, <span class="text-primary font-medium">{customer?.name || displayId}</span></p>
+      </div>
+
+      <div class="flex flex-col lg:flex-row gap-6">
+
+        <AccountSidebar activeTab="addresses" customer={customer} phone={phone} emailFromCookie={emailFromCookie} isEmailAuth={isEmailAuth} addressesCount={addresses.length} ordersCount={myOrders.length} className="hidden lg:block" />
+
+        <!-- ΓöÇΓöÇΓöÇΓöÇ MAIN CONTENT ΓöÇΓöÇΓöÇΓöÇ -->
+        <div id="account-main-content" class="flex-1 min-w-0 space-y-6">
+          <!-- Mobile Back Button -->
+          <a href="/account" class="lg:hidden flex items-center gap-2 text-secondary hover:text-primary transition-colors font-medium mb-2 px-2 py-1 bg-white rounded-lg shadow-sm border border-gray-100 w-fit">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Menu
+          </a>
+
+          <!-- ΓöÇΓöÇ SAVED ADDRESSES SECTION ΓöÇΓöÇ -->
+          <section id="section-addresses">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 class="text-base font-bold text-secondary">Saved Addresses</h2>
+                    <p class="text-xs text-secondary/50">{addresses.length} address{addresses.length !== 1 ? 'es' : ''} saved</p>
+                  </div>
+                </div>
+                <button id="add-address-btn"
+                  class="flex items-center gap-1.5 text-sm font-medium text-primary border border-primary/20 bg-primary/5 hover:bg-primary hover:text-white px-4 py-2 rounded-xl transition-all duration-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add New
+                </button>
+              </div>
+
+              <!-- Add Address Form -->
+              <div id="add-address-form" class="hidden border-b border-gray-100">
+                <div class="px-6 py-5 bg-primary/3">
+                  <p id="addr-form-title" class="text-sm font-semibold text-secondary mb-4">≡ƒôì Add New Address</p>
+                  <form action="/api/account/save-address" method="POST" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <input type="hidden" name="phone" value={phone} />
+                    <input type="hidden" name="id" id="addr-id-input" value="" />
+                    <div>
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">Full Name *</label>
+                      <input type="text" name="name" required placeholder="Recipient name"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">Contact Phone</label>
+                      <input type="tel" name="contact_phone" value={phone} placeholder="Phone"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">Street Address *</label>
+                      <input type="text" name="street_address" required placeholder="House No., Street, Locality"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">City *</label>
+                      <input type="text" name="city" required placeholder="City"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">State *</label>
+                      <input type="text" name="state" required placeholder="State"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">Pincode *</label>
+                      <input type="text" name="pincode" required maxlength="6" placeholder="110001"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-secondary/70 mb-1.5">Label</label>
+                      <select name="label" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none">
+                        <option value="Home">Home</option>
+                        <option value="Work">Work</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div class="sm:col-span-2 flex gap-3 pt-1">
+                      <button type="submit" class="btn-primary text-sm px-5 py-2.5">Save Address</button>
+                      <button type="button" id="cancel-address-btn" class="text-sm px-5 py-2.5 border border-gray-200 rounded-xl text-secondary hover:bg-gray-50 transition-colors">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Address List -->
+              <div class="p-6">
+                {addresses.length === 0 ? (
+                  <div class="text-center py-12">
+                    <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      </svg>
+                    </div>
+                    <p class="text-secondary/50 text-sm font-medium">No saved addresses</p>
+                    <p class="text-xs text-secondary/30 mt-1">Add an address for faster checkout</p>
+                  </div>
+                ) : (
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {addresses.map((addr: any) => (
+                      <div class="relative group border border-gray-200 rounded-2xl p-5 hover:border-primary/30 hover:shadow-md transition-all duration-200">
+                        <div class="flex items-start justify-between mb-3">
+                          <span class="inline-flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+                            {addr.label === 'Home' ? (
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                            ) : addr.label === 'Work' ? (
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            )}
+                            {addr.label || 'Address'}
+                          </span>
+                          {addr.id && !String(addr.id).startsWith('DERIVED') ? (
+                            <div class="flex gap-1 flex-shrink-0">
+                              <button
+                                class="edit-addr-btn text-blue-400 hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-lg transition-all duration-200"
+                                data-addr-id={addr.id}
+                                data-addr-name={addr.name}
+                                data-addr-street={addr.street_address || addr.street}
+                                data-addr-city={addr.city}
+                                data-addr-state={addr.state}
+                                data-addr-pincode={addr.pincode}
+                                data-addr-contact={addr.contact_phone}
+                                data-addr-label={addr.label}
+                                title="Edit address"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                class="delete-addr-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-all duration-200"
+                                data-addr-id={addr.id}
+                                title="Delete address"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          ) : (
+                            addr.id && <span class="text-[10px] text-secondary/30" title="Order address cannot be deleted">≡ƒôª Order</span>
+                          )}
+                        </div>
+                        <p class="text-sm font-semibold text-secondary">{addr.name}</p>
+                        <p class="text-xs text-secondary/60 mt-1.5 leading-relaxed">
+                          {[addr.street_address || addr.street, addr.city, addr.state].filter(Boolean).join(', ')}
+                          {addr.pincode ? ` - ${addr.pincode}` : ''}
+                        </p>
+                        {addr.contact_phone && (
+                          <p class="text-xs text-secondary/40 mt-1.5 flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            {addr.contact_phone}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  )}
+
+<script>
+  // ——— Add/Edit Address Toggle ———————————————————————————————————————————————
+  document.getElementById('add-address-btn')?.addEventListener('click', () => {
+    const form = document.getElementById('add-address-form');
+    document.getElementById('addr-form-title').innerText = '📍 Add New Address';
+    document.getElementById('addr-id-input').value = '';
+    
+    // Reset form fields
+    const inputs = document.querySelectorAll('#add-address-form input[type="text"]');
+    inputs.forEach(input => input.value = '');
+    
+    form?.classList.remove('hidden');
+    form?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  document.querySelectorAll('.edit-addr-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const self = this;
+      const form = document.getElementById('add-address-form');
+      
+      document.getElementById('addr-form-title').innerText = '✏️ Edit Address';
+      document.getElementById('addr-id-input').value = self.dataset.addrId || '';
+      
+      // Populate fields
+      document.querySelector('#add-address-form input[name="name"]').value = self.dataset.addrName || '';
+      document.querySelector('#add-address-form input[name="street_address"]').value = self.dataset.addrStreet || '';
+      document.querySelector('#add-address-form input[name="city"]').value = self.dataset.addrCity || '';
+      document.querySelector('#add-address-form input[name="state"]').value = self.dataset.addrState || '';
+      document.querySelector('#add-address-form input[name="pincode"]').value = self.dataset.addrPincode || '';
+      document.querySelector('#add-address-form input[name="contact_phone"]').value = self.dataset.addrContact || '';
+      document.querySelector('#add-address-form select[name="label"]').value = self.dataset.addrLabel || 'Home';
+      
+      form?.classList.remove('hidden');
+      form?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  });
+
+  document.getElementById('cancel-address-btn')?.addEventListener('click', () => {
+    document.getElementById('add-address-form')?.classList.add('hidden');
+  });
+
+  // ΓöÇΓöÇ Delete Address ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  document.querySelectorAll('.delete-addr-btn').forEach(btn => {
+    (btn).addEventListener('click', async function() {
+      const self = this;
+      const addrId = self.dataset.addrId;
+      if (!addrId) return;
+
+      if (!confirm('Delete this address?\n\nThis cannot be undone.')) return;
+
+      // Disable button
+      self.setAttribute('disabled', 'true');
+      self.style.opacity = '0.5';
+      self.style.cursor = 'not-allowed';
+
+      try {
+        const res = await fetch('/api/account/delete-address', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: addrId })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          // Animate card out
+          const card = self.closest('.relative.group');
+          if (card) {
+            card.style.transition = 'all 0.3s ease';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+              card.remove();
+              // Update count in sidebar badge and header
+              const remaining = document.querySelectorAll('.delete-addr-btn').length;
+              const badge = document.querySelector('#nav-addresses .rounded-full');
+              if (badge) badge.textContent = remaining > 0 ? String(remaining) : '';
+              const headerCount = document.querySelector('#section-addresses .text-xs.text-secondary\\/50');
+              if (headerCount) headerCount.textContent = `${remaining} address${remaining !== 1 ? 'es' : ''} saved`;
+
+              // If no addresses left, show empty state
+              const grid = document.querySelector('#section-addresses .grid');
+              if (grid && grid.children.length === 0) {
+                grid.outerHTML = `
+                  <div class="text-center py-12">
+                    <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      </svg>
+                    </div>
+                    <p class="text-secondary/50 text-sm font-medium">No saved addresses</p>
+                    <p class="text-xs text-secondary/30 mt-1">Add an address for faster checkout</p>
+                  </div>`;
+              }
+            }, 300);
+          }
+        } else {
+          alert(data.error || 'Failed to delete address.');
+          self.removeAttribute('disabled');
+          self.style.opacity = '';
+          self.style.cursor = '';
+        }
+      } catch {
+        alert('Network error. Please try again.');
+        self.removeAttribute('disabled');
+        self.style.opacity = '';
+        self.style.cursor = '';
+      }
+    });
+  });
+
+</script>

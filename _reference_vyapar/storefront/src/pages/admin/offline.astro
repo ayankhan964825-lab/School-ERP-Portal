@@ -1,0 +1,167 @@
+---
+// Admin Offline Fallback Page — shown by admin-sw.js when user is offline
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Offline — Admin Panel Admin</title>
+    <link rel="manifest" href="/admin-manifest.json" />
+    <meta name="theme-color" content="#1a2e1a" />
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #1a2e1a;
+        color: #e8f5e9;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+      .card {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 24px;
+        padding: 3rem 2.5rem;
+        max-width: 420px;
+        width: 100%;
+        text-align: center;
+        backdrop-filter: blur(12px);
+      }
+      .icon {
+        width: 80px; height: 80px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 1.5rem;
+        font-size: 2.5rem;
+      }
+      h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.75rem; color: #fff; }
+      p { font-size: 0.95rem; color: rgba(255,255,255,0.6); line-height: 1.6; margin-bottom: 2rem; }
+      .badge {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        background: rgba(239,68,68,0.15);
+        border: 1px solid rgba(239,68,68,0.3);
+        color: #fca5a5;
+        font-size: 0.75rem; font-weight: 600;
+        padding: 0.4rem 1rem; border-radius: 100px;
+        margin-bottom: 2rem;
+      }
+      .dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse 1.5s infinite; }
+      @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+      .btn {
+        display: inline-block;
+        background: #2D5A27;
+        color: #fff;
+        padding: 0.75rem 2rem;
+        border-radius: 100px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        border: none;
+        margin: 0.5rem;
+        transition: background 0.2s;
+        text-decoration: none;
+      }
+      .btn:hover { background: #3d7a35; }
+      .btn-outline {
+        background: transparent;
+        border: 1px solid rgba(255,255,255,0.2);
+        color: rgba(255,255,255,0.7);
+      }
+      .btn-outline:hover { background: rgba(255,255,255,0.08); }
+      .cached-list { margin-top: 2rem; text-align: left; }
+      .cached-list h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.4); margin-bottom: 0.75rem; }
+      .cached-item {
+        display: flex; align-items: center; gap: 0.75rem;
+        padding: 0.6rem 0.75rem;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.05);
+        margin-bottom: 0.5rem;
+        font-size: 0.85rem;
+        color: rgba(255,255,255,0.7);
+        cursor: pointer;
+        transition: background 0.2s;
+        text-decoration: none;
+      }
+      .cached-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+      .status-bar {
+        position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+        background: rgba(0,0,0,0.8);
+        color: #fff; font-size: 0.8rem;
+        padding: 0.5rem 1.25rem;
+        border-radius: 100px;
+        backdrop-filter: blur(8px);
+        transition: opacity 0.3s;
+        opacity: 0;
+      }
+      .status-bar.show { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon">📡</div>
+
+      <div class="badge">
+        <div class="dot"></div>
+        No Internet Connection
+      </div>
+
+      <h1>You're Offline</h1>
+      <p>
+        Internet connection nahi hai. Cached admin pages still accessible hain.
+        Connection wapas aane par automatically sync ho jayega.
+      </p>
+
+      <div>
+        <button class="btn" onclick="tryReconnect()">🔄 Try Reconnect</button>
+        <a href="/admin" class="btn btn-outline">📋 Dashboard</a>
+      </div>
+
+      <div class="cached-list">
+        <h3>Available Offline</h3>
+        <a href="/admin" class="cached-item">🏠 Dashboard</a>
+        <a href="/admin/orders" class="cached-item">📦 Orders</a>
+        <a href="/admin/products" class="cached-item">🌿 Products</a>
+        <a href="/admin/reports" class="cached-item">📊 Reports</a>
+      </div>
+    </div>
+
+    <div class="status-bar" id="status-bar">Checking connection...</div>
+
+    <script data-astro-rerun>
+      function tryReconnect() {
+        const bar = document.getElementById('status-bar');
+        bar.textContent = 'Connecting...';
+        bar.classList.add('show');
+        fetch('/admin', { method: 'HEAD', cache: 'no-store' })
+          .then(() => {
+            bar.textContent = '✅ Connected! Redirecting...';
+            setTimeout(() => window.location.href = '/admin', 800);
+          })
+          .catch(() => {
+            bar.textContent = '❌ Still offline. Try again later.';
+            setTimeout(() => bar.classList.remove('show'), 3000);
+          });
+      }
+
+      // Auto-reconnect when browser comes back online
+      window.addEventListener('online', () => {
+        const bar = document.getElementById('status-bar');
+        bar.textContent = '✅ Back online! Redirecting...';
+        bar.classList.add('show');
+        setTimeout(() => window.location.href = '/admin', 1000);
+      });
+
+      // Check every 10s
+      setInterval(() => {
+        if (navigator.onLine) {
+          window.location.href = '/admin';
+        }
+      }, 10000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,648 @@
+---
+import '../../styles/global.css';
+import { getSettings } from '../../lib/database';
+
+const isAuthenticated = Astro.cookies.has('admin_auth');
+if (!isAuthenticated) {
+    return Astro.redirect('/admin/login');
+}
+
+const storeId = Astro.locals.storeId;
+const settings = await getSettings(storeId);
+
+// Determine the resume step from the DB (saved in pages_content.onboarding_step)
+const pc = settings?.pages_content || {};
+const savedStep = parseInt(pc.onboarding_step || '1', 10);
+const hasPassword = !!pc.super_admin_custom_password_hash;
+// Total steps is now 10 (added password setup as step 1)
+const totalSteps = 10;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Store Setup Wizard — VyaparPe</title>
+    <script is:inline data-astro-rerun>
+        // Ensure onboarding runs only once
+        if (localStorage.getItem('vyaparpe_onboarding_completed') === 'true') {
+            window.location.replace('/admin');
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-900 overflow-x-hidden selection:bg-indigo-500 selection:text-white pb-20">
+
+    <!-- Top Bar & Progress -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xl">V</div>
+                <span class="font-bold text-lg hidden sm:block">VyaparPe Setup</span>
+            </div>
+            <div class="flex items-center gap-4 w-1/2">
+                <div class="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                    <div id="progress-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" style="width: 10%"></div>
+                </div>
+                <div class="text-xs font-bold text-gray-500 whitespace-nowrap"><span id="progress-text">10%</span></div>
+            </div>
+            <div class="text-sm text-gray-500 font-medium">
+                Step <span id="header-step" class="text-indigo-600 font-bold">1</span> of {totalSteps}
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-3xl mx-auto px-4 py-12 relative min-h-[600px]">
+        <div class="bg-white rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100 p-8 sm:p-12 relative overflow-hidden min-h-[500px]">
+            
+            <!-- STEP 1: Set Admin Password -->
+            <div id="step-1" class="step-content active transition-all duration-500">
+                <div class="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mb-6">
+                    <svg class="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                </div>
+                <h1 class="text-3xl font-extrabold text-gray-900 mb-2">Secure Your Account</h1>
+                <p class="text-gray-600 text-lg mb-2 leading-relaxed">Set a strong password for your admin dashboard. This is the first thing you should do.</p>
+                {hasPassword && (
+                    <div class="mb-6 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-700 text-sm font-medium">
+                        <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        Password already set. You can update it here or skip to continue.
+                    </div>
+                )}
+                
+                <div class="space-y-5 mt-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">New Password <span class="text-red-500">*</span></label>
+                        <input type="password" id="s1-password" placeholder="Minimum 6 characters" class="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Confirm Password <span class="text-red-500">*</span></label>
+                        <input type="password" id="s1-confirm" placeholder="Re-enter your password" class="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                    <div id="s1-error" class="hidden text-red-600 text-sm font-medium bg-red-50 border border-red-200 rounded-xl px-4 py-3"></div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-10">
+                    {hasPassword && (
+                        <button type="button" onclick="nextStepNoSave(1, 2)" class="text-gray-500 bg-gray-100 hover:bg-gray-200 font-bold py-3 px-6 rounded-xl">Skip</button>
+                    )}
+                    <button type="button" onclick="nextStep(1, 2, saveStep1)" id="btn-step1-next" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 btn-next">
+                        Set Password & Continue →
+                    </button>
+                </div>
+            </div>
+
+            <!-- STEP 2: Welcome & Identity -->
+            <div id="step-2" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6">
+                    <span class="text-3xl">👋</span>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Store Identity</h2>
+                <p class="text-gray-600 text-lg mb-8 leading-relaxed">Give your store a name. Don't worry, you can always change these later.</p>
+                
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Store Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="s2-name" value={settings?.brand_name || ''} placeholder="e.g. My Awesome Store" class="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(2, 1)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <button type="button" onclick="nextStep(2, 3, saveStep2)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">
+                        Let's Begin →
+                    </button>
+                </div>
+            </div>
+
+            <!-- STEP 3: Branding -->
+            <div id="step-3" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-pink-100 text-pink-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">🎨</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Branding & Colors</h2>
+                <p class="text-gray-500 mb-8">Make your store uniquely yours.</p>
+
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Logo URL (Optional)</label>
+                        <input type="text" id="s3-logo" value={settings?.logo_url || ''} placeholder="https://example.com/logo.png" class="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 bg-gray-50 font-medium">
+                        <p class="text-xs text-gray-400 mt-1">You can upload files later in Store Details.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Primary Theme Color</label>
+                        <input type="color" id="s3-color" value={settings?.theme_color_primary || '#4F46E5'} class="h-12 w-full rounded-xl cursor-pointer">
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(3, 2)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStepNoSave(3, 4)" class="text-gray-500 bg-gray-100 hover:bg-gray-200 font-bold py-3 px-6 rounded-xl">Skip</button>
+                        <button type="button" onclick="nextStep(3, 4, saveStep3)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 4: Hero Section -->
+            <div id="step-4" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">🖼️</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Homepage Hero</h2>
+                <p class="text-gray-500 mb-8">The first thing customers see when they open your store.</p>
+
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Hero Main Title <span class="text-red-500">*</span></label>
+                        <input type="text" id="s4-title" value={settings?.hero_title || 'Premium Quality Products'} placeholder="e.g. Fresh Groceries Delivered" class="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Hero Subtext <span class="text-red-500">*</span></label>
+                        <textarea id="s4-sub" rows="2" class="w-full border-gray-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 bg-gray-50 font-medium" placeholder="Shop the best products online...">{settings?.hero_subtext || ''}</textarea>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(4, 3)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStep(4, 5, saveStep4)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 5: Company Info & Legal -->
+            <div id="step-5" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">🏢</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Company Info</h2>
+                <p class="text-gray-500 mb-8">Required for building trust and legal compliance.</p>
+
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Support Phone <span class="text-red-500">*</span></label>
+                            <input type="text" id="s5-phone" value={settings?.contact_phone || ''} class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Support Email <span class="text-red-500">*</span></label>
+                            <input type="email" id="s5-email" value={settings?.contact_email || ''} class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Short "About Us" Summary <span class="text-red-500">*</span></label>
+                        <textarea id="s5-about" rows="3" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium" placeholder="We are a trusted brand...">{settings?.footer_description || ''}</textarea>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(5, 4)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStep(5, 6, saveStep5)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 6: Warehouse Location -->
+            <div id="step-6" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">📍</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Main Warehouse</h2>
+                <p class="text-gray-500 mb-8">Where will you be shipping your orders from?</p>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Location Name</label>
+                        <input type="text" id="s6-name" value="Primary Warehouse" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Complete Address</label>
+                        <input type="text" id="s6-address" placeholder="123 Commerce St" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="col-span-1">
+                            <label class="block text-sm font-bold text-gray-700 mb-1">City</label>
+                            <input type="text" id="s6-city" placeholder="Delhi" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                        <div class="col-span-1">
+                            <label class="block text-sm font-bold text-gray-700 mb-1">State</label>
+                            <input type="text" id="s6-state" placeholder="DL" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                        <div class="col-span-1">
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Pincode</label>
+                            <input type="text" id="s6-pin" placeholder="110001" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(6, 5)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStepNoSave(6, 7)" class="text-gray-500 bg-gray-100 hover:bg-gray-200 font-bold py-3 px-6 rounded-xl">Skip</button>
+                        <button type="button" onclick="nextStep(6, 7, saveStep6)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 7: Default Shipping -->
+            <div id="step-7" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-teal-100 text-teal-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">🚚</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Default Shipping</h2>
+                <p class="text-gray-500 mb-8">Setup a default nationwide shipping zone.</p>
+
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Flat Delivery Rate (₹)</label>
+                        <input type="number" id="s7-rate" value="50" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-bold text-lg">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Min Delivery Days</label>
+                            <input type="number" id="s7-min" value="3" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Max Delivery Days</label>
+                            <input type="number" id="s7-max" value="7" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-500">You can add advanced state-wise zones later in settings.</p>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(7, 6)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStepNoSave(7, 8)" class="text-gray-500 bg-gray-100 hover:bg-gray-200 font-bold py-3 px-6 rounded-xl">Skip</button>
+                        <button type="button" onclick="nextStep(7, 8, saveStep7)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 8: Integrations -->
+            <div id="step-8" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">🔌</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">API Integrations</h2>
+                <p class="text-gray-500 mb-8">Connect essential third-party apps.</p>
+
+                <div class="space-y-6">
+                    <div class="border border-gray-200 rounded-xl p-5">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-8 h-8 bg-blue-600 rounded-md"></div>
+                            <h3 class="font-bold">Razorpay</h3>
+                        </div>
+                        <input type="text" id="s8-rzp-id" placeholder="Key ID (rzp_live_...)" class="w-full border-gray-300 rounded-lg shadow-sm py-2 px-3 bg-gray-50 text-sm mb-3 font-mono">
+                        <input type="password" id="s8-rzp-sec" placeholder="Key Secret" class="w-full border-gray-300 rounded-lg shadow-sm py-2 px-3 bg-gray-50 text-sm font-mono">
+                    </div>
+                    
+                    <div class="border border-gray-200 rounded-xl p-5">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-8 h-8 bg-emerald-600 rounded-md"></div>
+                            <h3 class="font-bold">Shiprocket</h3>
+                        </div>
+                        <input type="text" id="s8-sr-email" placeholder="Login Email" class="w-full border-gray-300 rounded-lg shadow-sm py-2 px-3 bg-gray-50 text-sm mb-3">
+                        <input type="password" id="s8-sr-pass" placeholder="Password" class="w-full border-gray-300 rounded-lg shadow-sm py-2 px-3 bg-gray-50 text-sm">
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(8, 7)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStepNoSave(8, 9)" class="text-gray-500 bg-gray-100 hover:bg-gray-200 font-bold py-3 px-6 rounded-xl">Skip</button>
+                        <button type="button" onclick="nextStep(8, 9, saveStep8)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 9: Add First Product -->
+            <div id="step-9" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-16 h-16 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mb-6 text-3xl">🛍️</div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">First Product</h2>
+                <p class="text-gray-500 mb-8">Add something to your catalog so your store isn't empty.</p>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Product Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="s9-name" placeholder="e.g. Classic T-Shirt" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Selling Price (₹)</label>
+                            <input type="number" id="s9-price" placeholder="499" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">MRP (₹)</label>
+                            <input type="number" id="s9-mrp" placeholder="999" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Image URL (Optional)</label>
+                        <input type="text" id="s9-img" placeholder="https://example.com/image.jpg" class="w-full border-gray-300 rounded-xl shadow-sm py-3 px-4 bg-gray-50 font-medium text-sm">
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-10">
+                    <button type="button" onclick="prevStep(9, 8)" class="text-gray-500 font-bold py-3 px-4">← Back</button>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="nextStepNoSave(9, 10)" class="text-gray-500 bg-gray-100 hover:bg-gray-200 font-bold py-3 px-6 rounded-xl">Skip</button>
+                        <button type="button" onclick="nextStep(9, 10, saveStep9)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg btn-next">Save Product</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 10: Go Live -->
+            <div id="step-10" class="step-content hidden opacity-0 translate-x-8 absolute inset-0 p-8 sm:p-12">
+                <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6 text-4xl mx-auto">🎉</div>
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-4 text-center">You're All Set!</h2>
+                <p class="text-gray-600 text-lg mb-8 leading-relaxed text-center max-w-sm mx-auto">
+                    Your hyper-premium e-commerce store is now ready to receive orders. 
+                    You can always tweak advanced settings in the <strong>Store Details</strong> panel later.
+                </p>
+
+                <div class="flex justify-center mt-10">
+                    <button type="button" onclick="finishSetup()" id="btn-finish" class="bg-gray-900 hover:bg-black text-white font-extrabold py-4 px-12 rounded-xl shadow-xl shadow-gray-900/30 transition-all flex items-center gap-3 text-lg">
+                        Go to Dashboard
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script is:inline define:vars={{ savedStep, totalSteps }} data-astro-rerun>
+        let isSaving = false;
+        // Use the server-provided savedStep to resume where we left off
+        let currentStep = savedStep || 1;
+
+        function updateProgress(step) {
+            document.getElementById('header-step').innerText = step;
+            const percent = Math.round((step / totalSteps) * 100);
+            document.getElementById('progress-bar').style.width = percent + '%';
+            document.getElementById('progress-text').innerText = percent + '%';
+        }
+
+        // Immediately jump to saved step on load (without animation)
+        function initializeStep(step) {
+            for (let i = 1; i <= totalSteps; i++) {
+                const el = document.getElementById('step-' + i);
+                if (!el) continue;
+                if (i === step) {
+                    el.classList.remove('hidden', 'opacity-0', 'translate-x-8', 'absolute', 'inset-0');
+                    el.classList.add('relative', 'opacity-100', 'translate-x-0');
+                } else {
+                    el.classList.add('hidden', 'opacity-0', 'translate-x-8', 'absolute', 'inset-0');
+                    el.classList.remove('relative', 'opacity-100', 'translate-x-0', 'active');
+                }
+            }
+            updateProgress(step);
+        }
+
+        // Save onboarding progress step to the database
+        async function saveProgressStep(step) {
+            try {
+                await fetch('/api/admin/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'update', data: { onboarding_step: step.toString() } })
+                });
+            } catch (e) {
+                // Non-critical, don't block progression
+                console.warn('[Onboarding] Could not save progress step:', e);
+            }
+        }
+
+        async function nextStepNoSave(current, next) {
+            const currentEl = document.getElementById('step-' + current);
+            const nextEl = document.getElementById('step-' + next);
+            if (!nextEl) return;
+
+            currentEl.classList.remove('opacity-100', 'translate-x-0', 'relative');
+            currentEl.classList.add('opacity-0', '-translate-x-8', 'absolute', 'inset-0', 'hidden');
+            
+            nextEl.classList.remove('hidden');
+            setTimeout(() => {
+                nextEl.classList.remove('opacity-0', 'translate-x-8', 'absolute', 'inset-0');
+                nextEl.classList.add('opacity-100', 'translate-x-0', 'relative');
+            }, 50);
+
+            currentStep = next;
+            updateProgress(next);
+            await saveProgressStep(next);
+        }
+
+        async function nextStep(current, next, saveFunction = null) {
+            if (isSaving) return;
+            
+            if (saveFunction) {
+                isSaving = true;
+                const btn = document.querySelector(`#step-${current} .btn-next`);
+                const ogText = btn ? btn.innerHTML : '';
+                if (btn) btn.innerHTML = 'Saving...';
+                try {
+                    await saveFunction();
+                } catch (e) {
+                    console.error('Error saving step:', e);
+                    if (e.message && e.message.startsWith('VALIDATION_ERROR')) {
+                        // Error is shown inline in the step, don't use alert
+                    } else if (e.message) {
+                        alert(e.message);
+                    } else {
+                        alert("Failed to save data. Please try again.");
+                    }
+                    if (btn) btn.innerHTML = ogText;
+                    isSaving = false;
+                    return;
+                }
+                if (btn) btn.innerHTML = ogText;
+                isSaving = false;
+            }
+
+            const currentEl = document.getElementById('step-' + current);
+            const nextEl = document.getElementById('step-' + next);
+            if (!nextEl) return;
+            
+            currentEl.classList.remove('opacity-100', 'translate-x-0', 'relative');
+            currentEl.classList.add('opacity-0', '-translate-x-8', 'absolute', 'inset-0', 'hidden');
+            
+            nextEl.classList.remove('hidden');
+            setTimeout(() => {
+                nextEl.classList.remove('opacity-0', 'translate-x-8', 'absolute', 'inset-0');
+                nextEl.classList.add('opacity-100', 'translate-x-0', 'relative');
+            }, 50);
+
+            currentStep = next;
+            updateProgress(next);
+            await saveProgressStep(next);
+        }
+
+        function prevStep(current, prev) {
+            const currentEl = document.getElementById('step-' + current);
+            const prevEl = document.getElementById('step-' + prev);
+            if (!prevEl) return;
+            
+            currentEl.classList.remove('opacity-100', 'translate-x-0', 'relative');
+            currentEl.classList.add('opacity-0', 'translate-x-8', 'absolute', 'inset-0', 'hidden');
+            
+            prevEl.classList.remove('hidden');
+            setTimeout(() => {
+                prevEl.classList.remove('opacity-0', '-translate-x-8', 'absolute', 'inset-0');
+                prevEl.classList.add('opacity-100', 'translate-x-0', 'relative');
+            }, 50);
+
+            currentStep = prev;
+            updateProgress(prev);
+        }
+
+        async function saveSettings(payload) {
+            const res = await fetch('/api/admin/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                throw new Error(d.error || 'Failed to save');
+            }
+        }
+
+        // Step 1: Set Password
+        async function saveStep1() {
+            const password = document.getElementById('s1-password').value;
+            const confirm = document.getElementById('s1-confirm').value;
+            const errorDiv = document.getElementById('s1-error');
+            errorDiv.classList.add('hidden');
+
+            if (!password || password.length < 6) {
+                errorDiv.textContent = 'Password must be at least 6 characters.';
+                errorDiv.classList.remove('hidden');
+                throw new Error('VALIDATION_ERROR: Password too short');
+            }
+            if (password !== confirm) {
+                errorDiv.textContent = 'Passwords do not match.';
+                errorDiv.classList.remove('hidden');
+                throw new Error('VALIDATION_ERROR: Passwords do not match');
+            }
+
+            const res = await fetch('/api/admin/set-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password, confirmPassword: confirm })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                errorDiv.textContent = data.error || 'Failed to set password.';
+                errorDiv.classList.remove('hidden');
+                throw new Error(data.error || 'Failed to set password');
+            }
+        }
+
+        async function saveStep2() {
+            const name = document.getElementById('s2-name').value;
+            if(!name) throw new Error('VALIDATION_ERROR: Missing name');
+            await saveSettings({ action: 'update', data: { brand_name: name, store_name: name } });
+        }
+        
+        async function saveStep3() {
+            const logo = document.getElementById('s3-logo').value;
+            const color = document.getElementById('s3-color').value;
+            await saveSettings({ action: 'update', data: { logo_url: logo, theme_color_primary: color } });
+        }
+
+        async function saveStep4() {
+            const title = document.getElementById('s4-title').value;
+            const sub = document.getElementById('s4-sub').value;
+            if(!title || !sub) throw new Error('VALIDATION_ERROR: Missing hero details');
+            await saveSettings({ action: 'update', data: { hero_title: title, hero_subtext: sub } });
+        }
+
+        async function saveStep5() {
+            const phone = document.getElementById('s5-phone').value;
+            const email = document.getElementById('s5-email').value;
+            const about = document.getElementById('s5-about').value;
+            if(!phone || !email || !about) throw new Error('VALIDATION_ERROR: Missing company details');
+            await saveSettings({ action: 'update', data: { contact_phone: phone, contact_email: email, footer_description: about } });
+        }
+
+        async function saveStep6() {
+            const name = document.getElementById('s6-name').value;
+            const address = document.getElementById('s6-address').value;
+            const city = document.getElementById('s6-city').value;
+            const state = document.getElementById('s6-state').value;
+            const pin = document.getElementById('s6-pin').value;
+            if(!address || !city || !state || !pin) return; 
+            
+            await fetch('/api/admin/locations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'create_location', name, address, city, state, pincode: pin, is_default: true })
+            });
+        }
+
+        async function saveStep7() {
+            const rate = document.getElementById('s7-rate').value;
+            const min = document.getElementById('s7-min').value;
+            const max = document.getElementById('s7-max').value;
+            
+            await fetch('/api/admin/shipping', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'create_zone', name: 'Nationwide', states: ['All Others'], rate: parseInt(rate)||50, minDays: parseInt(min)||3, maxDays: parseInt(max)||7, color: 'blue' })
+            });
+        }
+
+        async function saveStep8() {
+            const rzpId = document.getElementById('s8-rzp-id').value;
+            const rzpSec = document.getElementById('s8-rzp-sec').value;
+            const srEmail = document.getElementById('s8-sr-email').value;
+            const srPass = document.getElementById('s8-sr-pass').value;
+            
+            let data = {};
+            if(rzpId && rzpSec) {
+                data.razorpay_key_id = rzpId;
+                data.razorpay_key_secret = rzpSec;
+            }
+            if(srEmail && srPass) {
+                data.shiprocket_email = srEmail;
+                data.shiprocket_password = srPass;
+            }
+            
+            if (Object.keys(data).length > 0) {
+                await saveSettings({ action: 'update', data });
+            }
+        }
+
+        async function saveStep9() {
+            const name = document.getElementById('s9-name').value;
+            const price = document.getElementById('s9-price').value;
+            const mrp = document.getElementById('s9-mrp').value;
+            const img = document.getElementById('s9-img').value;
+            if(!name || !price) return;
+            
+            const productData = {
+                action: 'create_product',
+                product: {
+                    name,
+                    price: parseInt(price),
+                    mrp: parseInt(mrp),
+                    status: 'active',
+                    type: 'physical',
+                    weight: '500g',
+                    images: img ? [img] : []
+                }
+            };
+            
+            await fetch('/api/admin/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(productData)
+            });
+        }
+
+        function finishSetup() {
+            localStorage.setItem('vyaparpe_onboarding_completed', 'true');
+            window.location.href = '/admin';
+        }
+
+        // Initialize: jump to saved step on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            if (currentStep > 1) {
+                initializeStep(currentStep);
+            } else {
+                updateProgress(1);
+            }
+        });
+    </script>
+</body>
+</html>

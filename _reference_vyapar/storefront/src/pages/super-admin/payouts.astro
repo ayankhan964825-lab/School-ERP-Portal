@@ -1,0 +1,355 @@
+---
+import { getPermissionContext, canProcessPayouts } from '../../lib/permissions';
+import { supabaseAdmin } from '../../lib/database';
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import type { Wallet, WalletTransaction, PayoutRequest } from '../../lib/types/admin';
+import { getCsrfToken } from '../../lib/csrf';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canProcessPayouts(ctx)) {
+  return Astro.redirect('/super-admin/login');
+}
+
+if (!supabaseAdmin) {
+    return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Pagination
+const pageParam = Astro.url.searchParams.get('page');
+const page = Math.max(1, parseInt(pageParam || '1') || 1);
+const limit = 50;
+const from = (page - 1) * limit;
+const to = from + limit - 1;
+
+let walletsData = [];
+let recentTransactions = [];
+let payoutRequests = [];
+let totalPlatformBalance = 0;
+let totalCommissionEarned = 0;
+
+try {
+    // Fetch paginated wallets joined with stores
+    const { data: wData, error: wError } = await supabaseAdmin
+        .from('wallets')
+        .select(`
+            id, 
+            balance, 
+            total_earned, 
+            total_commission_paid, 
+            total_payouts, 
+            last_updated,
+            stores:store_id (id, name, contact_email, contact_phone)
+        `)
+        .order('balance', { ascending: false })
+        .range(from, to);
+    
+    if (wError) throw wError;
+    walletsData = wData || [];
+
+    // Fetch recent wallet transactions
+    const { data: tData, error: tError } = await supabaseAdmin
+        .from('wallet_transactions')
+        .select('id, amount, type, reference_id, description, created_at, stores:store_id (name)')
+        .order('created_at', { ascending: false })
+        .range(from, to);
+    
+    if (tError) throw tError;
+    recentTransactions = tData || [];
+
+    // Fetch pending payout requests
+    const { data: pData, error: pError } = await supabaseAdmin
+        .from('payout_requests')
+        .select('id, amount, bank_name, bank_account_no, bank_ifsc, created_at, stores:store_id (name, id)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+    if (pError) throw pError;
+    payoutRequests = pData || [];
+    // Fetch totals via RPC to avoid OOM
+    const { data: totalsData, error: totalsError } = await supabaseAdmin.rpc('get_platform_wallet_totals');
+    if (!totalsError && totalsData) {
+        totalPlatformBalance = totalsData.total_balance || 0;
+        totalCommissionEarned = totalsData.total_commission_paid || 0;
+    }
+} catch (error) {
+    console.error("Payouts Fetch Error:", error);
+}
+---
+
+<SuperAdminLayout title="Payouts & Billing | VyaparPe Super Admin">
+    <meta name="csrf-token" content={csrfToken} />
+    <div class="mb-8 flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Payouts & Billing</h1>
+            <p class="text-sm text-slate-500 mt-1">Manage tenant wallet balances and process platform commissions.</p>
+        </div>
+    </div>
+
+    <!-- Overview Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-6 flex flex-col gap-1">
+            <div class="text-[13px] font-medium text-slate-500 uppercase tracking-wider">Total Unsettled Balances</div>
+            <div class="text-3xl font-semibold text-slate-900 mt-1">₹{totalPlatformBalance.toLocaleString('en-IN')}</div>
+            <div class="text-xs text-slate-400 mt-2">Money held by VyaparPe owed to sellers.</div>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-6 flex flex-col gap-1">
+            <div class="text-[13px] font-medium text-slate-500 uppercase tracking-wider">Platform Commissions</div>
+            <div class="text-3xl font-semibold text-slate-900 mt-1">₹{totalCommissionEarned.toLocaleString('en-IN')}</div>
+            <div class="text-xs text-slate-400 mt-2">VyaparPe's earnings from seller fees.</div>
+        </div>
+    </div>
+
+    <!-- Pending Payout Requests -->
+    {payoutRequests && payoutRequests.length > 0 && (
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-8">
+            <div class="px-6 py-4 border-b border-slate-100 bg-white">
+                <h2 class="text-[15px] font-semibold text-slate-900">Pending Payout Requests</h2>
+            </div>
+            
+            <div class="overflow-x-auto w-full">
+                <table class="min-w-full text-sm text-left">
+                    <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                        <tr>
+                            <th class="px-6 py-3 font-medium">Date</th>
+                            <th class="px-6 py-3 font-medium">Store</th>
+                            <th class="px-6 py-3 font-medium">Amount</th>
+                            <th class="px-6 py-3 font-medium">Bank Details</th>
+                            <th class="px-6 py-3 font-medium text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {payoutRequests?.map((req: PayoutRequest) => (
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-6 py-3 text-[12px] text-slate-500 whitespace-nowrap">
+                                    {new Date(req.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}
+                                </td>
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-[14px] text-slate-900">{req.stores?.name}</div>
+                                </td>
+                                <td class="px-6 py-3">
+                                    <div class="text-[14px] font-semibold text-slate-900">₹{req.amount.toLocaleString('en-IN')}</div>
+                                </td>
+                                <td class="px-6 py-3">
+                                    <div class="text-[12px] text-slate-600">{req.bank_name}</div>
+                                    <div class="text-[12px] text-slate-500 font-mono mt-0.5">A/C: {req.bank_account_no} | IFSC: {req.bank_ifsc}</div>
+                                </td>
+                                <td class="px-6 py-3 text-right">
+                                    <button 
+                                        data-payout-id={req.id} 
+                                        data-amount={req.amount}
+                                        class="btn-approve-payout text-[13px] font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded transition-colors">
+                                        Mark as Paid
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    )}
+
+    <!-- Tenant Wallets -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-slate-100 bg-white">
+            <h2 class="text-[15px] font-semibold text-slate-900">Tenant Wallets</h2>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                    <tr>
+                        <th class="px-6 py-3 font-medium">Tenant Store</th>
+                        <th class="px-6 py-3 font-medium">Current Balance</th>
+                        <th class="px-6 py-3 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {walletsData?.map((wallet: Wallet) => {
+                        const store = wallet.stores || { name: 'Unknown' };
+                        const isNegative = wallet.balance < 0;
+                        return (
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-6 py-3">
+                                    <div class="font-medium text-[14px] text-slate-900">{store.name}</div>
+                                    <div class="text-[12px] text-slate-500 mt-0.5">{store.contact_email || 'No email'} | {store.contact_phone || 'No phone'}</div>
+                                </td>
+                                <td class="px-6 py-3">
+                                    <div class={`text-[14px] font-semibold ${isNegative ? 'text-red-600' : 'text-slate-900'}`}>
+                                        {isNegative ? '-' : ''}₹{Math.abs(wallet.balance).toLocaleString('en-IN')}
+                                    </div>
+                                    <div class="text-[11px] text-slate-400 mt-0.5">
+                                        Last updated: {new Date(wallet.last_updated).toLocaleDateString()}
+                                    </div>
+                                </td>
+                                <td class="px-6 py-3 text-right">
+                                    <span class="text-[12px] text-slate-400 italic">No manual settlement</span>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {(!walletsData || walletsData.length === 0) && (
+                        <tr>
+                            <td colspan="3" class="px-6 py-8 text-center text-slate-500 text-sm">No wallet data found.</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent Transactions -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 bg-white">
+            <h2 class="text-[15px] font-semibold text-slate-900">Recent Global Transactions</h2>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                    <tr>
+                        <th class="px-6 py-3 font-medium">Date & Time</th>
+                        <th class="px-6 py-3 font-medium">Store</th>
+                        <th class="px-6 py-3 font-medium">Type</th>
+                        <th class="px-6 py-3 font-medium">Description</th>
+                        <th class="px-6 py-3 font-medium text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {recentTransactions?.map((txn: WalletTransaction) => {
+                        const isCredit = txn.type === 'credit' || txn.type === 'payout' || txn.type === 'refund';
+                        const isDebit = txn.type === 'debit' || txn.type === 'fee' || txn.type === 'chargeback';
+                        
+                        return (
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-6 py-3 text-[12px] text-slate-500 whitespace-nowrap">
+                                    {new Date(txn.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}
+                                </td>
+                                <td class="px-6 py-3 text-[13px] font-medium text-slate-900">
+                                    {txn.stores?.name || 'VyaparPe'}
+                                </td>
+                                <td class="px-6 py-3">
+                                    <span class={`text-[11px] capitalize font-medium px-2 py-0.5 rounded border ${
+                                        isCredit ? 'bg-green-50 text-green-700 border-green-200' :
+                                        isDebit ? 'bg-red-50 text-red-700 border-red-200' :
+                                        'bg-slate-50 text-slate-700 border-slate-200'
+                                    }`}>
+                                        {txn.type}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-3 text-[13px] text-slate-600 truncate max-w-[200px]" title={txn.description || txn.reference_id}>
+                                    {txn.description || txn.reference_id || '-'}
+                                </td>
+                                <td class={`px-6 py-3 text-right font-semibold text-[13px] ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
+                                    {isCredit ? '+' : '-'}₹{Math.abs(txn.amount).toLocaleString('en-IN')}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {(!recentTransactions || recentTransactions.length === 0) && (
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">No recent transactions.</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <span class="text-sm text-slate-600">Showing page {page}</span>
+            <div class="flex gap-2">
+                {page > 1 && (
+                    <a href={`?page=${page - 1}`} class="px-3 py-1 border border-slate-300 rounded text-sm font-medium bg-white text-slate-700 hover:bg-slate-50">Previous</a>
+                )}
+                {recentTransactions.length === limit && (
+                    <a href={`?page=${page + 1}`} class="px-3 py-1 border border-slate-300 rounded text-sm font-medium bg-white text-slate-700 hover:bg-slate-50">Next</a>
+                )}
+            </div>
+        </div>
+    </div>
+    <div id="approve-payout-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 opacity-0 pointer-events-none transition-opacity">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 transform scale-95 transition-transform" id="approve-payout-content">
+            <h3 class="text-lg font-semibold text-slate-900 mb-1">Approve Payout</h3>
+            <p class="text-sm text-slate-500 mb-5">Please transfer the funds to the seller's bank account before confirming.</p>
+            
+            <form id="approve-payout-form" class="space-y-4">
+                <input type="hidden" id="modal-payout-id" />
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">UTR / Transaction Reference</label>
+                    <input type="text" id="modal-utr" required placeholder="e.g. UPI123456789" class="w-full text-sm px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+                </div>
+                
+                <div class="pt-2 flex justify-end gap-3">
+                    <button type="button" id="btn-cancel-payout" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-md transition-colors">Cancel</button>
+                    <button type="submit" id="btn-submit-payout" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm transition-colors flex items-center gap-2">
+                        Confirm Payment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script is:inline>
+        // ... existing script for settle wallet ...
+
+        // Payout Approval logic
+        const approveModal = document.getElementById('approve-payout-modal');
+        const approveContent = document.getElementById('approve-payout-content');
+        const payoutIdInput = document.getElementById('modal-payout-id');
+        const utrInput = document.getElementById('modal-utr');
+        
+        document.querySelectorAll('.btn-approve-payout').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.getAttribute('data-payout-id');
+                payoutIdInput.value = id;
+                utrInput.value = '';
+                
+                approveModal.classList.remove('opacity-0', 'pointer-events-none');
+                approveContent.classList.remove('scale-95');
+                utrInput.focus();
+            });
+        });
+
+        document.getElementById('btn-cancel-payout')?.addEventListener('click', () => {
+            approveModal.classList.add('opacity-0', 'pointer-events-none');
+            approveContent.classList.add('scale-95');
+        });
+
+        document.getElementById('approve-payout-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-submit-payout');
+            btn.disabled = true;
+            btn.innerText = 'Processing...';
+
+            try {
+                const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                const res = await fetch('/api/super-admin/process-payout', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-csrf-token': token
+                    },
+                    body: JSON.stringify({
+                        payout_id: payoutIdInput.value,
+                        utr_number: utrInput.value
+                    })
+                });
+                
+                if(res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json();
+                    alert(data.error || 'Failed to process payout');
+                    btn.disabled = false;
+                    btn.innerText = 'Confirm Payment';
+                }
+            } catch(err) {
+                alert('Network error');
+                btn.disabled = false;
+                btn.innerText = 'Confirm Payment';
+            }
+        });
+    </script>
+</SuperAdminLayout>

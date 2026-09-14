@@ -1,0 +1,202 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabase } from '../../lib/database';
+
+const storeId = Astro.locals.storeId;
+if (!storeId || storeId === 'SUPER_ADMIN_BYPASS') {
+  return Astro.redirect('/admin/login');
+}
+
+// Fetch existing requests for this store
+const { data: requests, error } = await supabase
+  .from('store_service_requests')
+  .select('*')
+  .eq('store_id', storeId)
+  .order('created_at', { ascending: false });
+
+---
+
+<AdminLayout title="Managed Services | VyaparPe">
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-gray-900">Managed Services</h1>
+    <p class="text-gray-500 mt-1">Let our experts handle the heavy lifting while you focus on selling.</p>
+  </div>
+
+  <!-- Available Services -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+    <!-- One Time Setup -->
+    <div class="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm flex flex-col hover:border-indigo-300 transition-colors">
+      <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+      </div>
+      <h3 class="text-xl font-bold text-gray-900 mb-2">One-Time Setup</h3>
+      <p class="text-gray-500 text-sm mb-6 flex-1">Complete website setup including About Us, Logo branding, and Theme tailoring.</p>
+      <div class="mb-4">
+        <span class="text-2xl font-extrabold text-gray-900">₹2,499</span>
+        <span class="text-sm text-gray-500">/ 50 Products</span>
+      </div>
+      <button onclick="openRequestModal('one_time_setup', 2499, 'One-Time Setup')" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors">
+        Request Service
+      </button>
+    </div>
+
+    <!-- Extra Listings -->
+    <div class="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm flex flex-col hover:border-blue-300 transition-colors">
+      <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+      </div>
+      <h3 class="text-xl font-bold text-gray-900 mb-2">Extra Listings</h3>
+      <p class="text-gray-500 text-sm mb-6 flex-1">Need more products uploaded? We'll handle the data entry and catalog building.</p>
+      <div class="mb-4">
+        <span class="text-2xl font-extrabold text-gray-900">₹499</span>
+        <span class="text-sm text-gray-500">/ 50 Products</span>
+      </div>
+      <button onclick="openRequestModal('extra_listings', 499, 'Extra Listings')" class="w-full py-2.5 bg-gray-900 hover:bg-black text-white font-medium rounded-lg transition-colors">
+        Request Service
+      </button>
+    </div>
+
+    <!-- Custom Theme -->
+    <div class="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm flex flex-col hover:border-fuchsia-300 transition-colors relative overflow-hidden">
+      <div class="absolute -right-6 -top-6 w-24 h-24 bg-gradient-to-br from-fuchsia-500 to-purple-600 rounded-full blur-2xl opacity-10"></div>
+      <div class="w-12 h-12 bg-fuchsia-50 text-fuchsia-600 rounded-xl flex items-center justify-center mb-4 relative z-10">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path></svg>
+      </div>
+      <h3 class="text-xl font-bold text-gray-900 mb-2 relative z-10">Custom UX Theme</h3>
+      <p class="text-gray-500 text-sm mb-6 flex-1 relative z-10">A bespoke, highly-converting premium storefront design exclusive to your brand.</p>
+      <div class="mb-4 relative z-10">
+        <span class="text-2xl font-extrabold text-gray-900">₹9,999</span>
+        <span class="text-sm text-gray-500">one time</span>
+      </div>
+      <button onclick="openRequestModal('custom_theme', 9999, 'Custom UX Theme')" class="w-full py-2.5 bg-gray-900 hover:bg-black text-white font-medium rounded-lg transition-colors relative z-10">
+        Request Service
+      </button>
+    </div>
+  </div>
+
+  <!-- Request History -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-bold text-gray-900">Your Service Requests</h2>
+    </div>
+    
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-200 text-sm">
+            <th class="p-4 font-semibold text-gray-600">Service</th>
+            <th class="p-4 font-semibold text-gray-600">Date</th>
+            <th class="p-4 font-semibold text-gray-600">Price</th>
+            <th class="p-4 font-semibold text-gray-600">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 text-sm">
+          {requests && requests.length > 0 ? (
+            requests.map((req) => (
+              <tr class="hover:bg-gray-50">
+                <td class="p-4 font-medium text-gray-900">
+                  {req.service_type === 'one_time_setup' ? 'One-Time Setup' : 
+                   req.service_type === 'extra_listings' ? 'Extra Listings' : 'Custom UX Theme'}
+                </td>
+                <td class="p-4 text-gray-500">{new Date(req.created_at).toLocaleDateString()}</td>
+                <td class="p-4 font-medium">₹{req.price}</td>
+                <td class="p-4">
+                  <span class={`inline-flex px-2 py-1 text-xs font-bold rounded-full ${
+                    req.status === 'completed' ? 'bg-green-100 text-green-700' :
+                    req.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                    req.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                    'bg-amber-100 text-amber-700'
+                  }`}>
+                    {req.status.replace('_', ' ').toUpperCase()}
+                  </span>
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colspan="4" class="p-8 text-center text-gray-500">
+                No service requests found.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Request Modal -->
+  <div id="request-modal" class="fixed inset-0 bg-gray-900/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+      <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+        <h2 class="text-xl font-bold text-gray-900" id="modal-title">Request Service</h2>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <form action="/api/admin/request-service" method="POST" class="p-6">
+        <input type="hidden" name="service_type" id="modal-service-type" value="" />
+        <input type="hidden" name="price" id="modal-price" value="" />
+
+        <div class="mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-lg flex justify-between items-center">
+          <span class="font-bold text-indigo-900" id="modal-service-name">Service</span>
+          <span class="text-lg font-extrabold text-indigo-700" id="modal-price-display">₹0</span>
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Any specific requirements or notes?</label>
+          <textarea name="notes" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., I want a dark theme for my store..."></textarea>
+        </div>
+        
+        <div class="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-6 text-sm text-yellow-800">
+          <strong>Note:</strong> Billing for this service will be processed manually. Our team will contact you shortly after you submit this request.
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 font-medium hover:bg-gray-50">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-700">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    function openRequestModal(type, price, name) {
+      document.getElementById('modal-service-type').value = type;
+      document.getElementById('modal-price').value = price;
+      document.getElementById('modal-service-name').innerText = name;
+      document.getElementById('modal-price-display').innerText = '₹' + price;
+      document.getElementById('request-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('request-modal').classList.add('hidden');
+    }
+    
+    document.querySelector('form').addEventListener('submit', async function(e) {
+      if (!this.action) return;
+      e.preventDefault();
+      const btn = this.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
+
+      try {
+        const formData = new FormData(this);
+        const res = await fetch(this.action, {
+          method: this.method || 'POST',
+          headers: { 'Accept': 'application/json' },
+          body: formData
+        });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          alert(data.error || 'Operation failed');
+        }
+      } catch (err) {
+        alert('An error occurred');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  </script>
+</AdminLayout>

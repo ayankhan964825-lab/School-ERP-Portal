@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_storefront_src_pages_affiliate_index_astro", "label": "index.astro", "file_type": "code", "source_file": "storefront/src/pages/affiliate/index.astro", "source_location": "L1"}], "edges": [], "raw_calls": [], "parse_errors": {"first_error_line": 3, "multiline_error": false}}

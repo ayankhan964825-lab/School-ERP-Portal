@@ -1,0 +1,1263 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "shipping_rates")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getShippingZones, getSettings, getStore } from '../../lib/database';
+
+const storeId = Astro.locals?.storeId;
+const store = await getStore(storeId);
+const isFreeTier = store?.plan_id === '00000000-0000-0000-0000-000000000005';
+
+const dbZones = await getShippingZones();
+const settings = (await getSettings(storeId)) || {};
+
+const zones = dbZones;
+
+type CourierPartner = {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  badge: string;
+  badgeColor: string;
+};
+
+const isIcarryEnabled = !!settings.icarry_api_token;
+
+const couriers: CourierPartner[] = [
+  { 
+    id: 'icarry', 
+    name: 'iCarry.in', 
+    description: 'Automated label generation and live tracking API', 
+    enabled: isIcarryEnabled, 
+    badge: isIcarryEnabled ? 'Active' : 'Setup Required', 
+    badgeColor: isIcarryEnabled ? 'green' : 'gray' 
+  }
+];
+
+const colorBarMap: Record<string, string> = {
+  green: 'bg-green-500',
+  blue: 'bg-blue-500',
+  orange: 'bg-orange-500',
+  purple: 'bg-purple-500',
+  pink: 'bg-pink-500',
+  cyan: 'bg-cyan-500',
+};
+const colorBadgeMap: Record<string, string> = {
+  green: 'bg-green-100 text-green-700',
+  blue: 'bg-blue-100 text-blue-700',
+  orange: 'bg-orange-100 text-orange-700',
+  purple: 'bg-purple-100 text-purple-700',
+  pink: 'bg-pink-100 text-pink-700',
+  cyan: 'bg-cyan-100 text-cyan-700',
+};
+
+const shippingForAI = JSON.stringify({
+  settings: {
+    free_shipping_threshold: settings.free_shipping_threshold,
+    flat_shipping_rate: settings.flat_shipping_rate,
+    delivery_days_min: settings.delivery_days_min,
+    delivery_days_max: settings.delivery_days_max,
+    max_cod_amount: settings.max_cod_amount,
+    cod_enabled: settings.cod_enabled,
+    restricted_pincodes: settings.restricted_pincodes,
+  },
+  zones: zones.map((z: any) => ({
+    id: z.id,
+    name: z.name,
+    rate: z.rate,
+    states: z.states
+  })),
+  couriers: couriers.map(c => ({
+    name: c.name,
+    enabled: c.enabled
+  }))
+});
+---
+
+<AdminLayout title="Shipping Zones & Rates | Admin Panel" description="Configure shipping zones, rates, and delivery partners.">
+  <div class="max-w-5xl space-y-8">
+
+    <!-- Page Header -->
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Shipping Zones & Rates</h1>
+        <p class="text-sm text-secondary/60 mt-1">Configure delivery zones, pricing rules, courier partners, and pincode restrictions.</p>
+      </div>
+      <div class="flex items-center gap-2 text-xs font-medium bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-full">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+        Live — saved to database
+      </div>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="shipping"
+    title="Shipping Assistant"
+      pageDataJson={shippingForAI}
+      guideTitleEn="Shipping Guide"
+      guideTitleHi="Shipping Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Global Settings:</strong> Configure free shipping thresholds and global delivery times.</li>
+        <li><strong>Zones:</strong> Create regional zones to override the flat shipping rate.</li>
+        <li><strong>Restrictions:</strong> Blacklist certain pincodes for COD or restrict delivery to whitelisted pincodes only.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Global Settings:</strong> Free shipping ka limit aur normal delivery time set karein.</li>
+        <li><strong>Zones:</strong> Alag alag states ke hisab se delivery charges set karne ke liye zones banayein.</li>
+        <li><strong>Restrictions:</strong> COD block karne ke liye blacklist use karein, ya sirf select pincodes par delivery chalu karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '🚚 New Zone', query: 'naya shipping zone kaise banaye?' },
+        { label: '💰 COD Settings', query: 'cod pincodes block karne ka option kaha hai' },
+        { label: '⚙️ Global Rate', query: 'flat rate change karna hai' }
+      ]}
+    />
+
+    <!-- Global Toast Notification -->
+    <div id="toast" class="hidden fixed top-6 right-6 z-50 flex items-center gap-3 bg-white border border-green-200 shadow-lg rounded-xl px-5 py-3.5 text-sm font-medium text-green-800 transition-all duration-300">
+      <div class="w-7 h-7 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <span id="toast-message">Settings saved successfully!</span>
+    </div>
+
+    <!-- ── SECTION 1: Global Settings ── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-3">
+        <div class="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="font-bold text-secondary text-sm">Global Shipping Settings</h2>
+          <p class="text-xs text-secondary/50">Defaults applied across all orders unless overridden by zone rules.</p>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-6">
+        <!-- Q-Commerce Only Mode -->
+        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-secondary">Pure Q-Commerce Mode (Hyperlocal Only)</p>
+              <p class="text-xs text-secondary/60">Restrict ALL checkouts to your local radius/pincodes only. Disables national shipping.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="is_pure_q_commerce" checked={settings.is_pure_q_commerce === 'true' || settings.is_pure_q_commerce === true} class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500 relative"></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Free Shipping Toggle -->
+        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-secondary">Free Shipping Threshold</p>
+              <p class="text-xs text-secondary/60">Enable free shipping above a cart value</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <div id="threshold-input-wrap" class="flex items-center gap-2" style={settings.free_shipping_threshold ? '' : 'opacity: 0.4; pointer-events: none;'}>
+              <span class="text-sm text-secondary/70 font-medium">₹</span>
+              <input
+                type="number"
+                id="free-shipping-threshold"
+                value={settings.free_shipping_threshold || 499}
+                min="0"
+                class="w-24 px-3 py-1.5 border border-green-200 rounded-lg focus:ring-green-400 focus:border-green-400 text-sm font-semibold bg-white text-secondary"
+              />
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="free-shipping-toggle" checked={!!settings.free_shipping_threshold} class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 relative"></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Rate + Days Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="p-4 border border-gray-100 rounded-xl bg-gray-50/50">
+            <label for="flat-rate" class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wide">Flat Shipping Rate</label>
+            <div class="flex items-center gap-2">
+              <span class="text-secondary/60 font-bold text-sm">₹</span>
+              <input
+                type="number"
+                id="flat-rate"
+                value={settings.flat_shipping_rate || 60}
+                min="0"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-primary focus:border-primary text-sm font-semibold bg-white text-secondary"
+              />
+            </div>
+            <p class="text-xs text-secondary/40 mt-1.5">Charged below free shipping threshold</p>
+          </div>
+
+          <div class="p-4 border border-gray-100 rounded-xl bg-gray-50/50">
+            <label for="delivery-days" class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wide">Estimated Delivery</label>
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                id="delivery-days"
+                value={`${settings.delivery_days_min || 3}-${settings.delivery_days_max || 5}`}
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-primary focus:border-primary text-sm font-semibold bg-white text-secondary"
+              />
+              <span class="text-xs text-secondary/50 whitespace-nowrap">days</span>
+            </div>
+            <p class="text-xs text-secondary/40 mt-1.5">Shown on product & checkout pages</p>
+          </div>
+
+          <div class="p-4 border border-gray-100 rounded-xl bg-gray-50/50">
+            <label for="cod-max" class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wide">Max COD Amount</label>
+            <div class="flex items-center gap-2">
+              <span class="text-secondary/60 font-bold text-sm">₹</span>
+              <input
+                type="number"
+                id="cod-max"
+                value={settings.max_cod_amount || 5000}
+                min="0"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-primary focus:border-primary text-sm font-semibold bg-white text-secondary"
+              />
+            </div>
+            <p class="text-xs text-secondary/40 mt-1.5">Orders above this can't use COD</p>
+          </div>
+
+          <div class="p-4 border border-gray-100 rounded-xl bg-gray-50/50">
+            <label for="minimum-order-amount" class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wide">Min Order Amount</label>
+            <div class="flex items-center gap-2">
+              <span class="text-secondary/60 font-bold text-sm">₹</span>
+              <input
+                type="number"
+                id="minimum-order-amount"
+                value={settings.minimum_order_amount || 199}
+                min="0"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-primary focus:border-primary text-sm font-semibold bg-white text-secondary"
+              />
+            </div>
+            <p class="text-xs text-secondary/40 mt-1.5">Orders below this can't be placed</p>
+          </div>
+        </div>
+
+        <!-- State-wise Shipping Rules -->
+        <div class="p-4 border border-gray-100 rounded-xl bg-gray-50/50">
+          <label for="state-shipping-rules" class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wide">State-wise Shipping Rules (JSON)</label>
+          <textarea
+            id="state-shipping-rules"
+            rows="3"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-primary focus:border-primary text-sm font-mono bg-white text-secondary"
+            placeholder='{"Kerala": 100, "Assam": 120, "Andaman": -1}'
+          >{settings.state_shipping_rules || ''}</textarea>
+          <p class="text-xs text-secondary/50 mt-1">Format: <code>{"{ \"StateName\": DeliveryFee }"}</code>. Use <code>-1</code> to block delivery. Leave blank to use flat rate.</p>
+        </div>
+
+        <!-- COD Toggle -->
+        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl border border-amber-100">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 text-lg font-bold">₹</div>
+            <div>
+              <p class="text-sm font-semibold text-secondary">Cash on Delivery (COD)</p>
+              <p class="text-xs text-secondary/60">Allow customers to pay at doorstep. Pincodes can be blacklisted below.</p>
+            </div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="cod-toggle" checked={settings.cod_enabled !== false} class="sr-only peer" />
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500 relative"></div>
+          </label>
+        </div>
+
+        <div class="flex justify-end">
+          <button onclick="saveGlobalSettings()" class="btn-primary flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION 2: Shipping Return Rates ── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-3">
+        <div class="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14V5a2 2 0 00-2-2H6a2 2 0 00-2 2v16l4-2 4 2 4-2 4 2z" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="font-bold text-secondary text-sm">Shipping Return Rates</h2>
+          <p class="text-xs text-secondary/50">Configure reverse shipping fees applied when a customer requests a return or exchange.</p>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-6">
+        <!-- Reverse Shipping Toggle -->
+        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-100">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-secondary">Charge for Reverse Shipping</p>
+              <p class="text-xs text-secondary/60">If enabled, a fixed fee will be deducted from the customer's refund.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="reverse-shipping-toggle" checked={settings.pages_content?.reverse_shipping_enabled !== false} class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500 relative"></div>
+            </label>
+          </div>
+        </div>
+
+        <div class="p-4 border border-gray-100 rounded-xl bg-gray-50/50 w-full md:w-1/3">
+          <label for="reverse-rate" class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wide">Flat Reverse Rate</label>
+          <div class="flex items-center gap-2">
+            <span class="text-secondary/60 font-bold text-sm">₹</span>
+            <input
+              type="number"
+              id="reverse-rate"
+              value={settings.pages_content?.reverse_shipping_rate || 80}
+              min="0"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-primary focus:border-primary text-sm font-semibold bg-white text-secondary"
+            />
+          </div>
+          <p class="text-xs text-secondary/40 mt-1.5">Standard fee deducted per return request</p>
+        </div>
+
+        <div class="flex justify-end">
+          <button onclick="saveReturnRates()" class="btn-primary flex items-center gap-2 text-sm bg-orange-600 hover:bg-orange-700">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            Save Return Rates
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION 3: Pincode Restrictions ── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-3">
+        <div class="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="font-bold text-secondary text-sm">Pincode Delivery Restrictions</h2>
+          <p class="text-xs text-secondary/50">Whitelist specific pincodes to restrict delivery.</p>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <!-- Restrict Toggle -->
+        <div class="flex items-center justify-between p-4 bg-blue-50/60 rounded-xl border border-blue-100">
+          <div>
+            <p class="text-sm font-semibold text-secondary">Restrict delivery to specific pincodes only</p>
+            <p class="text-xs text-secondary/60 mt-0.5">When enabled, orders will only be accepted for pincodes listed below.</p>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer ml-4">
+            <input type="checkbox" id="pincode-restrict-toggle" class="sr-only peer" checked={!!settings.restricted_pincodes} />
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 relative"></div>
+          </label>
+        </div>
+
+        <div id="pincode-whitelist-section" style={settings.restricted_pincodes ? '' : 'opacity: 0.4; pointer-events: none;'}>
+          <label for="pincode-whitelist" class="block text-sm font-medium text-secondary mb-2">
+            Allowed Pincodes
+            <span class="text-xs font-normal text-secondary/50 ml-1">(comma or newline separated)</span>
+          </label>
+          <textarea
+            id="pincode-whitelist"
+            rows="4"
+            placeholder="226001, 226010&#10;226020&#10;248001, 248002"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-blue-400 focus:border-blue-400 text-sm font-mono resize-none bg-gray-50 placeholder-gray-300"
+          >{settings.restricted_pincodes || ''}</textarea>
+          <p class="text-xs text-secondary/50 mt-1.5 flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Leave blank to deliver everywhere in India.
+          </p>
+        </div>
+
+        <div class="flex justify-end">
+          <button onclick="savePincodeRestrictions()" class="btn-primary flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            Save Restrictions
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION 4: Shipping Zones ── -->
+    <div>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-serif font-bold text-secondary">Shipping Zones</h2>
+          <p class="text-xs text-secondary/50 mt-0.5">Zone-specific rates override the global flat rate.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <a href="/admin/bulk-upload/shipping" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center justify-center gap-2 shrink-0 py-2 px-4 shadow-sm text-sm rounded-xl font-semibold">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            BYO-AI Bulk Gen
+          </a>
+          <button
+            onclick="openAddZoneModal()"
+            class="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Zone
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4" id="zones-grid">
+        {zones.length === 0 && (
+          <div class="text-center py-10 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-300 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 class="text-sm font-bold text-gray-700">No Shipping Zones Configured</h3>
+            <p class="text-xs text-gray-500 mt-1 max-w-xs mx-auto">Create specific shipping zones to set different rates for different states.</p>
+          </div>
+        )}
+        {zones.map((zone: any) => (
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden zone-card" data-zone-id={zone.id}>
+            <div class="flex items-stretch">
+              <div class={`w-1.5 ${colorBarMap[zone.color] || 'bg-gray-400'} flex-shrink-0 rounded-l-2xl`}></div>
+              <div class="flex-1 p-5">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class={`text-xs font-bold ${colorBadgeMap[zone.color] || 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full`}>Zone {zone.id}</span>
+                      <h3 class="font-bold text-secondary zone-name">{zone.name}</h3>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 mb-3">
+                      {zone.states && zone.states.map((s: string) => (
+                        <span class="text-xs bg-gray-100 text-secondary/70 px-2 py-0.5 rounded-full font-medium">{s}</span>
+                      ))}
+                    </div>
+                    <div class="flex items-center gap-6">
+                      <div class="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10" />
+                        </svg>
+                        <span class="text-sm font-bold text-secondary">₹{zone.rate}</span>
+                        <span class="text-xs text-secondary/50">shipping</span>
+                      </div>
+                      <div class="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span class="text-sm font-bold text-secondary">{zone.minDays}-{zone.maxDays} days</span>
+                        <span class="text-xs text-secondary/50">delivery</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button onclick={`openEditModal(${zone.id})`} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary/70 hover:text-primary border border-gray-200 hover:border-primary/30 rounded-lg transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit
+                    </button>
+                    <button onclick="deleteZone(this)" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500/70 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- ── SECTION 5: COD Pincode Blacklist ── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-3">
+        <div class="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="font-bold text-secondary text-sm">COD Pincode Blacklist</h2>
+          <p class="text-xs text-secondary/50">Pincodes where Cash on Delivery is not available.</p>
+        </div>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="p-3.5 bg-red-50 rounded-xl border border-red-100 text-xs text-red-700 flex items-start gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span>Customers at these pincodes will see <strong>Prepaid Only</strong> at checkout. COD option will be hidden.</span>
+        </div>
+        <div>
+          <label for="cod-blacklist" class="block text-sm font-medium text-secondary mb-2">
+            Blacklisted Pincodes
+            <span class="text-xs font-normal text-secondary/50 ml-1">(comma or newline separated)</span>
+          </label>
+          <textarea
+            id="cod-blacklist"
+            rows="4"
+            placeholder="110001, 110002&#10;400001&#10;600001, 600002"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-red-300 focus:border-red-300 text-sm font-mono resize-none bg-gray-50 placeholder-gray-300"
+          ></textarea>
+          <p class="text-xs text-secondary/50 mt-1.5">Leave blank to allow COD everywhere (subject to max amount).</p>
+        </div>
+        <div class="flex justify-end">
+          <button onclick="mockSave('COD blacklist updated!')" class="btn-primary flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            Save Blacklist
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION 6: Courier Partners ── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-3">
+        <div class="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="font-bold text-secondary text-sm">Courier Partners</h2>
+          <p class="text-xs text-secondary/50">Enable or disable logistics partners for order dispatch.</p>
+        </div>
+      </div>
+      <div class="p-6">
+        {isFreeTier ? (
+          <div class="bg-primary/5 rounded-xl border border-primary/20 p-6 text-center">
+            <div class="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            </div>
+            <h4 class="font-bold text-primary mb-2">Advanced Courier Integrations Locked</h4>
+            <p class="text-sm text-secondary/70 mb-4">Upgrade to the Growth Plan to automatically assign & track orders with Shiprocket, Delhivery, DTDC, and more.</p>
+            <a href="/admin/settings/billing" class="inline-flex px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90">Upgrade Now</a>
+          </div>
+        ) : (
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          <!-- Delhivery -->
+          <div class="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-primary/20 hover:bg-gray-50/50 transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-red-100 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-semibold text-secondary">Delhivery</p>
+                  <span class="text-[10px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Recommended</span>
+                </div>
+                <p class="text-xs text-secondary/55">Express & surface, 18,000+ pincodes</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer ml-3">
+              <input type="checkbox" id="courier-delhivery" checked class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+
+          <!-- DTDC -->
+          <div class="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-primary/20 hover:bg-gray-50/50 transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-semibold text-secondary">DTDC</p>
+                  <span class="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Active</span>
+                </div>
+                <p class="text-xs text-secondary/55">Pan-India courier, economical for bulk</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer ml-3">
+              <input type="checkbox" id="courier-dtdc" checked class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+
+          <!-- India Post -->
+          <div class="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-primary/20 hover:bg-gray-50/50 transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 bg-yellow-50 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-yellow-100 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-semibold text-secondary">India Post</p>
+                  <span class="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Inactive</span>
+                </div>
+                <p class="text-xs text-secondary/55">Widest reach including remote areas</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer ml-3">
+              <input type="checkbox" id="courier-indiapost" class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+
+          <!-- Shiprocket -->
+          <div class="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-primary/20 hover:bg-gray-50/50 transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                </svg>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-semibold text-secondary">Shiprocket</p>
+                  <span class="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Inactive</span>
+                </div>
+                <p class="text-xs text-secondary/55">Multi-carrier aggregator platform</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer ml-3">
+              <input type="checkbox" id="courier-shiprocket" class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+
+        </div>
+
+        <div class="flex justify-end mt-5">
+          <button onclick="mockSave('Courier partners updated!')" class="btn-primary flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            Save Couriers
+          </button>
+        </div>
+        )}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       EDIT ZONE MODAL
+  ══════════════════════════════════════════════ -->
+  <div id="edit-zone-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeEditModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-auto overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="font-bold text-secondary" id="modal-title">Edit Zone</h3>
+          <p class="text-xs text-secondary/50 mt-0.5">Update zone details and rates</p>
+        </div>
+        <button onclick="closeEditModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-secondary/40 hover:text-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <!-- Modal Body -->
+      <div class="p-6 space-y-4">
+        <input type="hidden" id="modal-zone-id" value="" />
+
+        <div>
+          <label for="modal-zone-name" class="block text-sm font-medium text-secondary mb-1.5">Zone Name</label>
+          <input
+            type="text"
+            id="modal-zone-name"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm"
+            placeholder="e.g. Metro Cities"
+          />
+        </div>
+
+        <div>
+          <label for="modal-zone-states" class="block text-sm font-medium text-secondary mb-1.5">
+            States / Regions
+            <span class="text-xs font-normal text-secondary/50 ml-1">(comma separated)</span>
+          </label>
+          <textarea
+            id="modal-zone-states"
+            rows="3"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm resize-none"
+            placeholder="Delhi, Mumbai, Bangalore"
+          ></textarea>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label for="modal-zone-rate" class="block text-sm font-medium text-secondary mb-1.5">Shipping Rate (₹)</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-secondary/50 text-sm">₹</span>
+              <input
+                type="number"
+                id="modal-zone-rate"
+                min="0"
+                class="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm font-semibold"
+              />
+            </div>
+          </div>
+          <div>
+            <label for="modal-zone-states" class="block text-sm font-medium text-secondary mb-1.5">Min Days</label>
+            <input
+              type="number"
+              id="modal-zone-min-days"
+              min="1"
+              max="30"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm"
+            />
+          </div>
+          <div>
+            <label for="modal-zone-states" class="block text-sm font-medium text-secondary mb-1.5">Max Days</label>
+            <input
+              type="number"
+              id="modal-zone-max-days"
+              min="1"
+              max="30"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-1.5">Zone Color</label>
+          <div class="flex gap-2" id="color-picker">
+            <button type="button" data-color="green" onclick="selectColor('green')" class="w-8 h-8 rounded-lg bg-green-500 ring-2 ring-offset-2 ring-transparent hover:ring-green-400 transition-all color-btn"></button>
+            <button type="button" data-color="blue" onclick="selectColor('blue')" class="w-8 h-8 rounded-lg bg-blue-500 ring-2 ring-offset-2 ring-transparent hover:ring-blue-400 transition-all color-btn"></button>
+            <button type="button" data-color="orange" onclick="selectColor('orange')" class="w-8 h-8 rounded-lg bg-orange-500 ring-2 ring-offset-2 ring-transparent hover:ring-orange-400 transition-all color-btn"></button>
+            <button type="button" data-color="purple" onclick="selectColor('purple')" class="w-8 h-8 rounded-lg bg-purple-500 ring-2 ring-offset-2 ring-transparent hover:ring-purple-400 transition-all color-btn"></button>
+            <button type="button" data-color="pink" onclick="selectColor('pink')" class="w-8 h-8 rounded-lg bg-pink-500 ring-2 ring-offset-2 ring-transparent hover:ring-pink-400 transition-all color-btn"></button>
+            <button type="button" data-color="cyan" onclick="selectColor('cyan')" class="w-8 h-8 rounded-lg bg-cyan-500 ring-2 ring-offset-2 ring-transparent hover:ring-cyan-400 transition-all color-btn"></button>
+          </div>
+          <input type="hidden" id="modal-zone-color" value="green" />
+        </div>
+      </div>
+      <!-- Modal Footer -->
+      <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+        <button onclick="closeEditModal()" class="px-4 py-2 text-sm font-medium text-secondary/70 hover:text-secondary border border-gray-200 hover:border-gray-300 rounded-xl transition-colors">
+          Cancel
+        </button>
+        <button onclick="saveZone()" class="px-5 py-2 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          Save Zone
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       ADD ZONE MODAL  
+  ══════════════════════════════════════════════ -->
+  <div id="add-zone-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeAddZoneModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-auto overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 class="font-bold text-secondary">Add New Zone</h3>
+          <p class="text-xs text-secondary/50 mt-0.5">Create a new shipping zone with custom rates</p>
+        </div>
+        <button onclick="closeAddZoneModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-secondary/40 hover:text-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <label for="modal-zone-name" class="block text-sm font-medium text-secondary mb-1.5">Zone Name</label>
+          <input
+            type="text"
+            id="add-zone-name"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm"
+            placeholder="e.g. South India"
+          />
+        </div>
+        <div>
+          <label for="modal-zone-states" class="block text-sm font-medium text-secondary mb-1.5">
+            States / Regions
+            <span class="text-xs font-normal text-secondary/50 ml-1">(comma separated)</span>
+          </label>
+          <textarea
+            id="add-zone-states"
+            rows="3"
+            class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm resize-none"
+            placeholder="Karnataka, Tamil Nadu, Kerala, Andhra Pradesh"
+          ></textarea>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label for="add-zone-rate" class="block text-sm font-medium text-secondary mb-1.5">Rate (₹)</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-secondary/50 text-sm">₹</span>
+              <input
+                type="number"
+                id="add-zone-rate"
+                value="60"
+                min="0"
+                class="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm font-semibold"
+              />
+            </div>
+          </div>
+          <div>
+            <label for="add-zone-min-days" class="block text-sm font-medium text-secondary mb-1.5">Min Days</label>
+            <input type="number" id="add-zone-min-days" value="2" min="1" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm" />
+          </div>
+          <div>
+            <label for="add-zone-max-days" class="block text-sm font-medium text-secondary mb-1.5">Max Days</label>
+            <input type="number" id="add-zone-max-days" value="4" min="1" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-primary focus:border-primary text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-1.5">Zone Color</label>
+          <div class="flex gap-2" id="add-color-picker">
+            <button type="button" data-color="green" onclick="addSelectColor('green')" class="w-8 h-8 rounded-lg bg-green-500 ring-2 ring-offset-2 ring-transparent hover:ring-green-400 transition-all add-color-btn"></button>
+            <button type="button" data-color="blue" onclick="addSelectColor('blue')" class="w-8 h-8 rounded-lg bg-blue-500 ring-2 ring-offset-2 ring-green-400 transition-all add-color-btn"></button>
+            <button type="button" data-color="orange" onclick="addSelectColor('orange')" class="w-8 h-8 rounded-lg bg-orange-500 ring-2 ring-offset-2 ring-transparent hover:ring-orange-400 transition-all add-color-btn"></button>
+            <button type="button" data-color="purple" onclick="addSelectColor('purple')" class="w-8 h-8 rounded-lg bg-purple-500 ring-2 ring-offset-2 ring-transparent hover:ring-purple-400 transition-all add-color-btn"></button>
+            <button type="button" data-color="pink" onclick="addSelectColor('pink')" class="w-8 h-8 rounded-lg bg-pink-500 ring-2 ring-offset-2 ring-transparent hover:ring-pink-400 transition-all add-color-btn"></button>
+            <button type="button" data-color="cyan" onclick="addSelectColor('cyan')" class="w-8 h-8 rounded-lg bg-cyan-500 ring-2 ring-offset-2 ring-transparent hover:ring-cyan-400 transition-all add-color-btn"></button>
+          </div>
+          <input type="hidden" id="add-zone-color" value="blue" />
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+        <button onclick="closeAddZoneModal()" class="px-4 py-2 text-sm font-medium text-secondary/70 hover:text-secondary border border-gray-200 hover:border-gray-300 rounded-xl transition-colors">
+          Cancel
+        </button>
+        <button onclick="addZone()" class="px-5 py-2 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Zone
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+
+<script is:inline define:vars={{ initialZones: zones }} data-astro-rerun>
+  window.__INITIAL_ZONES__ = initialZones;
+</script>
+
+<script data-astro-rerun>
+  // ── Toast Notification ──
+  function mockSave(message) {
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-message');
+    toastMsg.textContent = message;
+    toast.classList.remove('hidden');
+    toast.classList.add('flex');
+    setTimeout(() => {
+      toast.classList.add('hidden');
+      toast.classList.remove('flex');
+    }, 3000);
+  }
+
+  function saveGlobalSettings() {
+    try {
+      const settings = {
+        free_shipping_threshold: parseInt((document.getElementById('free-shipping-threshold')).value) || 499,
+        flat_shipping_rate: parseInt((document.getElementById('flat-rate')).value) || 60,
+        delivery_days_min: parseInt((document.getElementById('delivery-days')).value.split('-')[0]) || 3,
+        delivery_days_max: parseInt((document.getElementById('delivery-days')).value.split('-')[1]) || 5,
+        max_cod_amount: parseInt((document.getElementById('cod-max')).value) || 5000,
+        cod_enabled: (document.getElementById('cod-toggle')).checked,
+        is_pure_q_commerce: (document.getElementById('is_pure_q_commerce')).checked,
+        minimum_order_amount: parseInt((document.getElementById('minimum-order-amount')).value) || 199,
+        state_shipping_rules: (document.getElementById('state-shipping-rules')).value || '',
+      };
+      fetch('/api/admin/shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_global', ...settings }),
+      })
+      .then(res => res.json())
+      .then(data => {
+        if(data.success) {
+          mockSave('Global settings saved!');
+        } else {
+          alert('Failed to save settings: ' + data.error);
+        }
+      })
+      .catch(err => alert('Fetch Error: ' + err.message));
+    } catch (e) {
+      alert('JS Crash in saveGlobalSettings: ' + e.message + '\nLine: ' + e.stack);
+    }
+  }
+
+  function saveReturnRates() {
+    try {
+      const settings = {
+        reverse_shipping_enabled: (document.getElementById('reverse-shipping-toggle')).checked,
+        reverse_shipping_rate: parseInt((document.getElementById('reverse-rate')).value) || 80,
+      };
+      fetch('/api/admin/shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_global', ...settings }),
+      })
+      .then(res => res.json())
+      .then(data => {
+        if(data.success) {
+          mockSave('Return rates saved successfully!');
+        } else {
+          alert('Failed to save settings: ' + data.error);
+        }
+      })
+      .catch(err => alert('Fetch Error: ' + err.message));
+    } catch (e) {
+      alert('JS Crash in saveReturnRates: ' + e.message + '\nLine: ' + e.stack);
+    }
+  }
+
+  function savePincodeRestrictions() {
+    const isRestricted = (document.getElementById('pincode-restrict-toggle')).checked;
+    const whitelist = isRestricted ? (document.getElementById('pincode-whitelist')).value : '';
+    
+    fetch('/api/admin/shipping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save_global', restricted_pincodes: whitelist }),
+    })
+    .then(res => res.json())
+    .then(data => {
+      if(data.success) {
+        mockSave('Pincode restrictions saved!');
+      } else {
+        alert('Failed to save restrictions: ' + data.error);
+      }
+    })
+    .catch(err => console.error('Failed to save pincode restrictions:', err));
+  }
+
+  // ── Color map for zones ──
+  const colorBarMap = {
+    green: 'bg-green-500',
+    blue: 'bg-blue-500',
+    orange: 'bg-orange-500',
+    purple: 'bg-purple-500',
+    pink: 'bg-pink-500',
+    cyan: 'bg-cyan-500',
+  };
+  const colorBadgeMap = {
+    green: 'bg-green-100 text-green-700',
+    blue: 'bg-blue-100 text-blue-700',
+    orange: 'bg-orange-100 text-orange-700',
+    purple: 'bg-purple-100 text-purple-700',
+    pink: 'bg-pink-100 text-pink-700',
+    cyan: 'bg-cyan-100 text-cyan-700',
+  };
+
+  // ── Edit Modal Data ──
+  const zoneData = {};
+  if (window.__INITIAL_ZONES__) {
+    window.__INITIAL_ZONES__.forEach(z => {
+      zoneData[z.id] = {
+        name: z.name,
+        states: z.states || [],
+        rate: z.rate,
+        minDays: z.minDays || 2,
+        maxDays: z.maxDays || 4,
+        color: z.color || 'blue'
+      };
+    });
+  }
+  let nextZoneId = Math.max(0, ...Object.keys(zoneData).map(Number)) + 1;
+  let selectedEditColor = 'green';
+  let selectedAddColor = 'blue';
+
+  function openEditModal(id) {
+    const zone = zoneData[id];
+    if (!zone) return;
+    (document.getElementById('modal-zone-id')).value = String(id);
+    (document.getElementById('modal-zone-name')).value = zone.name;
+    (document.getElementById('modal-zone-states')).value = zone.states.join(', ');
+    (document.getElementById('modal-zone-rate')).value = String(zone.rate);
+    (document.getElementById('modal-zone-min-days')).value = String(zone.minDays);
+    (document.getElementById('modal-zone-max-days')).value = String(zone.maxDays);
+    (document.getElementById('modal-title')).textContent = `Edit Zone — ${zone.name}`;
+    selectColor(zone.color);
+    document.getElementById('edit-zone-modal').classList.remove('hidden');
+  }
+
+  function closeEditModal() {
+    document.getElementById('edit-zone-modal').classList.add('hidden');
+  }
+
+  function openAddZoneModal() {
+    document.getElementById('add-zone-modal').classList.remove('hidden');
+    addSelectColor('blue');
+  }
+
+  function closeAddZoneModal() {
+    document.getElementById('add-zone-modal').classList.add('hidden');
+  }
+
+  function selectColor(color) {
+    selectedEditColor = color;
+    (document.getElementById('modal-zone-color')).value = color;
+    document.querySelectorAll('.color-btn').forEach((btn) => {
+      const el = btn;
+      if (el.dataset.color === color) {
+        el.classList.add('ring-gray-600');
+        el.classList.remove('ring-transparent');
+      } else {
+        el.classList.remove('ring-gray-600');
+        el.classList.add('ring-transparent');
+      }
+    });
+  }
+
+  function addSelectColor(color) {
+    selectedAddColor = color;
+    (document.getElementById('add-zone-color')).value = color;
+    document.querySelectorAll('.add-color-btn').forEach((btn) => {
+      const el = btn;
+      if (el.dataset.color === color) {
+        el.classList.add('ring-gray-600');
+        el.classList.remove('ring-transparent');
+      } else {
+        el.classList.remove('ring-gray-600');
+        el.classList.add('ring-transparent');
+      }
+    });
+  }
+
+  function saveZone() {
+    const id = parseInt((document.getElementById('modal-zone-id')).value);
+    const name = (document.getElementById('modal-zone-name')).value.trim();
+    const statesRaw = (document.getElementById('modal-zone-states')).value;
+    const rate = parseInt((document.getElementById('modal-zone-rate')).value);
+    const minDays = parseInt((document.getElementById('modal-zone-min-days')).value);
+    const maxDays = parseInt((document.getElementById('modal-zone-max-days')).value);
+    const color = selectedEditColor;
+    if (!name) return;
+    const states = statesRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    zoneData[id] = { name, states, rate, minDays, maxDays, color };
+    updateZoneCard(id, name, states, rate, minDays, maxDays, color);
+    closeEditModal();
+
+    // Persist to API
+    fetch('/api/admin/shipping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_zone', id, name, states, rate, minDays, maxDays, color }),
+    }).catch(err => console.error('Failed to update zone:', err));
+
+    mockSave(`Zone "${name}" updated!`);
+  }
+
+  function updateZoneCard(id, name, states, rate, minDays, maxDays, color) {
+    const card = document.querySelector(`.zone-card[data-zone-id="${id}"]`);
+    if (!card) return;
+    const bar = card.querySelector('.w-1\\.5');
+    if (bar) {
+      bar.className = `w-1.5 flex-shrink-0 rounded-l-2xl ${colorBarMap[color] || 'bg-gray-400'}`;
+    }
+    const nameEl = card.querySelector('.zone-name');
+    if (nameEl) nameEl.textContent = name;
+    const badgeEl = card.querySelector('[class*="text-xs font-bold bg-"]');
+    if (badgeEl) {
+      const badgeClass = colorBadgeMap[color] || 'bg-gray-100 text-gray-700';
+      badgeEl.className = `text-xs font-bold ${badgeClass} px-2 py-0.5 rounded-full`;
+      badgeEl.textContent = `Zone ${id}`;
+    }
+    const tagsContainer = card.querySelector('.flex.flex-wrap.gap-1\\.5');
+    if (tagsContainer) {
+      tagsContainer.innerHTML = states.map((s) => `<span class="text-xs bg-gray-100 text-secondary/70 px-2 py-0.5 rounded-full font-medium">${s}</span>`).join('');
+    }
+    const rateEl = card.querySelectorAll('.text-sm.font-bold.text-secondary')[0];
+    if (rateEl) rateEl.textContent = `₹${rate}`;
+    const daysEl = card.querySelectorAll('.text-sm.font-bold.text-secondary')[1];
+    if (daysEl) daysEl.textContent = `${minDays}-${maxDays} days`;
+  }
+
+  function addZone() {
+    const name = (document.getElementById('add-zone-name')).value.trim();
+    const statesRaw = (document.getElementById('add-zone-states')).value;
+    const rate = parseInt((document.getElementById('add-zone-rate')).value) || 60;
+    const minDays = parseInt((document.getElementById('add-zone-min-days')).value) || 2;
+    const maxDays = parseInt((document.getElementById('add-zone-max-days')).value) || 4;
+    const color = selectedAddColor;
+    if (!name) return;
+    const states = statesRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    const id = nextZoneId++;
+    zoneData[id] = { name, states, rate, minDays, maxDays, color };
+    const grid = document.getElementById('zones-grid');
+    const barClass = colorBarMap[color] || 'bg-gray-400';
+    const badgeClass = colorBadgeMap[color] || 'bg-gray-100 text-gray-700';
+    const tagHtml = states.map((s) => `<span class="text-xs bg-gray-100 text-secondary/70 px-2 py-0.5 rounded-full font-medium">${s}</span>`).join('');
+    const cardHtml = `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden zone-card" data-zone-id="${id}">
+        <div class="flex items-stretch">
+          <div class="w-1.5 ${barClass} flex-shrink-0 rounded-l-2xl"></div>
+          <div class="flex-1 p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-xs font-bold ${badgeClass} px-2 py-0.5 rounded-full">Zone ${id}</span>
+                  <h3 class="font-bold text-secondary zone-name">${name}</h3>
+                </div>
+                <div class="flex flex-wrap gap-1.5 mb-3">${tagHtml}</div>
+                <div class="flex items-center gap-6">
+                  <div class="flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10" /></svg>
+                    <span class="text-sm font-bold text-secondary">₹${rate}</span>
+                    <span class="text-xs text-secondary/50">shipping</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span class="text-sm font-bold text-secondary">${minDays}-${maxDays} days</span>
+                    <span class="text-xs text-secondary/50">delivery</span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="openEditModal(${id})" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-secondary/70 hover:text-primary border border-gray-200 hover:border-primary/30 rounded-lg transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                  Edit
+                </button>
+                <button onclick="deleteZone(this)" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500/70 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    grid.insertAdjacentHTML('beforeend', cardHtml);
+    closeAddZoneModal();
+
+    // Persist to API
+    fetch('/api/admin/shipping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_zone', id, name, states, rate, minDays, maxDays, color }),
+    }).catch(err => console.error('Failed to add zone:', err));
+
+    mockSave(`Zone "${name}" added!`);
+    (document.getElementById('add-zone-name')).value = '';
+    (document.getElementById('add-zone-states')).value = '';
+  }
+
+  function deleteZone(btn) {
+    const card = btn.closest('.zone-card');
+    if (!card) return;
+    const zoneId = card.dataset.zoneId;
+    const zoneName = (card.querySelector('.zone-name'))?.textContent || 'Zone';
+    card.style.transition = 'all 0.3s ease';
+    card.style.opacity = '0';
+    card.style.transform = 'scale(0.95)';
+    setTimeout(() => card.remove(), 300);
+
+    // Persist to API
+    fetch('/api/admin/shipping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete_zone', id: zoneId }),
+    }).catch(err => console.error('Failed to delete zone:', err));
+
+    mockSave(`Zone "${zoneName}" deleted!`);
+  }
+
+  // ── Pincode restrict toggle shows/hides textarea ──
+  const pincodeToggle = document.getElementById('pincode-restrict-toggle');
+  const pincodeSection = document.getElementById('pincode-whitelist-section');
+  pincodeSection.style.opacity = '0.4';
+  pincodeSection.style.pointerEvents = 'none';
+  pincodeToggle.addEventListener('change', () => {
+    if (pincodeToggle.checked) {
+      pincodeSection.style.opacity = '1';
+      pincodeSection.style.pointerEvents = 'auto';
+    } else {
+      pincodeSection.style.opacity = '0.4';
+      pincodeSection.style.pointerEvents = 'none';
+    }
+  });
+
+  // ── Free shipping threshold toggle ──
+  const freeShippingToggle = document.getElementById('free-shipping-toggle');
+  const thresholdInputWrap = document.getElementById('threshold-input-wrap');
+  freeShippingToggle.addEventListener('change', () => {
+    thresholdInputWrap.style.opacity = freeShippingToggle.checked ? '1' : '0.4';
+    thresholdInputWrap.style.pointerEvents = freeShippingToggle.checked ? 'auto' : 'none';
+  });
+
+  // Expose functions globally
+  window.mockSave = mockSave;
+  window.saveGlobalSettings = saveGlobalSettings;
+  window.savePincodeRestrictions = savePincodeRestrictions;
+  window.openEditModal = openEditModal;
+  window.closeEditModal = closeEditModal;
+  window.openAddZoneModal = openAddZoneModal;
+  window.closeAddZoneModal = closeAddZoneModal;
+  window.selectColor = selectColor;
+  window.addSelectColor = addSelectColor;
+  window.saveZone = saveZone;
+  window.addZone = addZone;
+  window.deleteZone = deleteZone;
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'open_add_zone_modal') {
+      window.openAddZoneModal();
+    }
+    else if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+  });
+</script>
+
+</AdminLayout>

@@ -1,0 +1,391 @@
+---
+import { getOrders, getSettings } from '../../../lib/database';
+
+const { orderId } = Astro.params;
+const [orders, settings] = await Promise.all([getOrders(), getSettings()]);
+const order = orders.find((o: any) => o.orderId === orderId);
+
+if (!order) return Astro.redirect('/account');
+
+const storeName = settings.store_name || 'Store Name';
+const brandName = settings.brand_name || storeName;
+const rawLogo = settings.logo_url || `/logo-${brandName.replace(/\s+/g, '-').toLowerCase()}.webp`;
+const storeLogo = encodeURI(rawLogo);
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice #{order.orderId} | {storeName}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { --text: #000; --border: #000; --muted: #333; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; }
+    body { background: #f3f4f6; color: #111; }
+    
+    #loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 20px; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: #f3f4f6; }
+    .spinner { width: 50px; height: 50px; border: 4px solid #e5e7eb; border-top-color: #10b981; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    #success-screen { display: none; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 20px; text-align: center; padding: 20px; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: #f3f4f6; }
+    .check-icon { width: 64px; height: 64px; background: #ecfdf5; color: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    
+    .page-wrapper { position: relative; width: 800px; background: #fff; padding: 20px; margin: 0 auto; display: none; }
+  </style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <h2 style="font-size: 20px; font-weight: 600;">Generating Your Unified Invoice PDF...</h2>
+  <p style="color: #666;">Please wait, downloading will start automatically.</p>
+</div>
+
+<div id="success-screen">
+  <div class="check-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+  </div>
+  <h2 style="font-size: 24px; font-weight: bold;">Download Started!</h2>
+  <p style="color: #666; margin-bottom: 20px;">Your PDF invoice has been generated successfully.</p>
+  <a href="/account" style="padding: 12px 24px; background: #111; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 500;">Return to Account</a>
+</div>
+
+<div class="page-wrapper" id="page-wrapper"></div>
+
+<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script is:inline define:vars={{ order: order, storeLogo: storeLogo, settings: settings }}>
+    
+    function generateBarcodeBase64(value) {
+      if (!value) return '';
+      const canvas = document.createElement('canvas');
+      try {
+        JsBarcode(canvas, value, {
+          format: "CODE128",
+          displayValue: false,
+          height: 45,
+          width: 1.8,
+          margin: 0
+        });
+        return canvas.toDataURL("image/png");
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function numberToWords(n) {
+      if (n === 0) return 'Zero';
+      const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+      const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+      if (n < 20) return ones[n];
+      if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
+      if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' and ' + numberToWords(n%100) : '');
+      if (n < 100000) return numberToWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + numberToWords(n%1000) : '');
+      if (n < 10000000) return numberToWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + numberToWords(n%100000) : '');
+      return numberToWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + numberToWords(n%10000000) : '');
+    }
+
+    function esc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    
+    function buildInvoiceHTML(order) {
+      const customer = order.customer || {};
+      // Resolve address: prefer master_orders.shipping_address, then order.address, then customer
+      const addr = order.address || {};
+      const shipping = (typeof addr === 'object' && Object.keys(addr).length > 0) ? addr : (order.shipping || customer);
+      const custName = customer.name || order.customer_name || order.customerName || 'Customer';
+      const shipName = shipping.name || custName;
+      const shipAddr = shipping.address || shipping.street_address || shipping.street || '';
+      const shipCity = shipping.city || '';
+      const shipState = shipping.state || '';
+      const shipPincode = shipping.pincode || shipping.postal_code || '';
+
+      // Quick Commerce detection
+      const isQCommerce = order.delivery_type === 'q_commerce_inhouse';
+
+      const awb = order.awb || order.awb_number || null;
+      const routing = order.routingCode || order.routing_code || 'STD';
+      const courier = order.courierPartner || order.courier_partner || '';
+      const weight = order.packageWeight || order.package_weight || '0.50 KG';
+
+      const payMethod = (order.paymentMethod || order.payment_method || order.payment || 'cod').toLowerCase();
+      const isCOD = payMethod === 'cod';
+      const isPaid = (order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid';
+
+      
+      const items = order.items || [];
+      const subtotal = order.subtotal !== undefined ? Number(order.subtotal) : items.reduce((s, i) => s + ((i.price || 0) * (i.quantity || i.qty || 1)), 0);
+      const totalQty = items.reduce((s, i) => s + (i.quantity || i.qty || 1), 0);
+      const shipCost = order.shipping !== undefined ? Number(order.shipping) : (subtotal >= (settings.free_shipping_threshold || 499) ? 0 : (settings.flat_shipping_rate || 60));
+      const totalOrderDiscount = order.discount !== undefined ? Number(order.discount) : 0;
+      const grandTotal = order.amount !== undefined ? Number(order.amount) : (subtotal + shipCost - totalOrderDiscount);
+
+      const orderId = order.orderId || order.order_id || order.id || '';
+      const orderNum = order.order_number || orderId;
+      const invoiceNumber = `IN-${orderId.replace(/[^0-9]/g, '').slice(-5)}`;
+      const createdAt = order.createdAt || order.created_at || order.date || Date.now();
+      
+      const invoiceDateRaw = new Date(createdAt);
+      const invoiceDate = invoiceDateRaw.toLocaleDateString('en-GB'); 
+      const topBarcodeSrc = (!isQCommerce && awb) ? generateBarcodeBase64(awb) : '';
+      const btmBarcodeSrc = generateBarcodeBase64(orderNum);
+      const _intPart1 = Math.floor(grandTotal);
+      const _decPart1 = Math.round((grandTotal - _intPart1) * 100);
+      const amountInWords = (typeof numberToWords === 'function') 
+        ? (_decPart1 > 0 
+            ? numberToWords(_intPart1) + ' Rupees and ' + numberToWords(_decPart1) + ' Paise Only' 
+            : numberToWords(_intPart1) + ' Rupees Only')
+        : (_decPart1 > 0 
+            ? `${_intPart1} Rupees and ${_decPart1} Paise Only` 
+            : `${_intPart1} Rupees Only`);
+
+      const storeName = settings.store_name || 'Store Name';
+      const storeAddr = settings.store_address || '123 Demo Street, City, State, 123456';
+      const storeGst = settings.gst_number || '22AAAAA0000A1Z5';
+      const storeFssai = settings.fssai_number || '10000000000000';
+
+      let totalTaxAmount = 0;
+      const isIntraState = shipState.toLowerCase().includes('uttar pradesh') || shipState.toLowerCase() === 'up';
+
+      const invRowsHTML = items.map((item, idx) => {
+        const hsn = item.hsn_code || '0813';
+        const gstRate = item.gst_rate !== undefined && item.gst_rate !== null ? parseFloat(item.gst_rate) : 5;
+        const variantText = item.weight || item.variant || '';
+        const displayName = variantText ? `${esc(item.name)} - ${esc(variantText)}` : esc(item.name);
+        const skuText = item.sku ? `SKU: ${esc(item.sku)} | HSN: ${esc(hsn)}` : `HSN: ${esc(hsn)}`;
+        const qty = item.quantity || item.qty || 1;
+        
+        const lineGross = (item.price || 0) * qty;
+        
+        // Distribute discount proportionally based on item gross value
+        let itemDiscount = 0;
+        if (subtotal > 0 && totalOrderDiscount > 0) {
+            itemDiscount = (lineGross / subtotal) * totalOrderDiscount;
+        }
+        
+        const lineNetAfterDiscount = lineGross - itemDiscount;
+        const baseRate = lineNetAfterDiscount / (1 + (gstRate / 100));
+        const taxAmount = lineNetAfterDiscount - baseRate;
+        totalTaxAmount += taxAmount;
+        
+        let taxTypeStr = isIntraState ? `CGST/SGST` : `IGST`;
+        let taxRateStr = isIntraState ? `${gstRate/2}%` : `${gstRate}%`;
+        let taxAmtStr = `₹${taxAmount.toFixed(2)}`;
+
+        return `<tr style="border-bottom: 1px solid #ddd;">
+          <td style="padding: 6px; border-right: 1px solid #000;">${idx+1}</td>
+          <td style="padding: 6px; border-right: 1px solid #000; text-align: left;">
+            <div style="font-weight:600">${displayName}</div>
+            <div style="font-size:9px;color:#333;margin-top:2px;">${skuText}</div>
+          </td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${esc(hsn)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${qty}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${((item.price || 0)).toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${lineGross.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000; color: #16a34a;">-₹${itemDiscount.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${baseRate.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${taxTypeStr} (${taxRateStr})<br/>${taxAmtStr}</td>
+          <td style="padding: 6px; font-weight: bold;">₹${lineNetAfterDiscount.toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+
+      let shippingRow = '';
+      if (shipCost > 0) {
+        let taxTypeStr = isIntraState ? `CGST/SGST` : `IGST`;
+        let shipBase = shipCost / 1.18;
+        let shipTax = shipCost - shipBase;
+        totalTaxAmount += shipTax;
+        shippingRow = `<tr>
+          <td style="padding: 6px; border-right: 1px solid #000;">${items.length + 1}</td>
+          <td style="padding: 6px; border-right: 1px solid #000; text-align: left;"><div style="font-weight:600">Shipping Charges</div></td>
+          <td style="padding: 6px; border-right: 1px solid #000;">9968</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">1</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${shipCost.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${shipCost.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">-₹0.00</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${shipBase.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${taxTypeStr} (18%)<br/>₹${shipTax.toFixed(2)}</td>
+          <td style="padding: 6px; font-weight: bold;">₹${shipCost.toFixed(2)}</td>
+        </tr>`;
+      }
+    
+      // We remove page-break inside this wrapper to keep it single page.
+      const logoImg = storeLogo ? `<img src="${storeLogo}" style="height:14px; filter:grayscale(100%); object-fit:contain; vertical-align:middle;" onerror="this.style.display='none'" />` : '';
+
+      return `
+      <div class="invoice-page" style="width: 100%; max-width: 800px; margin: 0 auto; border: 2px solid #000; font-family: 'Inter', sans-serif; background: white;">
+        
+        
+        <!-- Row 0: Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #000; padding: 10px 15px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            ${storeLogo ? `<img src="${storeLogo}" style="height:40px; filter:grayscale(100%); object-fit:contain; image-rendering:-webkit-optimize-contrast;" onerror="this.style.display='none'" />` : ''}
+            <div style="font-size: 24px; font-weight: bold; font-family: serif;">${esc(storeName)}</div>
+          </div>
+          <div style="font-size: 14px; font-weight: bold;">TAX INVOICE</div>
+        </div>
+        
+        <!-- Row 1: TO and AWB Barcode -->
+        <div style="display: flex; border-bottom: 2px solid #000;">
+          <!-- LEFT: TO Details -->
+          <div style="flex: 1; padding: 15px; border-right: 2px solid #000;">
+            <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;">To:</div>
+            <div style="font-size: 18px; font-weight: 800; text-transform: uppercase;">${esc(shipName)}</div>
+            <div style="font-size: 13px; line-height: 1.4; margin-top: 5px;">
+              ${esc(shipAddr)}<br/>
+              ${esc(shipCity)}, ${esc(shipState)}<br/>
+              <span style="font-weight: bold;">${esc(shipPincode)}</span>
+            </div>
+          </div>
+          
+          <!-- RIGHT: Barcode / Q-Commerce Details -->
+          <div style="width: 350px; padding: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            ${isQCommerce ? `
+              <div style="font-size: 14px; font-weight: bold; color: #059669; margin-bottom: 8px;">⚡ Quick Commerce Delivery</div>
+              <div style="font-size: 12px; color: #666;">Delivered by in-house rider</div>
+            ` : `
+              <div style="font-size: 12px; margin-bottom: 5px;">AWB: ${esc(awb || 'Not Assigned')}</div>
+              ${topBarcodeSrc ? `<div style="padding: 5px 0;"><img src="${topBarcodeSrc}" style="height: 52px; width: auto;" /></div>` : ''}
+              <div style="font-size: 12px; margin-top: 5px; font-weight: bold;">Routing Code: ${esc(routing)}</div>
+              <div style="font-size: 11px; margin-top: 10px; text-align: left; width: 100%; display: flex; justify-content: space-between;">
+                <span>Dimensions: 13*13*13 CM</span>
+                <span>Weight: ${esc(weight)}</span>
+              </div>
+            `}
+          </div>
+        </div>
+
+        <!-- Row 2: COD Info -->
+        <div style="display: flex; border-bottom: 2px solid #000; padding: 8px 15px; font-weight: bold; font-size: 13px; justify-content: space-between;">
+          <div>${isCOD ? (isPaid ? 'COD (PAID)' : 'COD') : 'PREPAID'} (Collectable Value: Rs. ${(isCOD && !isPaid) ? grandTotal.toFixed(2) : '0.00'})</div>
+          <div>${isQCommerce ? 'Quick Commerce' : esc(courier)}</div>
+        </div>
+
+        <!-- Row 3: Order Stats -->
+        <div style="display: flex; border-bottom: 2px solid #000; padding: 8px 15px; font-weight: bold; font-size: 12px; justify-content: space-between;">
+          <div>Number of Skus: ${items.length}</div>
+          <div>Total Quantity: ${totalQty}</div>
+          <div>Order Id: ${esc(orderId)}</div>
+        </div>
+
+        <!-- Row 4: FROM Details & Order Barcode -->
+        <div style="display: flex; border-bottom: 2px solid #000;">
+          <!-- LEFT: FROM Details -->
+          <div style="flex: 1; padding: 15px; border-right: 2px solid #000;">
+            <div style="font-size: 12px; font-style: italic;">From:</div>
+            <div style="font-size: 16px; font-weight: bold; font-style: italic; margin-bottom: 5px;">${storeName}</div>
+            <div style="font-size: 11px; line-height: 1.4; color: #333;">
+              ${storeAddr}<br/>
+              <span style="font-weight:bold;">GSTIN:</span> ${storeGst}
+            </div>
+          </div>
+          
+          <!-- RIGHT: Invoice details -->
+          <div style="width: 350px; padding: 15px; display:flex; flex-direction:column; justify-content:center;">
+            <div style="font-size: 11px; margin-bottom: 5px; display: flex; justify-content: space-between;">
+              <span><span style="font-weight:bold;">Invoice No:</span> ${invoiceNumber}</span>
+              <span><span style="font-weight:bold;">Date:</span> ${invoiceDate}</span>
+            </div>
+            <div style="text-align: center; margin-top: 5px; padding: 5px 0;"><img src="${btmBarcodeSrc}" style="height: 40px; width: auto;" /></div>
+            <div style="font-size: 11px; margin-top: 8px; text-align: center;"><span style="font-weight:bold;">Place of Supply:</span> <span style="font-weight:bold; text-transform:uppercase;">${esc(shipState)}</span></div>
+          </div>
+        </div>
+
+        <!-- Row 5: Product Table (Amazon Tax Style) -->
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: center;">
+          <thead>
+            <tr style="border-bottom: 2px solid #000; font-weight: bold;">
+              <th style="padding: 6px; border-right: 1px solid #000; width: 30px;">#</th>
+              <th style="padding: 6px; border-right: 1px solid #000; text-align: left;">Product Name</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">HSN</th>
+              <th style="padding: 6px; border-right: 1px solid #000; width: 35px;">Qty</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Unit<br/>Price</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Gross<br/>Amt</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Discount</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Taxable<br/>Amt</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Tax</th>
+              <th style="padding: 6px; width: 65px;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${invRowsHTML}
+            ${shippingRow}
+          </tbody>
+          <tfoot>
+            <tr style="border-top: 2px solid #000;">
+              <td colspan="8" style="padding: 8px; text-align: right; font-weight: bold; border-right: 1px solid #000;">GRAND TOTAL (Incl. GST):</td>
+              <td style="padding: 8px; font-weight: bold; border-right: 1px solid #000;">₹${totalTaxAmount.toFixed(2)}</td>
+              <td style="padding: 8px; font-weight: bold;">₹${grandTotal.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- Row 6: Footer -->
+        <div style="border-top: 2px solid #000; padding: 10px 15px;">
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px;">Amount in Words: ${amountInWords}</div>
+          <div style="font-size: 10px; color: #333;">
+            <span style="font-weight: bold; color: #000;">NOTE:</span> If outer packaging/label is found tempered/damaged, do not accept parcel. All disputes are subject to Uttar Pradesh jurisdiction only.
+          </div>
+        </div>
+        <div style="border-top: 1px solid #000; padding: 8px 15px; display: flex; align-items: center; justify-content: space-between; font-size: 11px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight:bold;">Powered By:</span>
+            <a href="https://vyaparpe.com" target="_blank" style="color: #000; text-decoration: none; font-weight: bold;">VyaparPe</a>
+          </div>
+          <div style="font-style: italic; color: #555;">Original for Recipient</div>
+        </div>
+
+      </div>`;
+    }
+document.addEventListener('DOMContentLoaded', () => {
+    const rawHtml = buildInvoiceHTML(order);
+    
+    const invoiceCSS = `<style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: white; color: black; }
+      .amz-border { border: 2px solid #000; }
+      .amz-border-bottom { border-bottom: 2px solid #000; }
+      .amz-border-right { border-right: 2px solid #000; }
+      .amz-flex { display: flex; }
+      .amz-flex-col { display: flex; flex-direction: column; }
+      .amz-text-center { text-align: center; }
+      .amz-text-right { text-align: right; }
+      .amz-bold { font-weight: bold; }
+      .amz-p10 { padding: 10px; }
+      table.amz-table { width: 100%; border-collapse: collapse; border-top: 2px solid #000; border-bottom: 2px solid #000; }
+      table.amz-table th, table.amz-table td { border: 1px solid #000; padding: 6px; font-size: 11px; }
+      table.amz-table th { font-weight: bold; text-align: center; }
+      .invoice-page { page-break-after: always; background: #fff; padding: 20px; }
+      
+    </style>`;
+    
+    const finalHtml = invoiceCSS + '<div style="width: 790px; margin: 0 auto; padding-top: 10px;">' + rawHtml + '</div>';
+
+    setTimeout(() => {
+      html2pdf()
+        .set({
+          margin: 0,
+          filename: `${brandName}_Invoice_${order.orderId}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        })
+        .from(finalHtml)
+        .save()
+        .then(() => { 
+          document.getElementById('loading-screen').style.display = 'none';
+          document.getElementById('success-screen').style.display = 'flex';
+        })
+        .catch((err) => {
+          console.error('Invoice PDF generation failed:', err);
+          document.getElementById('loading-screen').style.display = 'none';
+          document.getElementById('success-screen').style.display = 'flex';
+          alert('There was a problem generating the PDF. Please try again.');
+        });
+    }, 800);
+  });
+</script>
+</body>
+</html>

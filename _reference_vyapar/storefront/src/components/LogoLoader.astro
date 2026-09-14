@@ -1,0 +1,164 @@
+---
+interface Props {
+  logoUrl: string;
+  lottieLoaderUrl?: string;
+}
+
+const { logoUrl, lottieLoaderUrl } = Astro.props;
+---
+
+<div id="global-logo-loader" class="fixed inset-0 z-[9999] bg-white items-center justify-center transition-opacity duration-300 hidden opacity-0 pointer-events-none">
+  {lottieLoaderUrl ? (
+    <>
+      <div id="lottie-loader-container" class="relative flex items-center justify-center w-64 h-64" data-lottie-url={lottieLoaderUrl}>
+        <!-- Lottie player will be injected here by client JS to avoid Astro ViewTransition morphdom crash -->
+      </div>
+      <div id="fallback-logo-container" class="relative items-center justify-center w-28 h-28 hidden">
+        <div class="absolute inset-0 rounded-full bg-white shadow-xl flex items-center justify-center overflow-hidden">
+          <img src={logoUrl} alt="Loading..." class="w-full h-full object-cover animate-logo-pulse" />
+          <div class="absolute inset-y-0 -left-[100%] w-[100%] z-10 animate-glossy-sweep bg-gradient-to-r from-transparent via-white/80 to-transparent skew-x-[-25deg] pointer-events-none"></div>
+        </div>
+      </div>
+    </>
+  ) : (
+    <div class="relative flex items-center justify-center w-28 h-28">
+      
+      <!-- Inner circular container for the logo -->
+      <div class="absolute inset-0 rounded-full bg-white shadow-xl flex items-center justify-center overflow-hidden">
+        <!-- The Store Logo - Cropped to fill the circle -->
+        <img 
+          src={logoUrl} 
+          alt="Loading..." 
+          class="w-full h-full object-cover animate-logo-pulse" 
+        />
+
+        <!-- The Glossy Sweep Overlay -->
+        <div class="absolute inset-y-0 -left-[100%] w-[100%] z-10 animate-glossy-sweep bg-gradient-to-r from-transparent via-white/80 to-transparent skew-x-[-25deg] pointer-events-none"></div>
+      </div>
+    </div>
+  )}
+</div>
+
+<style is:global>
+  @keyframes logo-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.03); opacity: 0.9; }
+  }
+  .animate-logo-pulse {
+    animation: logo-pulse 2s ease-in-out infinite;
+  }
+  @keyframes glossy-sweep {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(250%); }
+  }
+  .animate-glossy-sweep {
+    animation: glossy-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+</style>
+
+<script is:inline>
+  const loaderEl = document.getElementById('global-logo-loader');
+  
+  if (window.hasInitiallyLoaded || window.location.pathname.startsWith('/products/')) {
+    // If this is a client-side SPA navigation OR we are on a product page, hide the loader immediately
+    if (loaderEl) {
+      loaderEl.style.display = 'none';
+      loaderEl.classList.add('hidden');
+    }
+  } else {
+    window.hasInitiallyLoaded = true;
+    window.logoLoaderTimeout = null;
+    const DELAY_MS = 800;
+
+    // --- DYNAMIC LOTTIE INJECTION ---
+    // We inject lottie-player via JS so Astro's morphdom doesn't see it in the raw HTML payload,
+    // which prevents the ViewTransitions API from crashing during DOM swap.
+    const lottieContainer = document.getElementById('lottie-loader-container');
+    if (lottieContainer) {
+      const url = lottieContainer.getAttribute('data-lottie-url');
+      if (url) {
+        const player = document.createElement('lottie-player');
+        player.setAttribute('id', 'lottie-player-el');
+        player.setAttribute('src', url);
+        player.setAttribute('background', 'transparent');
+        player.setAttribute('speed', '1');
+        player.setAttribute('style', 'width: 100%; height: 100%;');
+        player.setAttribute('loop', 'true');
+        player.setAttribute('autoplay', 'true');
+        
+        player.addEventListener('error', function() {
+          const fallbackContainer = document.getElementById('fallback-logo-container');
+          if (lottieContainer && fallbackContainer) {
+            lottieContainer.style.display = 'none';
+            fallbackContainer.classList.remove('hidden');
+            fallbackContainer.classList.add('flex');
+          }
+        });
+        
+        lottieContainer.appendChild(player);
+      }
+    }
+    // --------------------------------
+
+    // TEMPORARILY DISABLED for debugging
+    /*
+    document.addEventListener('astro:before-preparation', () => {
+      if (window.logoLoaderTimeout) clearTimeout(window.logoLoaderTimeout);
+      
+      window.logoLoaderTimeout = setTimeout(() => {
+        const container = document.getElementById('global-logo-loader');
+        if (container) {
+          // Lower z-index for subsequent page loads so navbar stays visible
+          container.classList.remove('z-[9999]');
+          container.classList.add('z-40');
+
+          container.classList.remove('hidden');
+          void container.offsetWidth;
+          container.classList.remove('opacity-0');
+          
+          // SAFETY FALLBACK: Auto-hide after 8s if Astro page-load event fails to fire (e.g. slow network or JS error)
+          setTimeout(() => {
+            const c = document.getElementById('global-logo-loader');
+            if (c && !c.classList.contains('hidden')) {
+              c.classList.add('opacity-0');
+              c.classList.add('pointer-events-none');
+              setTimeout(() => {
+                c.classList.add('hidden');
+                c.classList.remove('pointer-events-none');
+              }, 300);
+            }
+          }, 8000);
+        }
+      }, DELAY_MS);
+    });
+    */
+
+    // Cancel timer only on page-load to ensure aborted transitions don't get stuck forever
+    document.addEventListener('astro:page-load', () => {
+      if (window.logoLoaderTimeout) {
+        clearTimeout(window.logoLoaderTimeout);
+        window.logoLoaderTimeout = null;
+      }
+      
+      const container = document.getElementById('global-logo-loader');
+      if (container && container.style.display !== 'none' && !container.classList.contains('hidden')) {
+        container.classList.add('opacity-0');
+        container.classList.add('pointer-events-none'); // prevent blocking clicks during fade
+        setTimeout(() => {
+          container.style.display = 'none';
+          container.classList.add('hidden');
+          container.classList.remove('pointer-events-none');
+        }, 300);
+      }
+    });
+    
+    // Hard CSS fallback: if JS completely fails, hide it after 5s
+    setTimeout(() => {
+       const c = document.getElementById('global-logo-loader');
+       if (c && c.style.display !== 'none') { 
+         c.style.opacity = '0'; 
+         setTimeout(() => c.style.display = 'none', 500); 
+       }
+    }, 5000);
+  }
+</script>

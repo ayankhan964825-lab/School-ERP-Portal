@@ -1,0 +1,2440 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "store_details")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getSettings, getStore } from '../../lib/database';
+
+const isMasterAdmin = Astro.locals.storeId === 'SUPER_ADMIN_BYPASS';
+const impersonateStoreId = Astro.cookies.get('admin_impersonate')?.value;
+const targetStoreId = isMasterAdmin ? (Astro.url.searchParams.get('id') || impersonateStoreId) : Astro.locals.storeId;
+
+const store = await getStore(targetStoreId);
+const isFreeTier = store?.plan_id === '00000000-0000-0000-0000-000000000005';
+
+// Inject targetStoreId into global window object for client-side API calls
+const storeIdScript = `<script is:inline data-astro-rerun>window.__targetStoreId = ${JSON.stringify(targetStoreId)};</script>`;
+
+const settings = await getSettings(targetStoreId);
+
+const defaultProcessSteps = [
+  { title: 'Step 1', desc: 'Description of your first process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>' },
+  { title: 'Step 2', desc: 'Description of your second process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>' },
+  { title: 'Step 3', desc: 'Description of your third process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" /></svg>' },
+  { title: 'Step 4', desc: 'Description of your fourth process step goes here.', icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>' }
+];
+
+const processStepsJson = typeof settings.about_process_steps === 'string' 
+  ? settings.about_process_steps 
+  : JSON.stringify(settings.about_process_steps || defaultProcessSteps, null, 2);
+
+
+// DEBUG: Log what settings actually contains for team data
+console.log('[DEBUG store-details] team_members:', JSON.stringify(settings.team_members));
+console.log('[DEBUG store-details] team_members type:', typeof settings.team_members);
+console.log('[DEBUG store-details] team_members isArray:', Array.isArray(settings.team_members));
+console.log('[DEBUG store-details] team_visibility:', settings.team_visibility);
+console.log('[DEBUG store-details] pages_content keys:', settings.pages_content ? Object.keys(settings.pages_content) : 'NO pages_content');
+
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+
+const settingsForAI = JSON.stringify(settings);
+---
+
+<AdminLayout title="Store Details | Admin Panel" description="Manage store branding and pages.">
+  <Fragment set:html={storeIdScript} />
+  <div class="flex flex-col lg:flex-row gap-0 -m-4 sm:-m-6 lg:-m-8 h-[calc(100vh-3.5rem)] overflow-hidden" style="height: calc(100vh - 3.5rem); overflow: hidden;">
+  <div class="w-full lg:w-[52%] shrink-0 overflow-y-auto h-full p-4 sm:p-6 lg:p-8 relative" style="height: 100%; overflow-y: auto;">
+    <!-- Mobile Sticky Live Preview Button -->
+    <div class="sticky z-30 block lg:hidden w-full bg-gray-50 border-b border-gray-200 shadow-sm mb-6 pb-3 pt-3" style="top: -1rem; margin-top: -1rem; margin-left: -1rem; margin-right: -1rem; width: calc(100% + 2rem); padding-left: 1rem; padding-right: 1rem;">
+      <div class="flex justify-between items-center">
+        <span class="text-xs font-bold text-secondary flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+          Store Editor
+        </span>
+        <button type="button" onclick="openMobilePreviewModal()" class="text-xs bg-primary text-white hover:bg-primary/90 px-3 py-1.5 rounded-lg shadow-sm font-medium transition-colors flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" /></svg>
+          View Live Preview
+        </button>
+      </div>
+    </div>
+    <div class="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Store Details</h1>
+        <p class="text-sm text-secondary/60 mt-1">Manage branding, team members, and content for legal pages.</p>
+      </div>
+      <a href="/admin/bulk-upload/store-details" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center justify-center gap-2 shrink-0 py-2 px-4 shadow-sm text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        BYO-AI Bulk Gen
+      </a>
+    </div>
+    {success && (
+      <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+        Settings saved successfully.
+      </div>
+    )}
+    
+    {error && (
+      <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+        Failed to save settings. Please try again.
+      </div>
+    )}
+
+    <div class="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl p-1.5 mb-6 shadow-sm">
+      <div class="flex gap-1 overflow-x-auto scrollbar-hide">
+        <button type="button" data-tab="domain" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-primary text-white shadow-sm" onclick="switchTab('domain')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
+          Domain
+        </button>
+        <button type="button" data-tab="branding" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('branding')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+          Branding
+        </button>
+        <button type="button" data-tab="company" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('company')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+          Company
+        </button>
+        <button type="button" data-tab="homepage" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('homepage')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          Homepage
+        </button>
+        <button type="button" data-tab="about" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('about')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          About Us
+        </button>
+        <button type="button" data-tab="pages" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('pages')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          Pages
+        </button>
+        <button type="button" data-tab="policies" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('policies')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+          Policies
+        </button>
+        <button type="button" data-tab="faq" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('faq')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          FAQ
+        </button>
+        <button type="button" data-tab="checkout" class="store-tab flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all bg-white text-secondary hover:bg-gray-100" onclick="switchTab('checkout')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+          Checkout Rules
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ TAB CONTENT PANELS ═══ -->
+
+    <div data-tab-content="domain" class="tab-panel space-y-6">
+      <form autocomplete="off" id="custom-domain-form" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            🌐 Custom Domain Setup
+          </h2>
+          <p class="text-xs text-secondary/60">Link your primary domain (e.g. mybrand.com) to your VyaparPe store.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          {isFreeTier ? (
+            <div class="bg-primary/5 rounded-xl border border-primary/20 p-6 text-center">
+              <h4 class="font-bold text-primary mb-2">Custom Domain Locked</h4>
+              <p class="text-sm text-secondary/70 mb-4">Upgrade to the Growth Plan to use your own custom domain.</p>
+              <a href="/admin/settings/billing" class="inline-flex px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg">Upgrade Now</a>
+            </div>
+          ) : (
+            <>
+              <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800 mb-4">
+                <h4 class="font-semibold mb-1">How to connect your domain:</h4>
+                <ol class="list-decimal pl-4 space-y-1 text-xs">
+                  <li>Enter your custom domain below (without https://) and click Connect.</li>
+                  <li>Log into your Domain Registrar (GoDaddy, Hostinger, etc.).</li>
+                  <li>Add a new <strong>CNAME</strong> record:
+                    <ul class="list-disc pl-4 mt-1 font-mono text-xs bg-white/50 p-2 rounded border border-blue-100">
+                      <li>Name/Host: <strong>@</strong> (or www)</li>
+                      <li>Value/Target: <strong>cname.vercel-dns.com</strong></li>
+                    </ul>
+                  </li>
+                  <li>Wait 15-30 minutes for DNS to propagate. SSL will be issued automatically.</li>
+                </ol>
+              </div>
+
+              <div>
+                <label for="custom_domain" class="block text-sm font-medium text-secondary mb-1">Primary Custom Domain</label>
+                <div class="flex gap-3">
+                  <input 
+                    id="custom_domain" 
+                    type="text" 
+                    name="custom_domain" 
+                    value={settings.custom_domain || ''} 
+                    placeholder="e.g. mybrand.com" 
+                    class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" 
+                  />
+                  {settings.custom_domain && (
+                    <button type="button" id="remove-domain-btn" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-semibold border border-red-100 hover:bg-red-100 transition-colors">
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {settings.custom_domain ? (
+                  <div id="primary-domain-status-container" class="mt-3 p-3 rounded-lg border border-gray-200 bg-gray-50 flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                      <div class="text-sm font-semibold text-secondary">Status: <span id="primary-domain-status-badge" class="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800 animate-pulse">Checking...</span></div>
+                      <button type="button" onclick="checkDomainStatus(document.getElementById('custom_domain').value, 'primary')" class="text-xs text-primary font-medium hover:underline">Check Again</button>
+                    </div>
+                    <div id="primary-domain-error-info" class="text-xs font-mono bg-white border border-red-100 text-red-700 p-2 rounded hidden">
+                      <!-- Injected via JS -->
+                    </div>
+                  </div>
+                ) : (
+                  <p class="text-xs text-secondary/60 mt-2">Currently using: <a href={`https://${settings.subdomain}.vyaparpe.in`} target="_blank" class="text-primary hover:underline">{settings.subdomain}.vyaparpe.in</a></p>
+                )}
+              </div>
+              <div id="domain-msg" class="hidden text-sm p-3 rounded-lg mt-2"></div>
+            </>
+          )}
+        </div>
+        
+        {!isFreeTier && (
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" id="domain-submit-btn" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+              <span class="save-btn-text">Connect Domain</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        )}
+      </form>
+
+      {settings.custom_domain && (
+        <form autocomplete="off" id="redirect-domains-form" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+            <h2 class="font-bold text-secondary flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-repeat"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+              Redirect Domains
+            </h2>
+            <p class="text-xs text-secondary/60">Add secondary domains (like Your Brand.in) that will automatically redirect visitors to your primary domain.</p>
+          </div>
+          <div class="p-6 space-y-4">
+            <div class="flex gap-3">
+              <input 
+                id="new_redirect_domain" 
+                type="text" 
+                placeholder="e.g. Your Brand.in" 
+                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" 
+              />
+              <button type="submit" id="add-redirect-btn" class="px-4 py-2 bg-gray-100 text-gray-800 rounded-lg text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-2">
+                <span class="save-btn-text">Add Redirect</span>
+                <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+              </button>
+            </div>
+            <div id="redirect-domain-msg" class="hidden text-sm p-3 rounded-lg mt-2"></div>
+            
+            <!-- List of existing redirect domains -->
+            <div class="mt-4 space-y-3">
+              {settings.redirect_domains && Array.isArray(settings.redirect_domains) && settings.redirect_domains.map((rd: string) => (
+                <div class="flex justify-between items-center p-3 border border-gray-100 rounded-lg bg-gray-50/50">
+                  <div>
+                    <div class="font-semibold text-sm text-secondary">{rd} <span class="text-xs font-normal text-secondary/60 ml-1">&rarr; {settings.custom_domain}</span></div>
+                    <div id={`redirect-status-${rd.replace(/\./g, '-')}`} class="text-[10px] uppercase font-bold text-yellow-600 tracking-wider mt-1">Checking Status...</div>
+                  </div>
+                  <button type="button" onclick={`removeRedirectDomain('${rd}')`} class="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 bg-red-50 rounded">Remove</button>
+                </div>
+              ))}
+              {(!settings.redirect_domains || settings.redirect_domains.length === 0) && (
+                <div class="text-sm text-secondary/60 text-center py-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">No redirect domains added yet.</div>
+              )}
+            </div>
+          </div>
+        </form>
+        <script define:vars={{ redirectDomains: settings.redirect_domains || [] }} data-astro-rerun>
+          window.__redirectDomains = redirectDomains;
+        </script>
+      )}
+    </div>
+
+    <div data-tab-content="branding" class="tab-panel space-y-6 hidden">
+      <!-- Branding & Assets -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            Branding & Assets
+          </h2>
+          <p class="text-xs text-secondary/60">Customize logos, favicons, and branding for the main website and admin panel.</p>
+        </div>
+        <div class="p-6 space-y-5">
+          <!-- Main Website -->
+          <p class="text-sm font-semibold text-secondary">Main Website</p>
+          
+          <div class="mb-4 mt-2">
+            <label for="brand_name" class="block text-sm font-medium text-secondary mb-1">Global Brand Name</label>
+            <input id="brand_name" type="text" name="brand_name" value={settings.brand_name || ''} placeholder="Your Brand" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            <p class="text-xs text-secondary/60 mt-1">Used dynamically across all store pages and headings.</p>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="logo_url" class="block text-sm font-medium text-secondary mb-1">Logo URL</label>
+              <div class="flex gap-2">
+                <input id="logo_url" type="text" name="logo_url" value={settings.logo_url || ''} placeholder="/logo-Your Brand.webp" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'logo_url')" />
+              </div>
+              <p class="text-xs text-secondary/60 mt-1">Used in Navbar, Footer, and SEO schema. Leave blank for default.</p>
+            </div>
+            <div>
+              <label for="favicon_url" class="block text-sm font-medium text-secondary mb-1">Favicon URL</label>
+              <div class="flex gap-2">
+                <input id="favicon_url" type="text" name="favicon_url" value={settings.favicon_url || ''} placeholder="/icons/icon-192.png" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'favicon_url')" />
+              </div>
+              <p class="text-xs text-secondary/60 mt-1">Browser tab icon for the main website. Leave blank for default.</p>
+            </div>
+          </div>
+          <div class="mt-4">
+            <label for="lottie_loader_url" class="block text-sm font-medium text-secondary mb-1">Loader Animation (Lottie JSON)</label>
+            <div class="flex gap-2">
+              <input id="lottie_loader_url" type="text" name="lottie_loader_url" value={settings.lottie_loader_url || ''} placeholder="Upload a .json Lottie file" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <button type="button" class="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-lg border border-red-200 transition-colors" onclick="document.getElementById('lottie_loader_url').value = ''">Remove</button>
+              <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+              <input type="file" class="hidden" accept=".json,application/json,.lottie" onchange="handleImageUpload(this, 'lottie_loader_url')" />
+            </div>
+            <p class="text-xs text-secondary/60 mt-1">Upload a Lottie JSON file to replace the default glossy sweep logo loader on page transitions.</p>
+          </div>
+          <hr class="border-gray-100 mt-5" />
+          <!-- Admin Panel -->
+          <p class="text-sm font-semibold text-secondary">Admin Panel</p>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label for="admin_logo_url" class="block text-sm font-medium text-secondary mb-1">Admin Logo URL</label>
+              <div class="flex gap-2">
+                <input id="admin_logo_url" type="text" name="admin_logo_url" value={settings.admin_logo_url || ''} placeholder="e.g., https://example.com/logo.png" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'admin_logo_url')" />
+              </div>
+              <p class="text-xs text-secondary/60 mt-1">Sidebar & mobile header logo.</p>
+            </div>
+            <div>
+              <label for="admin_favicon_url" class="block text-sm font-medium text-secondary mb-1">Admin Favicon URL</label>
+              <div class="flex gap-2">
+                <input id="admin_favicon_url" type="text" name="admin_favicon_url" value={settings.admin_favicon_url || ''} placeholder="/admin-icons/icon-192.png" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'admin_favicon_url')" />
+              </div>
+              <p class="text-xs text-secondary/60 mt-1">Browser tab icon for admin panel.</p>
+            </div>
+            <div>
+              <label for="admin_title" class="block text-sm font-medium text-secondary mb-1">Admin Brand Title</label>
+              <input id="admin_title" type="text" name="admin_title" value={settings.admin_title || ''} placeholder="Admin Panel" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Shown in sidebar & mobile header.</p>
+            </div>
+            <div>
+              <label for="super_admin_custom_name" class="block text-sm font-medium text-secondary mb-1">Super Admin Name</label>
+              <input id="super_admin_custom_name" type="text" name="super_admin_custom_name" value={settings.super_admin_custom_name || ''} placeholder="Super Admin" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Displayed for the original Super Admin account.</p>
+            </div>
+            <div>
+              <label for="rider_app_icon" class="block text-sm font-medium text-secondary mb-1">Rider App Icon</label>
+              <div class="flex gap-2">
+                <input id="rider_app_icon" type="text" name="rider_app_icon" value={settings.rider_app_icon || ''} placeholder="e.g., https://example.com/rider-icon.png" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'rider_app_icon')" />
+              </div>
+              <p class="text-xs text-secondary/60 mt-1">PWA icon for the Rider Application.</p>
+            </div>
+          </div>
+          <!-- Live Preview -->
+          <div class="bg-gray-50 rounded-xl border border-gray-100 p-4">
+            <p class="text-xs font-semibold text-secondary/70 mb-3">Live Preview</p>
+            <div class="flex items-center gap-4 flex-wrap">
+              <div class="flex items-center gap-2 bg-white rounded-lg border border-gray-200 px-3 py-2">
+                <img id="preview-logo" src={settings.logo_url || '/logo-Your Brand.webp'} alt="Logo preview" class="h-8 w-auto max-w-[120px] object-contain" />
+                <span class="text-xs text-secondary/60">Website Logo</span>
+              </div>
+              <div class="flex items-center gap-2 bg-white rounded-lg border border-gray-200 px-3 py-2">
+                <img id="preview-admin-logo" src={settings.admin_logo_url || settings.brand_logo || '/favicon.ico'} alt="Admin logo preview" class="h-8 w-8 rounded-md object-contain" />
+                <span id="preview-admin-title" class="text-sm font-serif font-bold text-primary">{settings.admin_title || ''}</span>
+                <span class="text-xs text-secondary/60 ml-1">Admin</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Branding</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      
+    </div>
+
+    <div data-tab-content="company" class="tab-panel space-y-6 hidden">
+      <!-- Company Information -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Company Information</h2>
+          <p class="text-xs text-secondary/60">Manage parent company, address, legal IDs, and contact info shown in the footer.</p>
+        </div>
+        <div class="p-6 grid md:grid-cols-2 gap-6">
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Parent Company Name</label><input type="text" name="parent_company_name" value={settings.parent_company_name || ''} placeholder="Company Name" class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Contact Email</label><input type="email" name="contact_email" value={settings.contact_email || ''} placeholder="contact@yourstore.com" class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Contact Phone Numbers</label><input type="text" name="contact_phone" value={settings.contact_phone || ''} placeholder="+91 9876543210 / +91 9876543211" class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">GSTIN</label><input type="text" name="gstin" value={settings.gstin || ''} placeholder="22AAAAA0000A1Z5" class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">FSSAI License</label><input type="text" name="fssai" value={settings.fssai || ''} placeholder="10000000000000 | 20000000000001" class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Grievance Officer</label><input type="text" name="grievance_officer" value={settings.grievance_officer || ''} placeholder="John Doe, Support Lead" class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div class="md:col-span-2"><label class="block text-sm font-semibold text-secondary mb-2">Office Address</label><textarea name="contact_address" class="w-full px-3 py-2 border rounded-lg" rows="2" placeholder="123 Demo Street, City, State, 123456">{settings.contact_address || ''}</textarea></div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Company Info</button>
+        </div>
+      </form>
+
+      <!-- B2B Billing Details -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">B2B Billing Details</h2>
+          <p class="text-xs text-secondary/60">Bank details, PAN, and terms shown on wholesale PDF invoices.</p>
+        </div>
+        <div class="p-6 grid md:grid-cols-2 gap-6">
+          <div><label class="block text-sm font-semibold text-secondary mb-2">PAN Number</label><input type="text" name="pan_number" value={settings.pan_number || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Authorized Signatory Name</label><input type="text" name="authorized_signatory" value={settings.authorized_signatory || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          
+          <div class="md:col-span-2"><hr class="border-gray-100"/></div>
+          
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Bank Name & Branch</label><input type="text" name="bank_name" value={settings.bank_name || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Account Name</label><input type="text" name="bank_account_name" value={settings.bank_account_name || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Account Number</label><input type="text" name="bank_account_number" value={settings.bank_account_number || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">IFSC Code</label><input type="text" name="bank_ifsc" value={settings.bank_ifsc || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+
+          <div class="md:col-span-2">
+            <label class="block text-sm font-semibold text-secondary mb-2">Terms & Conditions (One per line)</label>
+            <textarea name="b2b_terms" class="w-full px-3 py-2 border rounded-lg" rows="5">{settings.b2b_terms || `1. Thanks for doing business with us.
+2. Interest will be charged @24% if payment is not made within 30 days.
+3. Goods once sold will not be taken back.
+4. GST and other taxes as applicable.
+5. All disputes are subject to City jurisdiction only.`}</textarea>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Billing Info</button>
+        </div>
+      </form>
+
+
+      
+      <!-- Social Media Links -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Social Media Links</h2>
+        </div>
+        <div class="p-6 grid md:grid-cols-3 gap-6">
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Facebook URL</label><input type="text" name="social_facebook" value={settings.social_facebook || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Instagram URL</label><input type="text" name="social_instagram" value={settings.social_instagram || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">WhatsApp Number</label><input type="text" name="social_whatsapp" value={settings.social_whatsapp || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Social Links</button>
+        </div>
+      </form>
+
+      
+      <!-- Footer Fixed Links Visibility -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Footer Fixed Links Visibility</h2>
+          <p class="text-xs text-secondary/60">Tick to show, untick to hide links from the footer.</p>
+        </div>
+        <div class="p-6 grid grid-cols-2 gap-8">
+          <div>
+            <h3 class="font-semibold mb-3">Company Links</h3>
+            {['About Us', 'Contact', 'Blog', 'Sustainability', 'FAQ'].map(link => (
+              <label class="flex items-center gap-2 mb-2"><input type="checkbox" name={'show_footer_link_${link.replace(/\s+/g, \'_\')}'} value="true" checked={settings['show_footer_link_${link.replace(/\s+/g, \'_\')}'] !== 'false'} class="text-primary" /> {link}</label>
+            ))}
+          </div>
+          <div>
+            <h3 class="font-semibold mb-3">Support Links</h3>
+            {['Track Order', 'Delivery & Returns', 'Shipping Policy', 'Product Guarantee', 'Bulk Orders', 'Refund Policy', 'Terms of Service', 'Privacy Policy'].map(link => (
+              <label class="flex items-center gap-2 mb-2"><input type="checkbox" name={'show_footer_link_${link.replace(/\s+/g, \'_\')}'} value="true" checked={settings['show_footer_link_${link.replace(/\s+/g, \'_\')}'] !== 'false'} class="text-primary" /> {link}</label>
+            ))}
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Link Visibility</button>
+        </div>
+      </form>
+
+      
+      <!-- Announcement Bar -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Announcement Bar Taglines</h2>
+          <p class="text-xs text-secondary/60">These taglines will join active coupons and milestones in the top moving marquee.</p>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-semibold text-secondary mb-2">Taglines (One per line)</label>
+          <textarea name="announcement_taglines" class="w-full px-3 py-2 border rounded-lg font-mono text-sm" rows="3" placeholder="100% Pure & Natural&#10;No Preservatives">{settings.announcement_taglines || ""}</textarea>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Taglines</button>
+        </div>
+      </form>
+
+      
+    </div>
+
+    <div data-tab-content="homepage" class="tab-panel space-y-6 hidden">
+      <!-- Homepage Story -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Homepage: Our Story Banner</h2>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid md:grid-cols-2 gap-4">
+            <div><label class="block text-sm font-semibold text-secondary mb-2">Founded Year Text</label><input type="text" name="home_story_year" value={settings.home_story_year || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label class="block text-sm font-semibold text-secondary mb-2">Bullet Points (Comma separated)</label><input type="text" name="home_story_bullets" value={settings.home_story_bullets || ''} class="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Description</label><textarea name="home_story_text" class="w-full px-3 py-2 border rounded-lg" rows="3" placeholder="The Your Brand Name was born from a passion for healthy, convenient nutrition...">{settings.home_story_text || ''}</textarea></div>
+          <div><label class="block text-sm font-semibold text-secondary mb-2">Statistics JSON Array</label><textarea name="home_story_stats" class="w-full px-3 py-2 border rounded-lg font-mono text-xs" rows="4" placeholder="[{&quot;num&quot;:&quot;25+&quot;,&quot;label&quot;:&quot;Products&quot;},{&quot;num&quot;:&quot;0&quot;,&quot;label&quot;:&quot;Preservatives&quot;},{&quot;num&quot;:&quot;100%&quot;,&quot;label&quot;:&quot;Natural&quot;},{&quot;num&quot;:&quot;500+&quot;,&quot;label&quot;:&quot;Happy Customers&quot;}]">{settings.home_story_stats || ''}</textarea></div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Story</button>
+        </div>
+      </form>
+
+      
+      
+      <!-- Homepage USPs -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Homepage: USP Strip</h2>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-semibold text-secondary mb-2">USPs JSON Array (title, desc)</label>
+          <textarea name="home_usps" class="w-full px-3 py-2 border rounded-lg font-mono text-xs" rows="5" placeholder="[{&quot;title&quot;:&quot;100% Pure&quot;,&quot;desc&quot;:&quot;No additives or preservatives&quot;},{&quot;title&quot;:&quot;No Preservatives&quot;,&quot;desc&quot;:&quot;100% natural shelf life&quot;},{&quot;title&quot;:&quot;100% Vegan&quot;,&quot;desc&quot;:&quot;Plant-based nutrition&quot;},{&quot;title&quot;:&quot;Make in India&quot;,&quot;desc&quot;:&quot;Sourced directly from farmers&quot;}]">{settings.home_usps || ''}</textarea>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save USPs</button>
+        </div>
+      </form>
+
+      
+      <!-- Homepage Testimonials -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">Homepage: Testimonials</h2>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-semibold text-secondary mb-2">Testimonials JSON Array</label>
+          <textarea name="home_testimonials" class="w-full px-3 py-2 border rounded-lg font-mono text-xs" rows="6" placeholder="[{&quot;name&quot;:&quot;Priya S.&quot;,&quot;city&quot;:&quot;Mumbai&quot;,&quot;review&quot;:&quot;The Amla Powder is incredibly pure...&quot;},{&quot;name&quot;:&quot;Rahul K.&quot;,&quot;city&quot;:&quot;Delhi&quot;,&quot;review&quot;:&quot;NutriBoost is my morning ritual now...&quot;},{&quot;name&quot;:&quot;Ananya M.&quot;,&quot;city&quot;:&quot;Bangalore&quot;,&quot;review&quot;:&quot;The Jamun Honey is unlike anything I have tasted...&quot;}]">{settings.home_testimonials || ''}</textarea>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Testimonials</button>
+        </div>
+      </form>
+
+      
+    </div>
+
+    <div data-tab-content="about" class="tab-panel space-y-6 hidden">
+      <!-- About Us Team -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden" data-section="team" onsubmit="prepareTeamData(event)">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+          <div>
+            <h2 class="font-bold text-secondary flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+              About Us Team
+            </h2>
+            <p class="text-xs text-secondary/60">Manage the "Meet Our Team" section on the About Us page.</p>
+          </div>
+        </div>
+        <div class="p-6 space-y-6">
+          <!-- Visibility Options -->
+          <div>
+            <label class="block text-sm font-semibold text-secondary mb-3">Frontend Visibility</label>
+            <div class="flex gap-4 items-center">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="team_visibility" autocomplete="off" value="visible" checked={(settings.team_visibility || 'visible') === 'visible' || undefined} class="text-primary focus:ring-primary h-4 w-4" />
+                <span class="text-sm text-secondary">Always Visible</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="team_visibility" autocomplete="off" value="button_reveal" checked={(settings.team_visibility || 'visible') === 'button_reveal' || undefined} class="text-primary focus:ring-primary h-4 w-4" />
+                <span class="text-sm text-secondary">Reveal on Button Click</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="team_visibility" autocomplete="off" value="hidden" checked={(settings.team_visibility || 'visible') === 'hidden' || undefined} class="text-primary focus:ring-primary h-4 w-4" />
+                <span class="text-sm text-secondary">Completely Hidden</span>
+              </label>
+            </div>
+          </div>
+          
+          <hr class="border-gray-100" />
+          
+          <!-- Team Members Array -->
+          <div>
+            <div class="mt-6 flex justify-between items-center mb-4">
+              <h4 class="font-medium text-secondary text-sm">Team Members</h4>
+              <button type="button" onclick="addTeamMember()" class="btn-primary px-3 py-1.5 text-xs flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>Add Member</button>
+            </div>
+            
+            <div id="team-members-data" class="hidden" data-members={encodeURIComponent(JSON.stringify(settings.team_members || []))} data-visibility={settings.team_visibility || 'visible'}></div>
+            <input type="hidden" id="team_members_json" name="team_members" value={encodeURIComponent(JSON.stringify(settings.team_members || []))} />
+            
+            <div id="team-members-container" class="space-y-4">
+              <!-- Dynamically populated via JS -->
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Team Settings</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      
+      
+      <!-- About Us Process -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8 mb-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">About Us: Your Brand Process</h2>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-semibold text-secondary mb-2">Process Steps JSON Array (title, desc, icon_svg)</label>
+          <textarea name="about_process_steps" class="w-full px-3 py-2 border rounded-lg font-mono text-xs" rows="6">{processStepsJson}</textarea>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary px-6 py-2 text-sm">Save Process</button>
+        </div>
+      </form>
+
+<!-- Store Pages Content -->
+
+      <!-- About Us Content -->
+      <details data-page="About Us" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            About Us Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="About Us">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the About Us page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="about_hero_subtitle" class="block text-sm font-semibold text-secondary mb-1">Hero Subtitle</label>
+              <input id="about_hero_subtitle" name="about_hero_subtitle" type="text" value={settings.about_hero_subtitle || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_hero_title" class="block text-sm font-semibold text-secondary mb-1">Hero Title</label>
+              <input id="about_hero_title" name="about_hero_title" type="text" value={settings.about_hero_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_hero_text" class="block text-sm font-semibold text-secondary mb-1">Hero Text</label>
+              <textarea id="about_hero_text" name="about_hero_text" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="">{settings.about_hero_text || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_mission_title" class="block text-sm font-semibold text-secondary mb-1">Mission Title</label>
+              <input id="about_mission_title" name="about_mission_title" type="text" value={settings.about_mission_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_mission_text" class="block text-sm font-semibold text-secondary mb-1">Mission Text</label>
+              <textarea id="about_mission_text" name="about_mission_text" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="At our store, we believe that shopping for premium quality products shouldn\'t be complicated or time-consuming. Our mission is to provide the best products while offering unmatched convenience.\n\nWe\'re committed to sustainable practices and making great options accessible to everyone. Each product is carefully selected to ensure you get the best value without compromises.">{settings.about_mission_text || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_approach_title" class="block text-sm font-semibold text-secondary mb-1">Approach Title</label>
+              <input id="about_approach_title" name="about_approach_title" type="text" value={settings.about_approach_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_approach_text" class="block text-sm font-semibold text-secondary mb-1">Approach Text</label>
+              <textarea id="about_approach_text" name="about_approach_text" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="Our approach is both an art and a science. We source the highest quality materials and use advanced techniques that ensure durability and excellence.\n\nBy maintaining strict quality control, we create products that stand the test of time. This approach not only delivers exceptional value but also supports sustainable practices.">{settings.about_approach_text || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_process_title" class="block text-sm font-semibold text-secondary mb-1">Process Section Title</label>
+              <input id="about_process_title" name="about_process_title" type="text" value={settings.about_process_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_process_subtitle" class="block text-sm font-semibold text-secondary mb-1">Process Subtitle</label>
+              <input id="about_process_subtitle" name="about_process_subtitle" type="text" value={settings.about_process_subtitle || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_sustainability_title" class="block text-sm font-semibold text-secondary mb-1">Sustainability Section Title</label>
+              <input id="about_sustainability_title" name="about_sustainability_title" type="text" value={settings.about_sustainability_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="about_sustainability_text" class="block text-sm font-semibold text-secondary mb-1">Sustainability Text</label>
+              <textarea id="about_sustainability_text" name="about_sustainability_text" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="">{settings.about_sustainability_text || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the About Us page?')">
+              <span class="save-btn-text">Save About Us</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+    </div>
+
+    <div data-tab-content="pages" class="tab-panel space-y-6 hidden">
+      <!-- Bulk Order Content -->
+      <details data-page="Bulk Order" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Bulk Order Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Bulk Order">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Bulk Order page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="bulk_hero_subtitle" class="block text-sm font-semibold text-secondary mb-1">Hero Subtitle</label>
+              <input id="bulk_hero_subtitle" name="bulk_hero_subtitle" type="text" value={settings.bulk_hero_subtitle || ''} placeholder="B2B & Wholesale" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="bulk_hero_title" class="block text-sm font-semibold text-secondary mb-1">Hero Title</label>
+              <input id="bulk_hero_title" name="bulk_hero_title" type="text" value={settings.bulk_hero_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="bulk_hero_text" class="block text-sm font-semibold text-secondary mb-1">Hero Text</label>
+              <textarea id="bulk_hero_text" name="bulk_hero_text" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="We supply premium products to retailers, restaurants, and brands across India. Get exclusive <strong>wholesale pricing</strong> and priority dispatch.">{settings.bulk_hero_text || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Bulk Order page?')">
+              <span class="save-btn-text">Save Bulk Order</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+      <!-- Contact Us Content -->
+      <details data-page="Contact Us" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Contact Us Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Contact Us">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Contact Us page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="contact_title" class="block text-sm font-semibold text-secondary mb-1">Page Title</label>
+              <input id="contact_title" name="contact_title" type="text" value={settings.contact_title || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="contact_subtitle" class="block text-sm font-semibold text-secondary mb-1">Page Subtitle</label>
+              <textarea id="contact_subtitle" name="contact_subtitle" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="Have a question about our products, a bulk order inquiry, or just want to say hello? We\'d love to hear from you.">{settings.contact_subtitle || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="contact_address" class="block text-sm font-semibold text-secondary mb-1">Address</label>
+              <textarea id="contact_address" name="contact_address" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="123 Demo Street\nCity, State\n123456\nCountry">{settings.contact_address || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="contact_email" class="block text-sm font-semibold text-secondary mb-1">Email Address</label>
+              <input id="contact_email" name="contact_email" type="text" value={settings.contact_email || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="contact_phone" class="block text-sm font-semibold text-secondary mb-1">Phone Number</label>
+              <input id="contact_phone" name="contact_phone" type="text" value={settings.contact_phone || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+
+            <div class="col-span-1 md:col-span-2 mt-4">
+              <h3 class="text-sm font-bold text-secondary mb-3 pb-2 border-b border-gray-100">Bank Details & B2B Terms</h3>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label for="bank_name" class="block text-sm font-semibold text-secondary mb-1">Bank Name & Branch</label>
+                  <input type="text" id="bank_name" name="bank_name" value={settings.bank_name || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                </div>
+                <div>
+                  <label for="bank_account_name" class="block text-sm font-semibold text-secondary mb-1">Account Name</label>
+                  <input type="text" id="bank_account_name" name="bank_account_name" value={settings.bank_account_name || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                </div>
+                <div>
+                  <label for="bank_account" class="block text-sm font-semibold text-secondary mb-1">Account Number</label>
+                  <input type="text" id="bank_account" name="bank_account" value={settings.bank_account || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                </div>
+                <div>
+                  <label for="bank_ifsc" class="block text-sm font-semibold text-secondary mb-1">IFSC Code</label>
+                  <input type="text" id="bank_ifsc" name="bank_ifsc" value={settings.bank_ifsc || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                </div>
+                <div>
+                  <label for="authorized_signatory" class="block text-sm font-semibold text-secondary mb-1">Authorized Signatory Name</label>
+                  <input type="text" id="authorized_signatory" name="authorized_signatory" value={settings.authorized_signatory || ''} class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                </div>
+                <div>
+                  <label for="authorized_signatory_image" class="block text-sm font-semibold text-secondary mb-1">Signatory Signature Image URL</label>
+                  <div class="flex gap-2">
+                    <input id="authorized_signatory_image" type="text" name="authorized_signatory_image" value={settings.authorized_signatory_image || ''} placeholder="/signature.png" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                    <button type="button" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                    <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'authorized_signatory_image')" />
+                  </div>
+                </div>
+                <div class="md:col-span-3">
+                  <label for="b2b_terms" class="block text-sm font-semibold text-secondary mb-1">B2B Terms & Conditions (Line separated)</label>
+                  <textarea id="b2b_terms" name="b2b_terms" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">{settings.b2b_terms || `1. Thanks for doing business with us.
+2. Interest will be charged @24% if payment is not made within 30 days.
+3. Goods once sold will not be taken back.
+4. GST and other taxes as applicable.
+5. All disputes are subject to City jurisdiction only.`}</textarea>
+                </div>
+              </div>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="contact_hours" class="block text-sm font-semibold text-secondary mb-1">Business Hours</label>
+              <textarea id="contact_hours" name="contact_hours" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="Monday - Saturday: 9:00 AM - 6:00 PM<br/>Sunday: Closed">{settings.contact_hours || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Contact Us page?')">
+              <span class="save-btn-text">Save Contact Us</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+    </div>
+
+    <div data-tab-content="policies" class="tab-panel space-y-6 hidden">
+      <!-- Return & Refund Policy Settings -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14V5a2 2 0 00-2-2H6a2 2 0 00-2 2v16l4-2 4 2 4-2 4 2z" /></svg>
+            Global Return & Refund Policy Configuration
+          </h2>
+          <p class="text-xs text-secondary/60">Configure how return/refund requests are handled across the admin panel.</p>
+        </div>
+        <div class="p-6 space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label for="return_policy_type" class="block text-sm font-semibold text-secondary mb-1">Return Policy Workflow</label>
+              <select id="return_policy_type" name="return_policy_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">
+                <option value="standard" selected={settings.return_policy_type === 'standard'}>Standard Returns (Reverse Pickup)</option>
+                <option value="video_proof" selected={settings.return_policy_type === 'video_proof' || !settings.return_policy_type}>Refund/Replace on Video Proof Only</option>
+                <option value="no_returns" selected={settings.return_policy_type === 'no_returns'}>No Returns or Refunds Allowed</option>
+              </select>
+              <p class="text-xs text-secondary/60 mt-1">This changes the UI in the Orders &gt; Returns dashboard.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-secondary mb-1">Return Window Validity</label>
+              <div class="flex gap-2">
+                <input id="return_window_value" name="return_window_value" type="number" min="0" value={settings.return_window_value || ''} class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <select id="return_window_unit" name="return_window_unit" class="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">
+                  <option value="days" selected={settings.return_window_unit === 'days' || !settings.return_window_unit}>Days</option>
+                  <option value="hours" selected={settings.return_window_unit === 'hours'}>Hours</option>
+                </select>
+              </div>
+              <p class="text-xs text-secondary/60 mt-1">Example: 7 Days or 48 Hours.</p>
+            </div>
+          </div>
+          <div>
+            <label for="return_policy_instructions" class="block text-sm font-semibold text-secondary mb-1">Customer Instructions (Optional)</label>
+            <textarea id="return_policy_instructions" name="return_policy_instructions" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="Please send an unboxing video to our WhatsApp number...">{settings.return_policy_instructions || ''}</textarea>
+            <p class="text-xs text-secondary/60 mt-1">These instructions will be displayed on the frontend when the customer requests a return/refund.</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Policy Settings</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Privacy Policy Content -->
+      <details data-page="Privacy Policy" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Privacy Policy Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Privacy Policy">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Privacy Policy page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_privacy_policy_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_privacy_policy_0" name="page_privacy_policy_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>This Privacy Policy outlines...</p>">{settings.page_privacy_policy_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_1" class="block text-sm font-semibold text-secondary mb-1">Information We Collect</label>
+              <textarea id="page_privacy_policy_1" name="page_privacy_policy_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We may collect...</p>">{settings.page_privacy_policy_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_2" class="block text-sm font-semibold text-secondary mb-1">How We Use Your Information</label>
+              <textarea id="page_privacy_policy_2" name="page_privacy_policy_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We use your information...</p>">{settings.page_privacy_policy_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_3" class="block text-sm font-semibold text-secondary mb-1">Sharing Your Information</label>
+              <textarea id="page_privacy_policy_3" name="page_privacy_policy_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We value your privacy...</p>">{settings.page_privacy_policy_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_4" class="block text-sm font-semibold text-secondary mb-1">Security of Your Information</label>
+              <textarea id="page_privacy_policy_4" name="page_privacy_policy_4" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We take reasonable precautions...</p>">{settings.page_privacy_policy_4 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_5" class="block text-sm font-semibold text-secondary mb-1">Cookies and Tracking Technologies</label>
+              <textarea id="page_privacy_policy_5" name="page_privacy_policy_5" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We use cookies...</p>">{settings.page_privacy_policy_5 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_6" class="block text-sm font-semibold text-secondary mb-1">Your Rights</label>
+              <textarea id="page_privacy_policy_6" name="page_privacy_policy_6" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>You have the following rights...</p>">{settings.page_privacy_policy_6 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_7" class="block text-sm font-semibold text-secondary mb-1">Third-party Links</label>
+              <textarea id="page_privacy_policy_7" name="page_privacy_policy_7" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Our website may contain links...</p>">{settings.page_privacy_policy_7 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_8" class="block text-sm font-semibold text-secondary mb-1">Changes to this Privacy Policy</label>
+              <textarea id="page_privacy_policy_8" name="page_privacy_policy_8" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We may update this Privacy Policy...</p>">{settings.page_privacy_policy_8 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_9" class="block text-sm font-semibold text-secondary mb-1">Childrens Privacy</label>
+              <textarea id="page_privacy_policy_9" name="page_privacy_policy_9" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Our website is not intended...</p>">{settings.page_privacy_policy_9 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_privacy_policy_10" class="block text-sm font-semibold text-secondary mb-1">Contact Us</label>
+              <textarea id="page_privacy_policy_10" name="page_privacy_policy_10" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>If you have any questions...</p>">{settings.page_privacy_policy_10 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Privacy Policy page?')">
+              <span class="save-btn-text">Save Privacy Policy</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+      <!-- Terms Content -->
+      <details data-page="Terms" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Terms Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Terms">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Terms page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_terms_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_terms_0" name="page_terms_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Welcome to Your Brand...</p>">{settings.page_terms_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_1" class="block text-sm font-semibold text-secondary mb-1">Acceptance of Terms</label>
+              <textarea id="page_terms_1" name="page_terms_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>By accessing or using...</p>">{settings.page_terms_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_2" class="block text-sm font-semibold text-secondary mb-1">Information about You and Your Visits to the Website</label>
+              <textarea id="page_terms_2" name="page_terms_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<ul><li>User accounts...</li></ul>">{settings.page_terms_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_3" class="block text-sm font-semibold text-secondary mb-1">Modification of Website</label>
+              <textarea id="page_terms_3" name="page_terms_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>All content included...</p>">{settings.page_terms_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_4" class="block text-sm font-semibold text-secondary mb-1">User Contributions</label>
+              <textarea id="page_terms_4" name="page_terms_4" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>The Website may contain or provide links to message boards, personal web pages or profiles, discussion forums, bulletin boards and other interactive features (including feedback and suggestions) that allow users to post content or materials by way of post, upload, inputs or submit (User Contributions) on or through the Website.</p>\n  <p>By Posting a contribution You hereby warrant and represent that You own or otherwise control all the rights required under worldwide law for Your Contribution as described in these Terms of Use including, without limitation, all the rights necessary for You to provide, post, upload, input or submit Your Contribution. You, and not Your Brand, are responsible for any User Contributions you post on the Website.</p>">{settings.page_terms_4 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_5" class="block text-sm font-semibold text-secondary mb-1">Monitoring and Enforcement</label>
+              <textarea id="page_terms_5" name="page_terms_5" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>If the Website contains links to other sites and resources provided by third parties, these links are provided for your convenience only. We have no control over the contents of those sites or resources and we are not responsible for them or for any loss or damage that may arise from your use of them and provision of such links in no manner be construed to imply endorsement of Your Brand in any manner of such links. If you decide to access any of the Third-Party websites linked to this Website, you do so entirely at your own risk and subject to the terms and conditions of use for such websites. We are not responsible for webcasting, or any other form of transmission received from any linked site.</p>">{settings.page_terms_5 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_6" class="block text-sm font-semibold text-secondary mb-1">Disclaimer of Warranties</label>
+              <textarea id="page_terms_6" name="page_terms_6" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>YOUR USE OF THIS WEBSITE, ITS CONTENT AND ANY SERVICES OR ITEMS OBTAINED THROUGH THIS WEBSITE IS AT YOUR OWN RISK. THIS WEBSITE, ITS CONTENT AND ANY SERVICES OBTAINED THROUGH THE WEBSITE ARE PROVIDED ON AN AS IS BASIS, WITHOUT ANY WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. NEITHER Your Brand NOR ANY PERSON ASSOCIATED WITH Your Brand MAKES ANY WARRANTY OR REPRESENTATION THAT THE WEBSITE, ITS CONTENT OR ANY SERVICES OR ITEMS OBTAINED THROUGH THE WEBSITE WILL BE ACCURATE, RELIABLE, ERROR-FREE OR UNINTERRUPTED, THAT DEFECTS WILL BE CORRECTED, OR THAT THE WEBSITE OR THE SERVER THAT MAKES IT AVAILABLE ARE FREE OF VIRUSES OR OTHER HARMFUL COMPONENTS.</p>">{settings.page_terms_6 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_7" class="block text-sm font-semibold text-secondary mb-1">Limitation on Liability</label>
+              <textarea id="page_terms_7" name="page_terms_7" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>IN NO EVENT WILL Your Brand OR ANY PERSONS ASSOCIATED WITH Your Brand BE LIABLE FOR DAMAGES OF ANY KIND, UNDER ANY LEGAL THEORY, ARISING OUT OF OR IN CONNECTION WITH YOUR USE, OR INABILITY TO USE, THE WEBSITE, ANY WEBSITES LINKED TO IT, ANY MATERIAL ON THE WEBSITE OR SUCH OTHER WEBSITES OR ANY SERVICES OBTAINED THROUGH THE WEBSITE OR SUCH OTHER WEBSITES, INCLUDING ANY DIRECT, INDIRECT, SPECIAL, INCIDENTAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, INCLUDING LOSS OF REVENUE, LOSS OF PROFITS, LOSS OF BUSINESS OR ANTICIPATED SAVINGS, LOSS OF USE, LOSS OF GOODWILL OR LOSS OF DATA, EVEN IF Your Brand IS EXPRESSLY ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.</p>">{settings.page_terms_7 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_8" class="block text-sm font-semibold text-secondary mb-1">Indemnification</label>
+              <textarea id="page_terms_8" name="page_terms_8" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>You agree to defend, indemnify and hold harmless Your Brand and its affiliates, and its and their respective officers, directors, employees, contractors, agents, licensors, successors and assigns from and against any claims, liabilities, damages, judgments, awards, losses, costs, expenses or fees (including reasonable attorneys\' fees and other legal costs) arising out of or in connection with your violation of these Terms of Use or your use of any information obtained from the Website.</p>">{settings.page_terms_8 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_9" class="block text-sm font-semibold text-secondary mb-1">Entire Agreement</label>
+              <textarea id="page_terms_9" name="page_terms_9" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>The Terms of Use and our Privacy Policy constitute the sole and entire agreement between you and Your Brand with respect to the Website and supersede all prior understandings, agreements, representations and warranties, both written and oral. Any claim you may have with respect to your use of the Website must be commenced within one (1) month of the cause of action.</p>">{settings.page_terms_9 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_terms_10" class="block text-sm font-semibold text-secondary mb-1">Contact Information</label>
+              <textarea id="page_terms_10" name="page_terms_10" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Company Name</p>\n  <p>Address: 123 Demo Street, City, State, 123456</p>\n  <p>Email: <a href=&quot;mailto:contact@yourstore.com&quot;>contact@yourstore.com</a></p>">{settings.page_terms_10 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Terms page?')">
+              <span class="save-btn-text">Save Terms</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+      <!-- Refund Policy Content -->
+      <details data-page="Refund Policy" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Refund Policy Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Refund Policy">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Refund Policy page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_refund_policy_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_refund_policy_0" name="page_refund_policy_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Admin Panel operates under Company Name and is committed to ensuring customer satisfaction. If you are not entirely satisfied with your purchase, we\'re here to help.</p>">{settings.page_refund_policy_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_refund_policy_1" class="block text-sm font-semibold text-secondary mb-1">Refunds</label>
+              <textarea id="page_refund_policy_1" name="page_refund_policy_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>To be eligible for a refund, your item must be unused and in the same condition that you received it. It must also be in the original packaging.</p>\n  <p>Refund requests must be submitted within 7 days of receiving the product.</p>\n  <p>To initiate a refund, please contact us at <a href=&quot;mailto:contact@yourstore.com&quot;>contact@yourstore.com</a>.</p>\n  <p>Once we receive your request, we will notify you of the status of your refund after inspection of the returned product.</p>\n  <p>If approved, your refund will be processed, and a credit will automatically be applied to your original method of payment within 7-10 business days.</p>">{settings.page_refund_policy_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_refund_policy_2" class="block text-sm font-semibold text-secondary mb-1">Delivery Costs</label>
+              <textarea id="page_refund_policy_2" name="page_refund_policy_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>You will be responsible for paying for your own Delivery costs for returning your item.</p>\n  <p>Delivery costs are non-refundable.</p>\n  <p>If you receive a refund, the cost of return Delivery will be deducted from your refund.</p>\n  <p>If you have any questions regarding our refund policy, feel free to reach out to us.</p>">{settings.page_refund_policy_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_refund_policy_3" class="block text-sm font-semibold text-secondary mb-1">Disclaimer</label>
+              <textarea id="page_refund_policy_3" name="page_refund_policy_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p><strong>&quot;Please note that, for hygiene reasons, we are unable to accept returns or exchanges on products that are not defective. All products are thoroughly inspected before shipment to ensure quality.&quot;</strong></p>">{settings.page_refund_policy_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_refund_policy_4" class="block text-sm font-semibold text-secondary mb-1">Contact Us</label>
+              <textarea id="page_refund_policy_4" name="page_refund_policy_4" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>\n    <strong>Company Name (Your Brand)</strong><br />\n    123 Demo Street,<br />\n    City, State,<br />\n    123456, Country<br />\n    Email: <a href=&quot;mailto:contact@yourstore.com&quot;>contact@yourstore.com</a>\n  </p>">{settings.page_refund_policy_4 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Refund Policy page?')">
+              <span class="save-btn-text">Save Refund Policy</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+      <!-- Shipping Policy Content -->
+      <details data-page="Shipping Policy" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Shipping Policy Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Shipping Policy">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Shipping Policy page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_shipping_policy_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_shipping_policy_0" name="page_shipping_policy_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>At Your Brand, we are committed to delivering your orders in a timely and efficient manner. Please review the following shipping information.</p>">{settings.page_shipping_policy_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_shipping_policy_1" class="block text-sm font-semibold text-secondary mb-1">Shipping Coverage</label>
+              <textarea id="page_shipping_policy_1" name="page_shipping_policy_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We currently ship across India. International shipping is available to select countries. Please contact us for more details regarding international delivery.</p>">{settings.page_shipping_policy_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_shipping_policy_2" class="block text-sm font-semibold text-secondary mb-1">Shipping Charges</label>
+              <textarea id="page_shipping_policy_2" name="page_shipping_policy_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<ul><li><strong>Free Shipping:</strong> On all orders above \u20B9499.</li><li><strong>Standard Shipping:</strong> A flat fee of \u20B999 for orders below \u20B9499.</li><li><strong>Express Shipping:</strong> Available at an additional cost during checkout.</li></ul>">{settings.page_shipping_policy_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_shipping_policy_3" class="block text-sm font-semibold text-secondary mb-1">Delivery Times</label>
+              <textarea id="page_shipping_policy_3" name="page_shipping_policy_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<ul><li><strong>Order Processing:</strong> All orders are processed within 1-2 business days.</li><li><strong>Standard Delivery:</strong> 3-7 business days from dispatch.</li><li><strong>Express Delivery:</strong> 1-3 business days from dispatch.</li></ul><p>Please note that delivery times may vary during peak seasons, holidays, or due to unforeseen circumstances.</p>">{settings.page_shipping_policy_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_shipping_policy_4" class="block text-sm font-semibold text-secondary mb-1">Order Tracking</label>
+              <textarea id="page_shipping_policy_4" name="page_shipping_policy_4" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Once your order has been shipped, you will receive a tracking number via email and SMS. You can track your order status through our <a href=&quot;/track-order&quot;>Track Order</a> page or directly on the courier partner\'s website.</p>">{settings.page_shipping_policy_4 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_shipping_policy_5" class="block text-sm font-semibold text-secondary mb-1">Contact Us</label>
+              <textarea id="page_shipping_policy_5" name="page_shipping_policy_5" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>If you have any questions about shipping, please contact us at <a href=&quot;mailto:contact@yourstore.com&quot;>contact@yourstore.com</a> or call us at +91 9876543210.</p>">{settings.page_shipping_policy_5 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Shipping Policy page?')">
+              <span class="save-btn-text">Save Shipping Policy</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      <!-- Sustainability Content -->
+      <details data-page="Sustainability" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Sustainability Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Sustainability">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Sustainability page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_sustainability_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_sustainability_0" name="page_sustainability_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>At The Your Brand Name, sustainability isn\'t just a buzzwordit\'s at the core of everything we do. From farm to package, we\'re committed to practices that protect our planet for future generations.</p>">{settings.page_sustainability_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_sustainability_1" class="block text-sm font-semibold text-secondary mb-1">Preserving Nature's Goodness</label>
+              <textarea id="page_sustainability_1" name="page_sustainability_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Our mission is to provide nutritious dried fruits and vegetables while minimizing our environmental footprint.</p>">{settings.page_sustainability_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_sustainability_2" class="block text-sm font-semibold text-secondary mb-1">Sustainable Farming</label>
+              <textarea id="page_sustainability_2" name="page_sustainability_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We partner exclusively with farmers who practice sustainable agriculture. This includes:</p>\n  <ul>\n    <li>Organic farming methods that avoid harmful pesticides and chemicals</li>\n    <li>Water conservation techniques to minimize usage</li>\n    <li>Crop rotation to maintain soil health and biodiversity</li>\n    <li>Fair compensation for farmers and agricultural workers</li>\n    <li>Local sourcing whenever possible to reduce transportation emissions</li>\n  </ul>\n  <p>By supporting sustainable farming practices, we ensure that the land remains fertile and productive for generations to come while producing the highest quality fruits and vegetables.</p>">{settings.page_sustainability_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_sustainability_3" class="block text-sm font-semibold text-secondary mb-1">Eco-Friendly Production</label>
+              <textarea id="page_sustainability_3" name="page_sustainability_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Our production process is designed to minimize environmental impact while maximizing quality:</p>\n  <ul>\n    <li>Energy-efficient technology that reduces power consumption</li>\n    <li>Solar power integration at our facilities</li>\n    <li>Zero-waste approach through recycling</li>\n    <li>Water conservation systems to minimize usage</li>\n    <li>Regular energy audits to identify further efficiency improvements</li>\n  </ul>\n  <p>We continuously invest in new technologies that allow us to reduce our carbon footprint while maintaining the exceptional quality of our products.</p>">{settings.page_sustainability_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_sustainability_4" class="block text-sm font-semibold text-secondary mb-1">Sustainable Packaging</label>
+              <textarea id="page_sustainability_4" name="page_sustainability_4" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We\'re committed to reducing packaging waste through innovative solutions:</p>\n  <ul>\n    <li>Biodegradable and compostable packaging materials</li>\n    <li>Recyclable shipping materials made from post-consumer recycled content</li>\n    <li>Minimalist packaging design that reduces material usage</li>\n    <li>Bulk options that further decrease packaging-to-product ratio</li>\n    <li>Clear recycling instructions on all packaging</li>\n  </ul>\n  <p>Our goal is to transition to 100% sustainable packaging across our entire product line by 2026, without compromising on food safety or product freshness.</p>">{settings.page_sustainability_4 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_sustainability_5" class="block text-sm font-semibold text-secondary mb-1">Join Us in Our Sustainability Journey</label>
+              <textarea id="page_sustainability_5" name="page_sustainability_5" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>Every purchase you make supports our sustainable practices and helps us continue to innovate for a greener future.</p>">{settings.page_sustainability_5 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Sustainability page?')">
+              <span class="save-btn-text">Save Sustainability</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+
+      
+      <!-- Warranty Content -->
+      <details data-page="Warranty" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Warranty Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Warranty">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Warranty page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_warranty_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_warranty_0" name="page_warranty_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>At Your Brand, we stand behind...</p>">{settings.page_warranty_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_warranty_1" class="block text-sm font-semibold text-secondary mb-1">Product Quality Guarantee</label>
+              <textarea id="page_warranty_1" name="page_warranty_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>All products are backed...</p>">{settings.page_warranty_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_warranty_2" class="block text-sm font-semibold text-secondary mb-1">Return Policy</label>
+              <textarea id="page_warranty_2" name="page_warranty_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<ul><li>Returns accepted within 7 days...</li></ul>">{settings.page_warranty_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_warranty_3" class="block text-sm font-semibold text-secondary mb-1">Refund Process</label>
+              <textarea id="page_warranty_3" name="page_warranty_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>After receiving and inspecting...</p>">{settings.page_warranty_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_warranty_4" class="block text-sm font-semibold text-secondary mb-1">Damaged or Defective Products</label>
+              <textarea id="page_warranty_4" name="page_warranty_4" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>If you receive a damaged product...</p>">{settings.page_warranty_4 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_warranty_5" class="block text-sm font-semibold text-secondary mb-1">Exchanges</label>
+              <textarea id="page_warranty_5" name="page_warranty_5" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We are happy to exchange...</p>">{settings.page_warranty_5 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_warranty_6" class="block text-sm font-semibold text-secondary mb-1">Contact Us</label>
+              <textarea id="page_warranty_6" name="page_warranty_6" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>If you have any questions...</p>">{settings.page_warranty_6 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Warranty page?')">
+              <span class="save-btn-text">Save Warranty</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+      <!-- Delivery Content -->
+      <details data-page="Delivery" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Delivery Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="Delivery">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">The headings on the Delivery page will dynamically prefix the Brand Name. Fill in the content for each section below.</p>
+
+            <div>
+              <label for="page_delivery_0" class="block text-sm font-semibold text-secondary mb-1">Introduction</label>
+              <textarea id="page_delivery_0" name="page_delivery_0" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<ul><li>Standard Delivery Time...</li></ul>">{settings.page_delivery_0 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_delivery_1" class="block text-sm font-semibold text-secondary mb-1">Eligibility for Return</label>
+              <textarea id="page_delivery_1" name="page_delivery_1" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>A return request will be...</p>">{settings.page_delivery_1 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_delivery_2" class="block text-sm font-semibold text-secondary mb-1">Ineligible Returns</label>
+              <textarea id="page_delivery_2" name="page_delivery_2" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>We do not accept returns if...</p>">{settings.page_delivery_2 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+            <div>
+              <label for="page_delivery_3" class="block text-sm font-semibold text-secondary mb-1">How to Request a Return</label>
+              <textarea id="page_delivery_3" name="page_delivery_3" rows="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" placeholder="<p>To initiate a return...</p>">{settings.page_delivery_3 || ''}</textarea>
+            </div>
+            <hr class="border-gray-100" />
+
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the Delivery page?')">
+              <span class="save-btn-text">Save Delivery</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+
+      
+    </div>
+
+    <div data-tab-content="faq" class="tab-panel space-y-6 hidden">
+      <!-- FAQ Content -->
+      <details data-page="FAQ" class="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+        <summary class="px-6 py-4 cursor-pointer font-bold text-secondary bg-gray-50 flex justify-between items-center marker:hidden">
+          <div class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            FAQ Page
+          </div>
+          <span class="text-primary group-open:rotate-180 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></span>
+        </summary>
+        <form autocomplete="off" class="settings-section-form border-t border-gray-100" data-page="FAQ" onsubmit="prepareFaqData(event)" autocomplete="off">
+          <div class="p-6 space-y-6">
+            <p class="text-xs text-secondary/60 mb-4">Manage Frequently Asked Questions.</p>
+            
+            <div class="flex justify-between items-center mb-4">
+              <label class="block text-sm font-semibold text-secondary">Questions & Answers</label>
+              <button type="button" onclick="addFaq()" class="btn-primary px-3 py-1.5 text-xs flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>Add FAQ</button>
+            </div>
+            
+            <input type="hidden" id="faqs_json" name="faqs" value={JSON.stringify(settings.faqs || [])} />
+            
+            <div id="faqs-container" class="space-y-4">
+              <!-- Dynamically populated via JS -->
+            </div>
+          </div>
+          <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm" onclick="return confirm('Are you sure you want to save the FAQ page?')">
+              <span class="save-btn-text">Save FAQ</span>
+              <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </div>
+        </form>
+      </details>
+    
+    </div>
+
+    <!-- ═══ CHECKOUT RULES TAB ═══ -->
+    <div data-tab-content="checkout" class="tab-panel space-y-6 hidden">
+
+      <!-- ── Discount & Stacking Rules ── -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
+            Discount & Stacking Rules
+          </h2>
+          <p class="text-xs text-secondary/60">Control how coupons, flash sales, and prepaid discounts combine at checkout.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <!-- Coupon Stacking -->
+          <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-green-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10" /></svg>
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-secondary">Allow Coupon Stacking</p>
+                <p class="text-xs text-secondary/60">If enabled, users can apply a Coupon AND get a Milestone discount at the same time.</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" name="allow_coupon_stacking" id="allow-coupon-stacking" checked={settings.allow_coupon_stacking === 'true' || settings.allow_coupon_stacking === true} class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+
+          <!-- Flash Sale Stacking -->
+          <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-secondary">Allow Flash Sale Stacking</p>
+                <p class="text-xs text-secondary/60">If disabled, Coupons and Milestone discounts only apply to regular-priced items in cart. Prepaid discounts still apply to total.</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" name="allow_flash_sale_stacking" id="allow-flash-sale-stacking" checked={settings.allow_flash_sale_stacking !== 'false' && settings.allow_flash_sale_stacking !== false} class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+
+          <!-- Prepaid Discount -->
+          <div class="p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                </div>
+                <div>
+                  <p class="text-sm font-semibold text-secondary">Prepaid Order Discount</p>
+                  <p class="text-xs text-secondary/60">Offer a discount for online payments (Razorpay/PhonePe) to encourage prepaid orders.</p>
+                </div>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" name="prepaid_discount_enabled" id="prepaid-discount-enabled" checked={settings.prepaid_discount_enabled === 'true' || settings.prepaid_discount_enabled === true} class="sr-only peer" />
+                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-gray-200 pt-4">
+              <div>
+                <label for="prepaid-discount-type" class="block text-xs font-medium text-secondary/80 mb-1">Discount Type</label>
+                <select id="prepaid-discount-type" name="prepaid_discount_type" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">
+                  <option value="percentage" selected={settings.prepaid_discount_type === 'percentage' || !settings.prepaid_discount_type}>Percentage (%)</option>
+                  <option value="fixed" selected={settings.prepaid_discount_type === 'fixed'}>Fixed Amount (₹)</option>
+                </select>
+              </div>
+              <div>
+                <label for="prepaid-discount-value" class="block text-xs font-medium text-secondary/80 mb-1">Discount Value</label>
+                <input id="prepaid-discount-value" type="number" name="prepaid_discount_value" value={settings.prepaid_discount_value || '0'} placeholder="e.g. 5" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              </div>
+              <div>
+                <label for="prepaid-discount-min-order" class="block text-xs font-medium text-secondary/80 mb-1">Min Order Amount (₹)</label>
+                <input id="prepaid-discount-min-order" type="number" name="prepaid_discount_min_order" value={settings.prepaid_discount_min_order || '0'} placeholder="e.g. 499" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              </div>
+              <div>
+                <label for="prepaid-discount-max-cap" class="block text-xs font-medium text-secondary/80 mb-1">Max Discount Cap (₹)</label>
+                <input id="prepaid-discount-max-cap" type="number" name="prepaid_discount_max_cap" value={settings.prepaid_discount_max_cap || '0'} placeholder="e.g. 100" class="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+                <p class="text-[10px] text-secondary/60 mt-1">Set 0 for no limit</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Discount Rules</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- ── Tax & Invoicing Rules ── -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a1 1 0 001-1V7a1 1 0 00-1-1H4a1 1 0 00-1 1v11a1 1 0 001 1z" /></svg>
+            Tax & Invoicing Rules
+          </h2>
+          <p class="text-xs text-secondary/60">Default HSN code and GST rate used when a product does not have its own configured.</p>
+        </div>
+        <div class="p-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label for="default-hsn-code" class="block text-sm font-medium text-secondary mb-1">Default HSN Code</label>
+              <input id="default-hsn-code" type="text" name="default_hsn_code" value={settings.default_hsn_code || '0813'} placeholder="e.g. 0813" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Fallback HSN code if a product doesn't have one set.</p>
+            </div>
+            <div>
+              <label for="default-gst-rate" class="block text-sm font-medium text-secondary mb-1">Default GST Rate (%)</label>
+              <input id="default-gst-rate" type="number" step="0.1" name="default_gst_rate" value={settings.default_gst_rate ?? 5} min="0" max="100" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/60 mt-1">Fallback GST rate (e.g., 5, 12, 18).</p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Tax Rules</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- ── Homepage Sections ── -->
+      <form autocomplete="off" class="settings-section-form bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            Trending Slider Section
+          </h2>
+          <p class="text-xs text-secondary/60">Infinite scrolling product banner shown below featured products on the homepage.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+            <div>
+              <p class="text-sm font-semibold text-secondary">Enable Trending Slider</p>
+              <p class="text-xs text-secondary/60 mt-0.5">Show an infinite auto-scrolling banner of trending products.</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" name="trending_slider_enabled" id="trending-slider-enabled" checked={settings.trending_slider_enabled !== 'false' && settings.trending_slider_enabled !== false} class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary relative"></div>
+            </label>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="trending-slider-title" class="block text-sm font-medium text-secondary mb-1">Section Title</label>
+              <input id="trending-slider-title" type="text" name="trending_slider_title" value={settings.trending_slider_title || 'Trending Now'} placeholder="e.g. Best Sellers" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            </div>
+            <div>
+              <label for="trending-slider-products" class="block text-sm font-medium text-secondary mb-1">Specific Product Slugs (Optional)</label>
+              <input id="trending-slider-products" type="text" name="trending_slider_products" value={settings.trending_slider_products || ''} placeholder="e.g. amla-powder, premium-honey" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+              <p class="text-xs text-secondary/40 mt-1">Comma-separated. Leave blank to show random products.</p>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button type="submit" class="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+            <span class="save-btn-text">Save Slider Settings</span>
+            <svg class="save-btn-spinner hidden animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+          </button>
+        </div>
+      </form>
+
+    </div>
+
+    <!-- Toast notification -->
+    <div id="settings-toast" class="fixed bottom-6 right-6 z-50 hidden transform transition-all duration-300 translate-y-4 opacity-0">
+      <div id="settings-toast-inner" class="flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-white text-sm font-medium">
+        <span id="settings-toast-icon"></span>
+        <span id="settings-toast-msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    // ── Form Submission ────────────────────────────────────────────────
+    function attachFormListeners() {
+      var forms = document.querySelectorAll('.settings-section-form');
+      forms.forEach(function(form) {
+        form.removeEventListener('submit', form.submitHandler);
+        form.submitHandler = async function(e) {
+          e.preventDefault();
+          await handleSaveSettings(form);
+        };
+        form.addEventListener('submit', form.submitHandler);
+      });
+    }
+    
+    document.addEventListener('DOMContentLoaded', attachFormListeners);
+    document.addEventListener('astro:page-load', attachFormListeners);
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      attachFormListeners();
+    }
+    async function handleSaveSettings(form) {
+      if (!form) return;
+      var saveBtn = form.querySelector('button[type="submit"]');
+      var saveBtnText = form.querySelector('.save-btn-text');
+      var saveBtnSpinner = form.querySelector('.save-btn-spinner');
+
+      // Show loading state
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.classList.add('opacity-70', 'cursor-not-allowed');
+      }
+      var originalText = saveBtnText ? saveBtnText.textContent : 'Saving...';
+      if (saveBtnText) saveBtnText.textContent = 'Saving...';
+      if (saveBtnSpinner) saveBtnSpinner.classList.remove('hidden');
+
+      // Sync dynamic arrays into hidden inputs before collecting form data
+      // This prevents auto-save (e.g. radio change) from sending stale values
+      var teamInput = form.querySelector('#team_members_json');
+      if (teamInput && typeof teamMembers !== 'undefined' && Array.isArray(teamMembers)) {
+        teamInput.value = JSON.stringify(teamMembers);
+      }
+      var faqInput = form.querySelector('#faqs_json');
+      if (faqInput && typeof faqs !== 'undefined' && Array.isArray(faqs)) {
+        faqInput.value = JSON.stringify(faqs);
+      }
+
+      // Collect all form data from this specific form
+      var data = {};
+      var inputs = form.querySelectorAll('input, textarea, select');
+      for (var i = 0; i < inputs.length; i++) {
+        var input = inputs[i];
+        var name = input.name;
+        if (!name) continue;
+
+        if (input.type === 'radio') {
+          if (input.checked) data[name] = input.value;
+        } else if (input.type === 'checkbox') {
+          data[name] = input.checked ? 'true' : 'false';
+        } else {
+          data[name] = input.value;
+        }
+      }
+
+      try {
+        var res = await fetch('/api/admin/update-settings?_tenant_id=' + encodeURIComponent(window.__targetStoreId), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          credentials: 'include'
+        });
+
+        var result = await res.json();
+
+        if (res.ok && result.success) {
+          showSettingsToast(originalText.replace('Save ', '') + ' saved successfully!', 'success');
+          // Reload the page after a brief delay to update the admin sidebar and header logos
+          setTimeout(() => window.location.reload(), 1200);
+        } else {
+          showSettingsToast('Error: ' + (result.error || 'Failed to save'), 'error');
+        }
+      } catch (err) {
+        showSettingsToast('Network error: ' + (err.message || 'Could not reach server'), 'error');
+      } finally {
+        // Reset button
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+        if (saveBtnText) saveBtnText.textContent = originalText;
+        if (saveBtnSpinner) saveBtnSpinner.classList.add('hidden');
+      }
+    }
+
+    // ── Auto-save Checkboxes ─────────────────────────────────────────
+    function attachCheckboxListeners() {
+      var autoSaveCheckboxes = document.querySelectorAll('.settings-section-form input[type="radio"]');
+      autoSaveCheckboxes.forEach(function(chk) {
+        chk.removeEventListener('change', chk.changeHandler);
+        chk.changeHandler = function(e) {
+          if (confirm('Are you sure you want to update this setting?')) {
+            var form = this.closest('.settings-section-form');
+            if (form && typeof handleSaveSettings === 'function') {
+              handleSaveSettings(form);
+            }
+          } else {
+            // It's a radio, reverting is tricky without keeping old state, but UI will reflect change briefly.
+          }
+        };
+        chk.addEventListener('change', chk.changeHandler);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', attachCheckboxListeners);
+    document.addEventListener('astro:page-load', attachCheckboxListeners);
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      attachCheckboxListeners();
+    }
+    // ── Toast Helper ────────────────────────────────────────────────────
+    function showSettingsToast(msg, type) {
+      var toast = document.getElementById('settings-toast');
+      var inner = document.getElementById('settings-toast-inner');
+      var icon = document.getElementById('settings-toast-icon');
+      var msgEl = document.getElementById('settings-toast-msg');
+      if (!toast || !inner || !icon || !msgEl) return;
+
+      msgEl.textContent = msg;
+      icon.textContent = type === 'success' ? '✅' : '❌';
+      inner.className = 'flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-white text-sm font-medium ' +
+        (type === 'success' ? 'bg-green-600' : 'bg-red-600');
+
+      toast.classList.remove('hidden');
+      setTimeout(function() {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      }, 10);
+
+      setTimeout(function() {
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(function() { toast.classList.add('hidden'); }, 300);
+      }, 3000);
+      window.dispatchEvent(new CustomEvent('settings-saved', { detail: { type: type } }));
+    }
+  </script>
+
+  <script is:inline data-astro-rerun>
+    // ── Branding Live Preview ─────────────────────────────────────────
+    (function() {
+      var logoInput = document.getElementById('logo_url');
+      var faviconInput = document.getElementById('favicon_url');
+      var adminLogoInput = document.getElementById('admin_logo_url');
+      var adminTitleInput = document.getElementById('admin_title');
+      var previewLogo = document.getElementById('preview-logo');
+      var previewAdminLogo = document.getElementById('preview-admin-logo');
+      var previewAdminTitle = document.getElementById('preview-admin-title');
+
+      if (logoInput && previewLogo) {
+        logoInput.addEventListener('input', function() {
+          previewLogo.src = this.value || '/logo-Your Brand.webp';
+        });
+      }
+      if (adminLogoInput && previewAdminLogo) {
+        adminLogoInput.addEventListener('input', function() {
+          previewAdminLogo.src = this.value || '/favicon.ico';
+        });
+      }
+      if (adminTitleInput && previewAdminTitle) {
+        adminTitleInput.addEventListener('input', function() {
+          previewAdminTitle.textContent = this.value || 'Admin Panel';
+        });
+      }
+    })();
+  </script>
+
+  <script is:inline>
+    // ── Image Upload Handling ─────────────────────────────────────────
+    async function handleImageUpload(inputEl, targetInputId) {
+      let btn = null;
+      let originalText = 'Upload';
+      
+      try {
+        if (!inputEl.files || inputEl.files.length === 0) return;
+        const file = inputEl.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        btn = inputEl.previousElementSibling;
+        if (btn && btn.tagName === 'BUTTON') {
+          originalText = btn.innerText || 'Upload';
+          btn.innerText = '...';
+          btn.disabled = true;
+        }
+
+        const res = await fetch('/api/admin/upload?_tenant_id=' + encodeURIComponent(window.__targetStoreId), {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        let data;
+        try {
+          data = await res.json();
+        } catch (e) {
+          console.error('Failed to parse JSON:', e);
+          data = { success: false, error: 'Invalid server response' };
+        }
+        
+        if (data.success) {
+          const targetInput = document.getElementById(targetInputId);
+          if (targetInput) {
+            targetInput.value = data.url;
+            targetInput.dispatchEvent(new Event('input'));
+            
+            // Explicitly sync team members if it's a team image
+            const match = targetInputId.match(/team_img_(\d+)/);
+            if (match && typeof updateTeamMember === 'function') {
+              updateTeamMember(parseInt(match[1]), 'image_url', data.url);
+            }
+          }
+          const previewImg = document.getElementById('preview-admin-logo');
+          if (previewImg) {
+            previewImg.src = data.url;
+          }
+          showSettingsToast('Image uploaded successfully', 'success');
+        } else {
+          showSettingsToast('Upload failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (err) {
+        console.error('Upload crash:', err);
+        showSettingsToast('Upload error: ' + err.message, 'error');
+      } finally {
+        if (btn && btn.tagName === 'BUTTON') {
+          btn.innerText = originalText;
+          btn.disabled = false;
+        }
+        inputEl.value = ''; // Reset input so same file can be uploaded again
+      }
+    }
+
+    // ── Team Members Management ───────────────────────────────────────
+    let teamMembers = [];
+    
+    function initTeamData() {
+      try {
+        const dataDiv = document.getElementById('team-members-data');
+        if (dataDiv && dataDiv.dataset.members) {
+          let parsed = JSON.parse(decodeURIComponent(dataDiv.dataset.members));
+          if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+          if (Array.isArray(parsed)) {
+            teamMembers = parsed;
+          }
+        }
+        const visibility = dataDiv ? dataDiv.dataset.visibility : 'visible';
+        const radio = document.querySelector(`input[name="team_visibility"][value="${visibility}"]`);
+        if (radio) radio.checked = true;
+        
+        if (teamMembers.length === 0) {
+          const storedTeam = document.getElementById('team_members_json')?.value;
+          if (storedTeam && storedTeam !== '[]') {
+            let parsed = JSON.parse(decodeURIComponent(storedTeam));
+            if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+            if (Array.isArray(parsed)) {
+              teamMembers = parsed;
+            }
+          }
+        }
+      } catch(e) {
+        console.error("Error parsing team data:", e);
+        teamMembers = [];
+      }
+      
+      const input = document.getElementById('team_members_json');
+      if (input) input.value = JSON.stringify(teamMembers);
+    }
+
+    function renderTeamMembers() {
+      const container = document.getElementById('team-members-container');
+      if (!container) return;
+
+      if (!Array.isArray(teamMembers)) teamMembers = [];
+
+      if (teamMembers.length === 0) {
+        container.innerHTML = '<p class="text-sm text-secondary/50 text-center py-4 border border-dashed border-gray-200 rounded-lg">No team members added yet.</p>';
+        return;
+      }
+
+      container.innerHTML = teamMembers.map((member, index) => `
+        <div class="team-member-item bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col sm:flex-row gap-4 items-start sm:items-center relative">
+          <div class="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-secondary mb-1">Name</label>
+              <input type="text" class="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none" value="${member.name || ''}" oninput="updateTeamMember(${index}, 'name', this.value)" placeholder="e.g. John Doe" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-secondary mb-1">Role</label>
+              <input type="text" class="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none" value="${member.role || ''}" oninput="updateTeamMember(${index}, 'role', this.value)" placeholder="e.g. CTO" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-medium text-secondary mb-1">Image URL</label>
+              <div class="flex gap-2">
+                <input id="team_img_${index}" type="text" class="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none" value="${member.image_url || ''}" oninput="updateTeamMember(${index}, 'image_url', this.value)" placeholder="https://..." />
+                <button type="button" class="px-3 py-1.5 bg-white hover:bg-gray-100 text-secondary text-xs font-medium rounded-md border border-gray-300 transition-colors" onclick="this.nextElementSibling.click()">Upload</button>
+                <input type="file" class="hidden" accept="image/*" onchange="handleImageUpload(this, 'team_img_${index}')" />
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2 shrink-0">
+            ${member.image_url ? '<img src="' + member.image_url + '" class="w-12 h-12 object-cover rounded-full border border-gray-200" />' : '<div class="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 text-xs">No Img</div>'}
+            <button type="button" onclick="removeTeamMember(${index})" class="text-xs text-red-500 hover:text-red-700 font-medium">Remove</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addTeamMember() {
+      teamMembers.push({ name: '', role: '', image_url: '' });
+      renderTeamMembers();
+      const input = document.getElementById('team_members_json');
+      if (input) input.value = JSON.stringify(teamMembers);
+    }
+
+    function updateTeamMember(index, field, value) {
+      if (teamMembers[index]) {
+        teamMembers[index][field] = value;
+      }
+      if (field === 'image_url') {
+        renderTeamMembers(); // re-render to show image
+      }
+      const input = document.getElementById('team_members_json');
+      if (input) input.value = JSON.stringify(teamMembers);
+    }
+
+    function removeTeamMember(index) {
+      if(confirm('Remove this team member?')) {
+        teamMembers.splice(index, 1);
+        renderTeamMembers();
+        const input = document.getElementById('team_members_json');
+        if (input) input.value = JSON.stringify(teamMembers);
+      }
+    }
+
+    function prepareTeamData(e) {
+      // Updates the hidden input before form submit
+      document.getElementById('team_members_json').value = JSON.stringify(teamMembers);
+    }
+
+    let faqs = [];
+    
+    function initFaqData() {
+      try {
+        const storedFaqs = document.getElementById('faqs_json')?.value;
+        if (storedFaqs) {
+          faqs = JSON.parse(storedFaqs);
+        } else {
+          faqs = [];
+        }
+      } catch(e) { faqs = []; }
+    }
+    
+    function initAll() {
+      initTeamData();
+      initFaqData();
+      renderTeamMembers();
+      renderFaqs();
+    }
+
+    document.addEventListener('DOMContentLoaded', initAll);
+    document.addEventListener('astro:page-load', initAll);
+    
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initAll();
+    }
+
+    function renderFaqs() {
+      const container = document.getElementById('faqs-container');
+      if (!container) return;
+      
+      if (faqs.length === 0) {
+        container.innerHTML = '<p class="text-sm text-secondary/50 text-center py-4 border border-dashed border-gray-200 rounded-lg">No FAQs added yet.</p>';
+        return;
+      }
+      
+      container.innerHTML = faqs.map((faq, index) => `
+        <div class="faq-item bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col gap-3 relative">
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Question</label>
+            <input type="text" class="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none" value="${faq.question || ''}" onchange="updateFaq(${index}, 'question', this.value)" placeholder="e.g. What is your return policy?" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Answer</label>
+            <textarea rows="3" class="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none" onchange="updateFaq(${index}, 'answer', this.value)" placeholder="e.g. We offer a 30-day return policy...">${faq.answer || ''}</textarea>
+          </div>
+          <button type="button" onclick="removeFaq(${index})" class="absolute top-4 right-4 text-xs text-red-500 hover:text-red-700 font-medium bg-red-50 px-2 py-1 rounded">Remove</button>
+        </div>
+      `).join('');
+    }
+
+    function addFaq() {
+      faqs.push({ question: '', answer: '' });
+      renderFaqs();
+      const input = document.getElementById('faqs_json');
+      if (input) input.value = JSON.stringify(faqs);
+      if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'faq_update', faqs: faqs }, '*');
+      if (mobileFrame && mobileFrame.contentWindow) mobileFrame.contentWindow.postMessage({ type: 'faq_update', faqs: faqs }, '*');
+    }
+
+    function updateFaq(index, field, value) {
+      if (faqs[index]) {
+        faqs[index][field] = value;
+        const input = document.getElementById('faqs_json');
+        if (input) input.value = JSON.stringify(faqs);
+        if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'faq_update', faqs: faqs }, '*');
+        if (mobileFrame && mobileFrame.contentWindow) mobileFrame.contentWindow.postMessage({ type: 'faq_update', faqs: faqs }, '*');
+      }
+    }
+
+    function removeFaq(index) {
+      if (index >= 0 && index < faqs.length) {
+        faqs.splice(index, 1);
+        renderFaqs();
+        const input = document.getElementById('faqs_json');
+        if (input) input.value = JSON.stringify(faqs);
+        if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'faq_update', faqs: faqs }, '*');
+        if (mobileFrame && mobileFrame.contentWindow) mobileFrame.contentWindow.postMessage({ type: 'faq_update', faqs: faqs }, '*');
+      }
+    }
+
+    function prepareFaqData(e) {
+      const input = document.getElementById('faqs_json');
+      if (input) input.value = JSON.stringify(faqs);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderFaqs();
+    });
+
+    // Also call directly for Astro client-side navigation
+    renderFaqs();
+
+  </script>
+
+  <!-- Tab Switching Logic -->
+  <script is:inline data-astro-rerun>
+    // Tab preview URL mapping
+    var tabPreviewUrls = {
+      branding: "/",
+      company: "/",
+      homepage: "/",
+      about: "/about",
+      pages: "/contact",
+      policies: "/privacy-policy",
+      faq: "/faq",
+      checkout: "/"
+    };
+
+    function switchTab(tabId) {
+      // Hide all panels
+      var panels = document.querySelectorAll('.tab-panel');
+      for (var i = 0; i < panels.length; i++) {
+        panels[i].classList.add('hidden');
+      }
+      
+      // Show target panel
+      var target = document.querySelector('[data-tab-content="' + tabId + '"]');
+      if (target) {
+        target.classList.remove('hidden');
+      } else {
+        console.warn('switchTab: panel not found for tab:', tabId);
+        return;
+      }
+
+      // Update active tab button styling
+      var btns = document.querySelectorAll('.store-tab');
+      for (var j = 0; j < btns.length; j++) {
+        btns[j].classList.remove('bg-primary', 'text-white', 'shadow-sm');
+        btns[j].classList.add('bg-white', 'text-secondary', 'hover:bg-gray-100');
+      }
+      var activeBtn = document.querySelector('.store-tab[data-tab="' + tabId + '"]');
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-white', 'text-secondary', 'hover:bg-gray-100');
+        activeBtn.classList.add('bg-primary', 'text-white', 'shadow-sm');
+      }
+
+      // Update live preview
+      var url = tabPreviewUrls[tabId] || '/';
+      var frame = document.getElementById('live-preview-frame');
+      var badge = document.getElementById('preview-url-badge');
+      var mobileFrame = document.getElementById('mobile-preview-frame');
+      var mobileBadge = document.getElementById('mobile-preview-badge');
+      if (frame) frame.src = url;
+      if (badge) badge.textContent = url;
+      if (mobileFrame) mobileFrame.src = url;
+      if (mobileBadge) mobileBadge.textContent = url;
+
+      // Scroll left pane to top
+      try {
+        var leftPane = document.querySelector('.overflow-y-auto');
+        if (leftPane) leftPane.scrollTop = 0;
+      } catch (e) {
+        // ignore scroll errors
+      }
+    }
+  </script>
+
+<!-- Live Preview Panel -->
+  <div class="w-full lg:w-[48%] hidden lg:flex flex-col bg-white border-l border-gray-200 overflow-hidden h-full" style="height: 100%;">
+    <div class="px-4 py-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center shrink-0">
+      <span class="text-sm font-bold text-secondary flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+        Live Preview
+      </span>
+      <div class="flex items-center gap-2">
+        <span id="preview-url-badge" class="text-xs bg-primary/10 text-primary px-2 py-1 rounded font-mono">/</span>
+        <button onclick="document.getElementById('live-preview-frame').src = document.getElementById('live-preview-frame').src" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-600 px-2 py-1 rounded transition-colors" title="Refresh preview">&#8635;</button>
+      </div>
+    </div>
+    <iframe id="live-preview-frame" src="/" class="w-full flex-1 bg-white border-0" style="pointer-events:auto;"></iframe>
+  </div>
+</div>
+
+<script is:inline data-astro-rerun>
+  (function() {
+    const frame = document.getElementById("live-preview-frame");
+    const badge = document.getElementById("preview-url-badge");
+    const mobileFrame = document.getElementById("mobile-preview-frame");
+    const mobileBadge = document.getElementById("mobile-preview-badge");
+
+    const pageMap = {
+      "About Us": "/about",
+      "Bulk Order": "/bulk-order",
+      "Contact Us": "/contact",
+      "Privacy Policy": "/privacy-policy",
+      "Terms": "/terms",
+      "Refund Policy": "/refund-policy",
+      "Shipping Policy": "/shipping-policy",
+      "Sustainability": "/sustainability",
+      "Warranty": "/warranty",
+      "Delivery": "/delivery",
+      "FAQ": "/faq"
+    };
+
+    function updateAllPreviews(page) {
+      const url = pageMap[page];
+      if (!url) return;
+      
+      if (frame) {
+        frame.src = url;
+      }
+      if (badge) {
+        badge.textContent = url;
+      }
+      if (mobileFrame) {
+        mobileFrame.src = url;
+      }
+      if (mobileBadge) {
+        mobileBadge.textContent = url;
+      }
+    }
+
+    function syncAllSettingsToFrame(targetFrame) {
+      if (!targetFrame || !targetFrame.contentWindow) return;
+      document.querySelectorAll('.settings-section-form input[name], .settings-section-form textarea[name]').forEach(function(el) {
+        if (!el.name) return;
+        var val = el.value;
+        if (el.type === 'checkbox' || el.type === 'radio') {
+          if (!el.checked) return;
+          val = el.value;
+        }
+        const msg = {
+          type: 'settings_update',
+          key: el.name,
+          value: val
+        };
+        targetFrame.contentWindow.postMessage(msg, '*');
+      });
+    }
+
+    if (frame) {
+      frame.addEventListener('load', function() {
+        syncAllSettingsToFrame(frame);
+      });
+    }
+    if (mobileFrame) {
+      mobileFrame.addEventListener('load', function() {
+        syncAllSettingsToFrame(mobileFrame);
+      });
+    }
+
+    // Toggle logic for the exclusive accordion
+    document.querySelectorAll("details[data-page]").forEach(function(d) {
+      d.addEventListener("toggle", function() {
+        if (this.open) {
+          document.querySelectorAll("details[data-page]").forEach(function(other) {
+            if (other !== d) other.removeAttribute("open");
+          });
+          const page = this.getAttribute("data-page");
+          updateAllPreviews(page);
+        }
+      });
+    });
+
+    // Hook into the toast to auto-reload after save
+    window.addEventListener('settings-saved', function(e) {
+      if (e.detail && e.detail.type === "success") {
+        setTimeout(function() { 
+          if (frame) frame.src = frame.src; 
+          if (mobileFrame) mobileFrame.src = mobileFrame.src;
+        }, 600);
+      }
+    });
+
+  // Dynamic scaling removed in favor of native modal
+
+    // Realtime Live Preview dispatcher
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        const msg = {
+          type: 'settings_update',
+          key: e.target.name,
+          value: e.target.value
+        };
+        if (frame && frame.contentWindow) {
+          frame.contentWindow.postMessage(msg, '*');
+        }
+        if (mobileFrame && mobileFrame.contentWindow) {
+          mobileFrame.contentWindow.postMessage(msg, '*');
+        }
+      }
+    });
+  })();
+</script>
+
+  <!-- Mobile Preview Modal -->
+  <div id="mobile-preview-modal" class="fixed inset-0 z-[100] hidden flex-col items-center justify-center bg-black/80 backdrop-blur-sm p-4" onclick="if(event.target === this) closeMobilePreviewModal()">
+    <div class="w-full max-w-[360px] flex flex-col gap-3">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between bg-white/10 p-3 rounded-xl border border-white/20 backdrop-blur-md">
+        <div class="flex items-center gap-2">
+          <span id="mobile-preview-badge" class="text-[10px] bg-primary/20 text-white px-2 py-0.5 rounded font-mono">/</span>
+          <button type="button" onclick="document.getElementById('mobile-preview-frame').src = document.getElementById('mobile-preview-frame').src" class="text-[10px] bg-white/20 hover:bg-white/30 text-white px-2 py-0.5 rounded transition-colors" title="Refresh Mobile">&#8635;</button>
+        </div>
+        <button type="button" onclick="closeMobilePreviewModal()" class="text-white hover:text-red-400 bg-white/10 hover:bg-white/20 rounded-full p-1 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+        </button>
+      </div>
+      <!-- 9:16 Frame Container -->
+      <div class="w-full relative aspect-[9/16] bg-white rounded-[2rem] overflow-hidden shadow-2xl border-[6px] border-gray-900 mx-auto max-h-[75vh]">
+        <iframe id="mobile-preview-frame" src="/" class="absolute top-0 left-0 w-full h-full border-0 bg-white"></iframe>
+      </div>
+    </div>
+  </div>
+
+<script is:inline data-astro-rerun>
+  function openMobilePreviewModal() {
+    document.getElementById('mobile-preview-modal').classList.remove('hidden');
+    document.getElementById('mobile-preview-modal').classList.add('flex');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeMobilePreviewModal() {
+    document.getElementById('mobile-preview-modal').classList.add('hidden');
+    document.getElementById('mobile-preview-modal').classList.remove('flex');
+    document.body.style.overflow = '';
+  }
+</script>
+
+
+</AdminLayout>
+
+<script data-astro-rerun>
+  // Add JS to handle Custom Domain Form
+  document.addEventListener('DOMContentLoaded', () => {
+    const domainForm = document.getElementById('custom-domain-form');
+    const msgBox = document.getElementById('domain-msg');
+    const submitBtn = document.getElementById('domain-submit-btn');
+    const removeBtn = document.getElementById('remove-domain-btn');
+
+    const showMsg = (msg, type) => {
+      msgBox.textContent = msg;
+      msgBox.className = `text-sm p-3 rounded-lg mt-2 ${type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`;
+      msgBox.classList.remove('hidden');
+    };
+
+    if (domainForm) {
+      domainForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const customDomain = document.getElementById('custom_domain').value;
+        if (!customDomain) return;
+
+        // UI Loading State
+        submitBtn.querySelector('.save-btn-text').textContent = 'Connecting...';
+        submitBtn.querySelector('.save-btn-spinner').classList.remove('hidden');
+        submitBtn.disabled = true;
+        msgBox.classList.add('hidden');
+
+        try {
+          const res = await fetch('/api/admin/update-domain?_tenant_id=' + encodeURIComponent(window.__targetStoreId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ custom_domain: customDomain, action: 'add' })
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to connect domain');
+
+          showMsg('Domain successfully connected! Please ensure you have added the CNAME record in your registrar.', 'success');
+          setTimeout(() => window.location.reload(), 2000);
+        } catch (err) {
+          showMsg(err.message, 'error');
+        } finally {
+          submitBtn.querySelector('.save-btn-text').textContent = 'Connect Domain';
+          submitBtn.querySelector('.save-btn-spinner').classList.add('hidden');
+          submitBtn.disabled = false;
+        }
+      });
+    }
+
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to disconnect this domain? Your store will immediately revert to the VyaparPe subdomain.')) return;
+        
+        removeBtn.textContent = 'Removing...';
+        removeBtn.disabled = true;
+        msgBox.classList.add('hidden');
+
+        try {
+          const customDomain = document.getElementById('custom_domain').value;
+          const res = await fetch('/api/admin/update-domain?_tenant_id=' + encodeURIComponent(window.__targetStoreId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ custom_domain: customDomain, action: 'remove' })
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to remove domain');
+
+          showMsg('Domain removed successfully.', 'success');
+          setTimeout(() => window.location.reload(), 1500);
+        } catch (err) {
+          showMsg(err.message, 'error');
+          removeBtn.textContent = 'Remove';
+          removeBtn.disabled = false;
+        }
+      });
+    }
+
+    // --- NEW: Redirect Domains Logic ---
+    const redirectForm = document.getElementById('redirect-domains-form');
+    if (redirectForm) {
+      redirectForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const redirectDomainInput = document.getElementById('new_redirect_domain');
+        const customDomain = redirectDomainInput.value;
+        if (!customDomain) return;
+
+        const btn = document.getElementById('add-redirect-btn');
+        const msgBox = document.getElementById('redirect-domain-msg');
+        
+        btn.querySelector('.save-btn-text').textContent = 'Adding...';
+        btn.querySelector('.save-btn-spinner').classList.remove('hidden');
+        btn.disabled = true;
+        msgBox.classList.add('hidden');
+
+        try {
+          const res = await fetch('/api/admin/update-domain?_tenant_id=' + encodeURIComponent(window.__targetStoreId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ custom_domain: customDomain, action: 'add_redirect' })
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to add redirect domain');
+
+          msgBox.textContent = 'Redirect domain added successfully!';
+          msgBox.className = 'text-sm p-3 rounded-lg mt-2 bg-green-50 text-green-700 border border-green-200';
+          msgBox.classList.remove('hidden');
+          setTimeout(() => window.location.reload(), 1500);
+        } catch (err) {
+          msgBox.textContent = err.message;
+          msgBox.className = 'text-sm p-3 rounded-lg mt-2 bg-red-50 text-red-700 border border-red-200';
+          msgBox.classList.remove('hidden');
+        } finally {
+          btn.querySelector('.save-btn-text').textContent = 'Add Redirect';
+          btn.querySelector('.save-btn-spinner').classList.add('hidden');
+          btn.disabled = false;
+        }
+      });
+    }
+
+    // --- Domain Status Checker ---
+    async function checkDomainStatus(domain, type) {
+      if (!domain) return;
+      
+      let badge, infoBox;
+      if (type === 'primary') {
+        badge = document.getElementById('primary-domain-status-badge');
+        infoBox = document.getElementById('primary-domain-error-info');
+      } else {
+        badge = document.getElementById(`redirect-status-${domain.replace(/\./g, '-')}`);
+      }
+
+      if (!badge) return;
+
+      badge.textContent = 'Checking...';
+      badge.className = 'px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800 animate-pulse';
+      if (infoBox) infoBox.classList.add('hidden');
+
+      try {
+        const res = await fetch(`/api/admin/check-domain?domain=${encodeURIComponent(domain)}&_tenant_id=${encodeURIComponent(window.__targetStoreId)}`);
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Check failed');
+
+        if (data.verified) {
+          badge.textContent = 'Active';
+          badge.className = 'px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800';
+        } else {
+          badge.textContent = 'Pending Verification';
+          badge.className = 'px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-800';
+          
+          if (infoBox && data.verification && data.verification.length > 0) {
+            const v = data.verification[0];
+            infoBox.innerHTML = `<strong>Action Required:</strong> Missing ${v.type} record.<br/>Host: <code>${v.domain}</code><br/>Value: <code>${v.value}</code>`;
+            infoBox.classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        badge.textContent = 'Error';
+        badge.className = 'px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800';
+      }
+    }
+    window.checkDomainStatus = checkDomainStatus;
+
+    window.removeRedirectDomain = async function(domain) {
+      if (!confirm(`Are you sure you want to remove ${domain}?`)) return;
+      try {
+        const res = await fetch('/api/admin/update-domain?_tenant_id=' + encodeURIComponent(window.__targetStoreId), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ custom_domain: domain, action: 'remove_redirect' })
+        });
+        if (!res.ok) throw new Error('Failed');
+        window.location.reload();
+      } catch (err) {
+        alert('Failed to remove domain: ' + err.message);
+      }
+    };
+
+    // Auto-check primary domain on load if it exists
+    const primaryInput = document.getElementById('custom_domain');
+    if (primaryInput && primaryInput.value && document.getElementById('primary-domain-status-badge')) {
+      checkDomainStatus(primaryInput.value, 'primary');
+    }
+
+    // Auto-check all redirect domains on load
+    const redirectDomainsArr = window.__redirectDomains || [];
+    redirectDomainsArr.forEach(d => checkDomainStatus(d, 'redirect'));
+  });
+</script>

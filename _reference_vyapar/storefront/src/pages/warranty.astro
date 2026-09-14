@@ -1,0 +1,61 @@
+---
+import PolicyLayout from '../layouts/PolicyLayout.astro';
+import { getSettings } from '../lib/database';
+
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : '';
+};
+const brandName = settings?.brand_name || '';
+---
+
+<PolicyLayout title="Warranty" lastUpdated="May 2026">
+  {s('page_warranty_0') && (
+  <div data-setting="page_warranty_0" data-setting-html><Fragment set:html={s('page_warranty_0')} /></div>
+)}
+
+  {s('page_warranty_1') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Product Quality Guarantee</h2>
+  <div data-setting="page_warranty_1" data-setting-html><Fragment set:html={s('page_warranty_1')} /></div>
+  </>
+)}
+
+  {s('page_warranty_2') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Return Policy</h2>
+  <div data-setting="page_warranty_2" data-setting-html><Fragment set:html={s('page_warranty_2')} /></div>
+  </>
+)}
+
+  {s('page_warranty_3') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Refund Process</h2>
+  <div data-setting="page_warranty_3" data-setting-html><Fragment set:html={s('page_warranty_3')} /></div>
+  </>
+)}
+
+  {s('page_warranty_4') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Damaged or Defective Products</h2>
+  <div data-setting="page_warranty_4" data-setting-html><Fragment set:html={s('page_warranty_4')} /></div>
+  </>
+)}
+
+  {s('page_warranty_5') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Exchanges</h2>
+  <div data-setting="page_warranty_5" data-setting-html><Fragment set:html={s('page_warranty_5')} /></div>
+  </>
+)}
+
+  {s('page_warranty_6') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">Contact Us</h2>
+  <div data-setting="page_warranty_6" data-setting-html><Fragment set:html={s('page_warranty_6')} /></div>
+  </>
+)}
+
+</PolicyLayout>

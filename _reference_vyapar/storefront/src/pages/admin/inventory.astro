@@ -1,0 +1,457 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getProducts, getSettings, isSupabase, supabaseAdmin } from '../../lib/database';
+import { getPermissionContext } from '../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+const isSuperAdmin = ctx.adminRole === 'super_admin';
+const userPermissions = ctx.permissions;
+const canManage = isSuperAdmin || userPermissions['products'] === 'manage';
+
+const products = await getProducts(Astro.locals?.storeId);
+const settings = await getSettings(Astro.locals?.storeId);
+
+const globalInventoryTracking = settings.global_inventory_tracking === true || settings.global_inventory_tracking === 'true';
+const bulkOrderInventoryTracking = settings.bulk_order_inventory_tracking === true || settings.bulk_order_inventory_tracking === 'true';
+
+const locationId = Astro.url.searchParams.get('location_id') || '';
+let locations: any[] = [];
+let locationInventory: Record<string, number> = {};
+
+if (isSupabase && supabaseAdmin) {
+  const storeId = Astro.locals?.storeId;
+  const { data: locs } = await supabaseAdmin.from('locations').select('id, name').eq('store_id', storeId).eq('is_active', true);
+  if (locs) locations = locs;
+
+  if (locationId) {
+    const { data: inv } = await supabaseAdmin.from('inventory_levels').select('variant_id, available').eq('location_id', locationId).eq('store_id', storeId);
+    if (inv) {
+      inv.forEach(row => {
+        locationInventory[row.variant_id] = row.available;
+      });
+    }
+  }
+}
+
+const page = parseInt(Astro.url.searchParams.get('page') || '1', 10);
+const limit = 50;
+const searchQuery = (Astro.url.searchParams.get('q') || '').toLowerCase().trim();
+
+let filteredProducts = products;
+if (searchQuery) {
+  filteredProducts = filteredProducts.filter((p: any) => 
+    p.name.toLowerCase().includes(searchQuery) || 
+    (p.slug && p.slug.toLowerCase().includes(searchQuery))
+  );
+}
+
+const totalProducts = filteredProducts.length;
+const totalPages = Math.max(1, Math.ceil(totalProducts / limit));
+const paginatedProducts = filteredProducts.slice((page - 1) * limit, page * limit);
+
+// Flatten variants for easier display
+const flattenedVariants: any[] = [];
+paginatedProducts.forEach((p: any) => {
+  if (p.variants && p.variants.length > 0) {
+    p.variants.forEach((v: any, index: number) => {
+      flattenedVariants.push({
+        product_id: p.id,
+        variant_id: v.id,
+        product_name: p.name,
+        variant_name: v.weight || v.name || `Variant ${index + 1}`,
+        sku: v.sku || '-',
+        price: v.price || 0,
+        stock: locationId ? (locationInventory[v.id] || 0) : (v.stock || 0),
+        is_b2b: false,
+        track_inventory: p.track_inventory,
+        is_active: p.is_active
+      });
+    });
+  }
+  if (p.b2b_variants && p.b2b_variants.length > 0) {
+    p.b2b_variants.forEach((v: any, index: number) => {
+      flattenedVariants.push({
+        product_id: p.id,
+        variant_id: v.id,
+        product_name: p.name,
+        variant_name: v.weight || v.name || `B2B Variant ${index + 1}`,
+        sku: v.sku || '-',
+        price: v.price || 0,
+        stock: locationId ? (locationInventory[v.id] || 0) : (v.stock || 0),
+        is_b2b: true,
+        track_inventory: p.track_inventory,
+        is_active: p.is_active
+      });
+    });
+  }
+});
+---
+
+<AdminLayout title="Inventory Management | Admin Panel" description="Manage your product inventory and stock levels in bulk.">
+  <div class="flex flex-col justify-between items-start mb-6">
+    <h1 class="text-2xl font-serif font-bold text-secondary">Inventory Management</h1>
+    <p class="text-sm text-secondary/60 mt-1">Manage stock across all your products and configure global tracking settings.</p>
+  </div>
+
+  {locations.length > 0 && (
+    <div class="mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+      <label class="text-sm font-bold text-secondary uppercase tracking-wider">Select Location</label>
+      <select id="location-select" class="px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition outline-none text-sm font-medium w-64" onchange="window.location.href='?location_id=' + this.value">
+        <option value="">Global Stock (All Locations)</option>
+        {locations.map(loc => (
+          <option value={loc.id} selected={loc.id === locationId}>{loc.name}</option>
+        ))}
+      </select>
+      <span class="text-xs text-secondary/60">Select a specific warehouse or dark store to manage its local inventory.</span>
+    </div>
+  )}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <!-- Global Tracking Toggle -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+      <div>
+        <h3 class="font-bold text-secondary mb-1">Global Inventory Tracking</h3>
+        <p class="text-xs text-secondary/60 max-w-sm">Enable this to globally enforce inventory limits across the store. If off, stock levels are ignored.</p>
+      </div>
+      <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="global-tracking-toggle" class="sr-only peer" checked={globalInventoryTracking} disabled={!canManage} />
+        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+      </label>
+    </div>
+
+    <!-- Bulk Order Tracking Toggle -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <h3 class="font-bold text-secondary mb-1">Track Bulk Order Inventory</h3>
+          <p class="text-xs text-secondary/60 max-w-sm">Deduct inventory for bulk and B2B orders.</p>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="bulk-tracking-toggle" class="sr-only peer" checked={bulkOrderInventoryTracking} disabled={!canManage} />
+          <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+        </label>
+      </div>
+      <div id="bulk-tracking-warning" class={`text-xs text-amber-600 font-medium ${bulkOrderInventoryTracking ? 'block' : 'hidden'}`}>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        Custom variants in bulk orders will not be tracked.
+      </div>
+    </div>
+  </div>
+
+  {!locationId && locations.length > 0 && (
+    <div class="mb-6 bg-blue-50/50 border border-blue-100 p-4 rounded-xl flex items-start gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div>
+        <h4 class="text-sm font-bold text-blue-900">Global Stock is Read-Only</h4>
+        <p class="text-xs text-blue-700 mt-1">Global inventory is now automatically calculated by adding up the stock from all your locations. To update stock, please select a specific location from the dropdown above.</p>
+      </div>
+    </div>
+  )}
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="p-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gray-50/50">
+      <div class="flex items-center gap-4 w-full sm:w-auto">
+        <h2 class="font-bold text-secondary hidden sm:block">Product Stock Levels</h2>
+        <form action="" method="GET" class="relative flex-1 sm:w-64">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary/40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            name="q"
+            value={searchQuery}
+            type="search"
+            placeholder="Search products..."
+            class="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white"
+          />
+        </form>
+      </div>
+      <div class="flex gap-2 w-full sm:w-auto justify-end">
+        {canManage && locations.length > 1 && (
+          <button id="transfer-stock-btn" class="bg-purple-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-purple-700 transition shadow-sm flex items-center gap-2">
+            ⇄ Transfer Stock
+          </button>
+        )}
+        {canManage && !(!locationId && locations.length > 0) && (
+          <button id="save-inventory-btn" class="bg-primary text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-primary/90 transition shadow-sm disabled:opacity-50 flex items-center gap-2">
+            Save Changes
+          </button>
+        )}
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-white border-b border-gray-200">
+            <th class="py-3 px-4 text-xs font-semibold text-secondary/60 uppercase tracking-wider">Product Name</th>
+            <th class="py-3 px-4 text-xs font-semibold text-secondary/60 uppercase tracking-wider">Variant</th>
+            <th class="py-3 px-4 text-xs font-semibold text-secondary/60 uppercase tracking-wider">SKU</th>
+            <th class="py-3 px-4 text-xs font-semibold text-secondary/60 uppercase tracking-wider text-right">Available Stock</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100" id="inventory-table-body">
+          {flattenedVariants.map((v, i) => (
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="py-3 px-4 text-sm font-medium text-secondary">
+                {v.product_name}
+                {!v.track_inventory && <span class="ml-2 text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-normal">Tracking Off</span>}
+                {v.is_active === false && <span class="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Draft</span>}
+              </td>
+              <td class="py-3 px-4 text-sm text-secondary/80">
+                {v.variant_name}
+                {v.is_b2b && <span class="ml-2 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">B2B</span>}
+              </td>
+              <td class="py-3 px-4 text-sm text-secondary/60 font-mono text-xs">{v.sku}</td>
+              <td class="py-3 px-4 text-right">
+                <input 
+                  type="number" 
+                  class={`stock-input w-24 text-right px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none ${(!locationId && locations.length > 0) ? 'bg-gray-50 text-gray-500' : ''}`}
+                  value={v.stock}
+                  data-product-id={v.product_id}
+                  data-variant-id={v.variant_id}
+                  data-variant-name={v.variant_name}
+                  data-is-b2b={v.is_b2b ? 'true' : 'false'}
+                  min="0"
+                  disabled={!canManage || (!locationId && locations.length > 0)}
+                />
+              </td>
+            </tr>
+          ))}
+          {flattenedVariants.length === 0 && (
+            <tr>
+              <td colspan="4" class="py-8 text-center text-sm text-secondary/50">No products found.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+    
+    {totalPages > 1 && (
+      <div class="p-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white">
+        <span class="text-sm text-gray-500">Showing page {page} of {totalPages} ({totalProducts} products)</span>
+        <div class="flex gap-2">
+          {page > 1 && <a href={`?page=${page - 1}&q=${searchQuery}`} class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Previous</a>}
+          {page < totalPages && <a href={`?page=${page + 1}&q=${searchQuery}`} class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 bg-primary/5 text-primary border-primary/20">Next</a>}
+        </div>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<!-- Transfer Modal -->
+<div id="transfer-modal" class="fixed inset-0 z-50 bg-secondary/80 hidden items-center justify-center p-4">
+  <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
+    <h3 class="text-lg font-bold text-secondary mb-4">Transfer Stock</h3>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-bold text-secondary/60 uppercase mb-1">Product Variant</label>
+        <select id="transfer-variant" class="w-full border rounded-xl px-3 py-2 text-sm outline-none">
+          {flattenedVariants.map(v => (
+            <option value={v.variant_id}>{v.product_name} - {v.variant_name} (SKU: {v.sku})</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-secondary/60 uppercase mb-1">From Location</label>
+        <select id="transfer-from" class="w-full border rounded-xl px-3 py-2 text-sm outline-none">
+          {locations.map(loc => <option value={loc.id}>{loc.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-secondary/60 uppercase mb-1">To Location</label>
+        <select id="transfer-to" class="w-full border rounded-xl px-3 py-2 text-sm outline-none">
+          {locations.map(loc => <option value={loc.id}>{loc.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-secondary/60 uppercase mb-1">Quantity to Transfer</label>
+        <input type="number" id="transfer-qty" class="w-full border rounded-xl px-3 py-2 text-sm outline-none" min="1" value="1">
+      </div>
+      <div class="flex gap-2 pt-4 border-t mt-4">
+        <button id="transfer-cancel" class="flex-1 bg-gray-100 hover:bg-gray-200 text-secondary py-2 rounded-xl text-sm font-semibold transition-colors">Cancel</button>
+        <button id="transfer-submit" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-xl text-sm font-semibold transition-colors">Transfer Stock</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script is:inline>
+  document.addEventListener('astro:page-load', () => {
+    const globalToggle = document.getElementById('global-tracking-toggle');
+    const bulkToggle = document.getElementById('bulk-tracking-toggle');
+    const bulkWarning = document.getElementById('bulk-tracking-warning');
+    const saveBtn = document.getElementById('save-inventory-btn');
+    const stockInputs = document.querySelectorAll('.stock-input');
+
+    if (globalToggle && bulkToggle) {
+      globalToggle.addEventListener('change', () => {
+        if (!globalToggle.checked) {
+          bulkToggle.checked = false;
+          bulkToggle.disabled = true;
+          if (bulkWarning) {
+            bulkWarning.classList.remove('block');
+            bulkWarning.classList.add('hidden');
+          }
+        } else {
+          bulkToggle.disabled = false;
+        }
+      });
+
+      if (!globalToggle.checked) {
+        bulkToggle.disabled = true;
+      }
+    }
+
+    // Toggle Warning Text
+    if (bulkToggle && bulkWarning) {
+      bulkToggle.addEventListener('change', () => {
+        if (bulkToggle.checked) {
+          bulkWarning.classList.remove('hidden');
+          bulkWarning.classList.add('block');
+        } else {
+          bulkWarning.classList.remove('block');
+          bulkWarning.classList.add('hidden');
+        }
+      });
+    }
+
+    // Save changes
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="animate-spin mr-1">⚪</span> Saving...';
+
+        const updates = [];
+        let hasZeroStock = false;
+        
+        for (const input of stockInputs) {
+          const val = parseInt(input.value, 10);
+          if (isNaN(val) || val < 0) {
+            alert('Invalid stock value for ' + input.getAttribute('data-variant-name'));
+            saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Changes';
+            saveBtn.disabled = false;
+            return;
+          }
+          if (val === 0) hasZeroStock = true;
+          
+          updates.push({
+            product_id: input.getAttribute('data-product-id'),
+            variant_id: input.getAttribute('data-variant-id'),
+            variant_name: input.getAttribute('data-variant-name'),
+            is_b2b: input.getAttribute('data-is-b2b') === 'true',
+            stock: val
+          });
+        }
+
+        if (hasZeroStock) {
+          const confirmZero = confirm('One or more products are being set to 0 stock. They will show as "Out of Stock". Continue?');
+          if (!confirmZero) {
+            saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Changes';
+            saveBtn.disabled = false;
+            return;
+          }
+        }
+
+        try {
+          const response = await fetch('/api/admin/inventory', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              global_inventory_tracking: globalToggle?.checked || false,
+              bulk_order_inventory_tracking: bulkToggle?.checked || false,
+              location_id: document.getElementById('location-select')?.value || null,
+              stock_updates: updates
+            })
+          });
+
+          if (response.ok) {
+            saveBtn.innerHTML = '✅ Saved Successfully';
+            setTimeout(() => {
+              saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Changes';
+              saveBtn.disabled = false;
+            }, 2000);
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            alert('Server Error: ' + (errData.error || '') + ' Details: ' + JSON.stringify(errData.details || {}));
+            throw new Error(errData.error || 'Failed to save');
+          }
+        } catch (err) {
+          console.error(err);
+          saveBtn.innerHTML = '❌ Error';
+          setTimeout(() => {
+            saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Changes';
+            saveBtn.disabled = false;
+          }, 3000);
+        }
+      });
+    }
+
+    // Transfer Modal Logic
+    const transferBtn = document.getElementById('transfer-stock-btn');
+    const transferModal = document.getElementById('transfer-modal');
+    const transferCancel = document.getElementById('transfer-cancel');
+    const transferSubmit = document.getElementById('transfer-submit');
+
+    if (transferBtn && transferModal && transferCancel && transferSubmit) {
+      transferBtn.addEventListener('click', () => {
+        transferModal.classList.remove('hidden');
+        transferModal.classList.add('flex');
+      });
+
+      transferCancel.addEventListener('click', () => {
+        transferModal.classList.add('hidden');
+        transferModal.classList.remove('flex');
+      });
+
+      transferSubmit.addEventListener('click', async () => {
+        const variantId = document.getElementById('transfer-variant')?.value;
+        const fromLoc = document.getElementById('transfer-from')?.value;
+        const toLoc = document.getElementById('transfer-to')?.value;
+        const qty = document.getElementById('transfer-qty')?.value;
+
+        if (fromLoc === toLoc) {
+          alert('Source and destination locations must be different.');
+          return;
+        }
+
+        if (!qty || parseInt(qty) <= 0) {
+          alert('Quantity must be greater than 0.');
+          return;
+        }
+
+        transferSubmit.disabled = true;
+        transferSubmit.innerHTML = 'Transferring...';
+
+        try {
+          const res = await fetch('/api/admin/inventory-transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              variant_id: variantId,
+              from_location_id: fromLoc,
+              to_location_id: toLoc,
+              quantity: parseInt(qty)
+            })
+          });
+
+          if (res.ok) {
+            alert('Transfer successful!');
+            window.location.reload();
+          } else {
+            const data = await res.json();
+            alert(data.error || 'Failed to transfer stock');
+          }
+        } catch (e) {
+          alert('An error occurred during transfer.');
+        } finally {
+          transferSubmit.disabled = false;
+          transferSubmit.innerHTML = 'Transfer Stock';
+        }
+      });
+    }
+  });
+</script>

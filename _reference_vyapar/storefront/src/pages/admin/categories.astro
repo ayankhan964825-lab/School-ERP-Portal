@@ -1,0 +1,621 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "categories")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getCategories, getProducts } from '../../lib/database';
+
+const categories = await getCategories(Astro.locals?.storeId);
+// Load products from DB — so checkboxes reflect real category assignments
+const allProducts = await getProducts(Astro.locals?.storeId);
+const productsForModal = allProducts.map((p: any) => ({
+  slug: p.slug,
+  name: p.name,
+  category: p.category,
+  image: p.image || `/products/${p.slug}.webp`,
+}));
+
+// Build a list of potential parents (for the dropdown)
+const parentOptions = categories.map((c: any) => ({ id: c.id, name: c.name, slug: c.slug, parent_id: c.parent_id || null }));
+
+// Build a tree structure for display
+const catMap: Record<string, any> = {};
+categories.forEach((c: any) => { catMap[c.id] = { ...c, children: [] }; });
+const catTree: any[] = [];
+categories.forEach((c: any) => {
+  if (c.parent_id && catMap[c.parent_id]) {
+    catMap[c.parent_id].children.push(catMap[c.id]);
+  } else {
+    catTree.push(catMap[c.id]);
+  }
+});
+
+const categoriesForAI = JSON.stringify(categories.map((c: any) => ({
+  id: c.id,
+  name: c.name,
+  slug: c.slug,
+  product_count: c.product_count,
+})));
+
+const success = Astro.url.searchParams.get('success') === 'true';
+---
+
+<AdminLayout title="Categories | Admin Panel" description="Manage product categories.">
+  <div class="max-w-4xl">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Category Management</h1>
+        <p class="text-sm text-secondary/60 mt-1">Create and manage product categories. Categories control the storefront navigation and filter system.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/admin/bulk-upload/categories" title="BYO-AI Bulk Gen" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center justify-center gap-2 shrink-0 py-2.5 px-3 sm:px-4 shadow-sm text-sm rounded-xl">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          <span class="hidden sm:inline">BYO-AI Bulk Gen</span>
+        </a>
+        <button id="btn-add-category"
+          class="btn-primary !px-5 !py-2.5 !rounded-xl flex items-center gap-2 text-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+          Add Category
+        </button>
+      </div>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="categories"
+    title="Categories Assistant"
+      pageDataJson={categoriesForAI}
+      guideTitleEn="Categories Guide"
+      guideTitleHi="Categories Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Create:</strong> Click "Add Category" to create a new product category.</li>
+        <li><strong>Assign Products:</strong> You can assign existing products to a category directly from the edit modal.</li>
+        <li><strong>Delete:</strong> Categories can only be deleted if they have 0 products assigned to them.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Create:</strong> Nayi category banane ke liye "Add Category" pe click karein.</li>
+        <li><strong>Assign Products:</strong> Modal open karke aap products ko seedhe naye category me assign kar sakte hain.</li>
+        <li><strong>Delete:</strong> Category tabhi delete hogi jab usme koi product nahi hoga (0 products).</li>
+      </ul>`}
+      quickActions={[
+        { label: '➕ Add Category', query: 'nayi category banao' },
+        { label: '✨ Suggest Details', query: 'ek nayi Dry Fruits category banane ke liye details fill karo' },
+        { label: '📊 All Categories', query: 'kaun kaun si categories hain' },
+      ]}
+    />
+
+    {success && (
+      <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-xl border border-green-200 text-sm font-medium flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        Category saved successfully!
+      </div>
+    )}
+
+    <!-- Category Cards Grid -->
+    <div id="categories-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    {categories.length === 0 ? (
+        <div class="col-span-full text-center py-16 text-secondary/50">
+          <p class="text-lg font-medium mb-1">No categories yet</p>
+          <p class="text-sm">Click "Add Category" to create your first one.</p>
+        </div>
+      ) : (
+        catTree.map((cat: any, i: number) => {
+          const icons = [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.9C15.5 4.9 17 3.5 19 1c1 2 2 4.5 1 8-3.5 1-6 2-6 2s1.5 2 4 3c-.5 2.5-2 4.5-4 5.5"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 1 0 20 10 10 0 0 1 0-20z"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/><polyline points="16 16 12 12 8 16"/></svg>',
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+          ];
+          const icon = icons[i % icons.length];
+          const colors = [
+            'from-green-50 to-emerald-50 border-green-100',
+            'from-amber-50 to-yellow-50 border-amber-100',
+            'from-orange-50 to-red-50 border-orange-100',
+            'from-purple-50 to-violet-50 border-purple-100',
+            'from-blue-50 to-cyan-50 border-blue-100',
+          ];
+          const color = colors[i % colors.length];
+          const totalCount = cat.product_count + (cat.children || []).reduce((s: number, ch: any) => s + (ch.product_count || 0), 0);
+          return (
+            <div class="space-y-2">
+              <div class={`bg-gradient-to-br ${color} border rounded-2xl p-5 flex flex-col gap-4`}>
+                <div class="flex items-start justify-between">
+                  <div>
+                    {cat.image ? (
+                      <img src={cat.image} alt={cat.name} class="w-10 h-10 object-cover rounded-xl shadow-sm mb-3" />
+                    ) : (
+                      <div class="text-2xl mb-2 text-secondary/70" set:html={icon} />
+                    )}
+                    <h3 class="font-bold text-secondary">{cat.name}</h3>
+                    <p class="text-xs text-secondary/50 mt-0.5">/{cat.slug}</p>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <button
+                      class="edit-cat-btn p-2 bg-white/80 hover:bg-white text-secondary rounded-xl transition-colors shadow-sm"
+                      data-id={cat.id}
+                      data-name={cat.name}
+                      data-slug={cat.slug}
+                      data-desc={cat.description || ''}
+                      data-image={cat.image || ''}
+                      data-parent-id={cat.parent_id || ''}
+                      data-display-order={cat.display_order ?? 0}
+                      title="Edit"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between pt-3 border-t border-black/5">
+                  <div class="text-sm font-bold text-secondary">
+                    {totalCount} products
+                    {cat.children.length > 0 && <span class="text-xs font-normal text-secondary/50 ml-1">({cat.children.length} sub)</span>}
+                  </div>
+                  <a href={`/products?category=${cat.slug}`} target="_blank"
+                    class="text-xs font-medium text-primary hover:underline flex items-center gap-1">
+                    View on site
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  </a>
+                </div>
+              </div>
+              {/* Render children nested under parent */}
+              {cat.children.length > 0 && (
+                <div class="pl-6 space-y-2">
+                  {cat.children.map((child: any) => (
+                    <div class="bg-white border border-gray-100 rounded-xl p-3 flex items-center justify-between shadow-sm">
+                      <div class="flex items-center gap-3">
+                        {child.image ? (
+                          <img src={child.image} alt={child.name} class="w-8 h-8 object-cover rounded-lg" />
+                        ) : (
+                          <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-secondary/40">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+                          </div>
+                        )}
+                        <div>
+                          <p class="text-sm font-semibold text-secondary">{child.name}</p>
+                          <p class="text-[10px] text-secondary/40">/{child.slug} · {child.product_count} products</p>
+                        </div>
+                      </div>
+                      <button
+                        class="edit-cat-btn p-1.5 bg-gray-50 hover:bg-gray-100 text-secondary/60 rounded-lg transition-colors"
+                        data-id={child.id}
+                        data-name={child.name}
+                        data-slug={child.slug}
+                        data-desc={child.description || ''}
+                        data-image={child.image || ''}
+                        data-parent-id={child.parent_id || ''}
+                        data-display-order={child.display_order ?? 0}
+                        title="Edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      <!-- "Add New" Placeholder Card -->
+      <button id="btn-add-placeholder"
+        class="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-5 flex flex-col items-center justify-center gap-2 text-secondary/40 hover:border-primary hover:text-primary transition-colors min-h-[160px]">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+        <span class="text-sm font-medium">New Category</span>
+      </button>
+    </div>
+
+    <!-- Info Card -->
+    <div class="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-sm text-blue-800">
+      <p class="font-bold mb-1 flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        How categories work
+      </p>
+      <ul class="space-y-1 text-blue-700/80 text-xs list-disc list-inside">
+        <li>Categories are derived from the product catalog — every product belongs to one category.</li>
+        <li>To change a product's category, edit the product and update its Category field.</li>
+        <li>Creating a new category here makes it available as an option when adding/editing products.</li>
+        <li>Deleting a category is only possible when no products are assigned to it.</li>
+      </ul>
+    </div>
+  </div>
+
+
+<!-- ── ADD / EDIT CATEGORY MODAL ─────────────────────────── -->
+<div id="category-modal" class="fixed inset-0 bg-secondary/80 backdrop-blur-sm z-50 hidden flex-col justify-end sm:justify-center sm:p-4">
+  <div class="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-xl mx-auto flex flex-col overflow-hidden max-h-[90vh] sm:max-h-[85vh] animate-slide-up sm:animate-fade-in">
+    <!-- Modal Header -->
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/80 backdrop-blur shrink-0">
+      <h2 id="modal-title" class="text-lg font-bold text-secondary">Add Category</h2>
+      <button id="close-cat-modal" class="text-secondary/50 hover:text-secondary transition-colors p-1 rounded-lg hover:bg-gray-200/50">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    
+    <!-- Modal Body (Scrollable) -->
+    <div class="p-6 overflow-y-auto flex-1">
+      <form id="category-form" class="space-y-5">
+        <input type="hidden" id="cat-edit-id" value="" />
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-1.5">Category Name <span class="text-red-500">*</span></label>
+          <input type="text" id="cat-name" required placeholder="e.g. Dry Fruits" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-1.5">URL Slug</label>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-secondary/40 font-mono hidden sm:inline">/products?category=</span>
+            <input type="text" id="cat-slug" placeholder="dry-fruits" class="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-mono transition-colors" />
+          </div>
+          <p class="text-[10px] sm:text-xs text-secondary/40 mt-1">Auto-generated from name. Edit if needed.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-1.5">Thumbnail Image</label>
+          <div class="flex items-start gap-3">
+            <div id="cat-image-preview" class="w-16 h-16 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-secondary/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            </div>
+            <div class="flex-1">
+              <input type="url" id="cat-image" placeholder="https://..." class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+              <div class="flex items-center gap-3 mt-2">
+                <input type="file" id="cat-image-upload" accept="image/*" class="hidden" />
+                <button type="button" id="btn-upload-thumb" class="text-xs font-medium bg-primary/10 text-primary px-3 py-1.5 rounded-lg hover:bg-primary/20 transition-colors flex items-center gap-1.5 cursor-pointer">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  Upload File
+                </button>
+                <span class="text-secondary/30 text-xs">or</span>
+                <a href="/admin/media" target="_blank" class="text-xs text-primary hover:underline font-medium">📂 Media Library</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-3">
+          <div>
+            <label class="block text-sm font-medium text-secondary mb-1.5">Parent Category</label>
+            <select id="cat-parent" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors bg-white">
+              <option value="">None (Top Level)</option>
+              {parentOptions.map((p: any) => (
+                <option value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary mb-1.5">Display Order</label>
+            <input type="number" id="cat-display-order" value="0" min="0" placeholder="0" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+          </div>
+        </div>
+        <div>
+          <label class="flex justify-between items-center text-sm font-medium text-secondary mb-1.5">
+            <span>Description (optional)</span>
+            <button type="button" onclick="const name = document.getElementById('cat-name').value; if(name) document.getElementById('cat-desc').value = 'Explore premium quality ' + name + ' at Your Brand. 100% natural and preservatives free.';" class="text-primary hover:text-primary/80 font-bold text-[10px] flex items-center gap-1">
+              <span>✨</span> Auto Gen
+            </button>
+          </label>
+          <textarea id="cat-desc" rows="2" placeholder="A short description for the category page..." class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm resize-none transition-colors"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-2 flex justify-between items-center">
+            Assigned Products
+            <span class="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-full font-bold" id="assigned-count">0 selected</span>
+          </label>
+          <div class="border border-gray-200 rounded-xl bg-gray-50/50 overflow-hidden">
+            <div class="relative border-b border-gray-200">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg>
+              </div>
+              <input type="text" id="product-search" placeholder="Search products..." class="w-full pl-9 pr-3 py-2.5 text-sm bg-transparent outline-none focus:bg-white transition-colors" />
+            </div>
+            <div class="max-h-52 overflow-y-auto p-2 space-y-1" id="product-list">
+              {productsForModal.map((p: any) => (
+                <label class="product-item flex items-center gap-3 p-2 bg-white rounded-lg border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all cursor-pointer group" data-name={p.name.toLowerCase()}>
+                  <input type="checkbox" name="assigned_products" value={p.slug} data-category={p.category} class="product-checkbox w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary transition-all" />
+                  <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <img src={p.image} class="w-8 h-8 rounded-md bg-gray-100 object-cover flex-shrink-0" onerror="this.src='/placeholder-product.webp'" />
+                    <span class="text-sm font-medium text-secondary truncate group-hover:text-primary transition-colors">{p.name}</span>
+                  </div>
+                  <span class="text-[10px] text-secondary/40 font-mono flex-shrink-0 bg-gray-100 px-1.5 py-0.5 rounded-md hidden sm:block">{p.category}</span>
+                </label>
+              ))}
+              {productsForModal.length === 0 && (
+                <div class="text-center py-6 text-secondary/40 text-sm">No products found</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+    
+    <!-- Modal Footer (Sticky) -->
+    <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between shrink-0">
+      <button type="button" id="cat-delete-btn" class="hidden text-sm text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">Delete</button>
+      <div class="flex gap-3 ml-auto w-full sm:w-auto">
+        <button type="button" id="cancel-cat-modal" class="flex-1 sm:flex-none px-6 py-3 sm:py-2.5 text-sm font-medium text-secondary bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">Cancel</button>
+        <button type="submit" form="category-form" class="btn-primary flex-1 sm:flex-none !px-8 !py-3 sm:!py-2.5 !rounded-xl text-sm">Save Category</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  @keyframes slide-up {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .animate-slide-up { animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  @media (min-width: 640px) {
+    .sm\\:animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
+  }
+</style>
+
+<script data-astro-rerun>
+  const modal = document.getElementById('category-modal');
+  const modalTitle = document.getElementById('modal-title');
+  const catNameInput = document.getElementById('cat-name');
+  const catSlugInput = document.getElementById('cat-slug');
+  const catDescInput = document.getElementById('cat-desc');
+  const catImageInput = document.getElementById('cat-image');
+  const catEditId = document.getElementById('cat-edit-id');
+  const deleteBtn = document.getElementById('cat-delete-btn');
+  const productCheckboxes = document.querySelectorAll('.product-checkbox');
+  const assignedCount = document.getElementById('assigned-count');
+  const catParentSelect = document.getElementById('cat-parent');
+  const catDisplayOrder = document.getElementById('cat-display-order');
+  const catImagePreview = document.getElementById('cat-image-preview');
+
+  // Live image preview
+  catImageInput?.addEventListener('input', () => {
+    const url = (catImageInput).value.trim();
+    if (catImagePreview) {
+      if (url) {
+        catImagePreview.innerHTML = `<img src="${url}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\'text-xs text-red-400\'>Invalid</span>'" />`;
+      } else {
+        catImagePreview.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-secondary/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>';
+      }
+    }
+  });
+
+  const updateCount = () => {
+    const count = Array.from(productCheckboxes).filter(cb => cb.checked).length;
+    if (assignedCount) assignedCount.textContent = `${count} selected`;
+  };
+
+  productCheckboxes.forEach(cb => cb.addEventListener('change', updateCount));
+
+  const openModal = (title, id = '', name = '', slug = '', desc = '', image = '', parentId = '', displayOrder = '0') => {
+    if (modalTitle) modalTitle.textContent = title;
+    (catEditId).value = id;
+    (catNameInput).value = name;
+    (catSlugInput).value = slug;
+    (catDescInput).value = desc;
+    if (catImageInput) (catImageInput).value = image;
+    if (catParentSelect) {
+      catParentSelect.value = parentId;
+      // Disable self-reference: hide the current category from parent options
+      Array.from(catParentSelect.options).forEach(opt => {
+        opt.hidden = (opt.value === id && id !== '');
+      });
+    }
+    if (catDisplayOrder) catDisplayOrder.value = displayOrder;
+    slugManuallyEdited = !!slug;
+
+    // Show image preview
+    if (catImagePreview) {
+      if (image) {
+        catImagePreview.innerHTML = `<img src="${image}" class="w-full h-full object-cover" />`;
+      } else {
+        catImagePreview.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-secondary/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>';
+      }
+    }
+
+    // ✅ Pre-check based on REAL DB category (data-category attribute)
+    productCheckboxes.forEach(cb => {
+      cb.checked = (slug !== '' && cb.dataset.category === slug);
+    });
+    updateCount();
+
+    deleteBtn?.classList.toggle('hidden', !id);
+    modal?.classList.remove('hidden');
+    modal?.classList.add('flex');
+    catNameInput.focus();
+  };
+  const closeModal = () => { modal?.classList.add('hidden'); modal?.classList.remove('flex'); };
+
+  // Product search filter
+  document.getElementById('product-search')?.addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    document.querySelectorAll('.product-item').forEach(item => {
+      item.style.display = item.dataset.name?.includes(q) ? '' : 'none';
+    });
+  });
+
+  // Select All / Deselect All for current category
+  document.getElementById('btn-add-category')?.addEventListener('click', () => openModal('Add Category'));
+  document.getElementById('btn-add-placeholder')?.addEventListener('click', () => openModal('Add Category'));
+  document.getElementById('close-cat-modal')?.addEventListener('click', closeModal);
+  document.getElementById('cancel-cat-modal')?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+  // Edit buttons
+  document.querySelectorAll('.edit-cat-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      openModal('Edit Category', this.dataset.id || '', this.dataset.name || '', this.dataset.slug || '', this.dataset.desc || '', this.dataset.image || '', this.dataset.parentId || '', this.dataset.displayOrder || '0');
+    });
+  });
+
+  // Auto-slug from name
+  let slugManuallyEdited = false;
+  catSlugInput?.addEventListener('input', () => { slugManuallyEdited = true; });
+  catNameInput?.addEventListener('input', () => {
+    if (slugManuallyEdited) return;
+    catSlugInput.value = catNameInput.value.toLowerCase().trim()
+      .replace(/[^\w\s-]/g, '').replace(/[\s_]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  });
+
+  // Direct File Upload Logic
+  const catImageUpload = document.getElementById('cat-image-upload');
+  const btnUploadThumb = document.getElementById('btn-upload-thumb');
+
+  btnUploadThumb?.addEventListener('click', () => catImageUpload?.click());
+
+  catImageUpload?.addEventListener('change', async (e) => {
+    const file = (e.target).files?.[0];
+    if (!file) return;
+
+    const originalText = btnUploadThumb.innerHTML;
+    btnUploadThumb.innerHTML = 'Uploading...';
+    btnUploadThumb.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('filename', `category_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.\-]/g, '_')}`);
+
+    try {
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.url) {
+        if (catImageInput) {
+          (catImageInput).value = data.url;
+          catImageInput.dispatchEvent(new Event('input')); // Trigger preview
+        }
+      } else {
+        alert('Upload failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Upload failed. See console.');
+    } finally {
+      btnUploadThumb.innerHTML = originalText;
+      btnUploadThumb.disabled = false;
+      catImageUpload.value = ''; // Reset input
+    }
+  });
+
+  // Automatically update preview when URL input changes
+  catImageInput?.addEventListener('input', () => {
+    if (catImagePreview && catImageInput) {
+      const url = (catImageInput).value.trim();
+      if (url) {
+        catImagePreview.innerHTML = `<img src="${url}" class="w-full h-full object-cover" />`;
+      } else {
+        catImagePreview.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-secondary/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>';
+      }
+    }
+  });
+
+  // Form submit — real API call
+  document.getElementById('category-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = catNameInput.value.trim();
+    if (!name) { catNameInput.focus(); return; }
+
+    const id = catEditId.value;
+    const action = id ? 'update' : 'create';
+    
+    const assignedProducts = Array.from(productCheckboxes)
+      .filter(cb => cb.checked)
+      .map(cb => cb.value);
+
+    const body = {
+      action,
+      id: id || undefined,
+      name,
+      slug: (catSlugInput).value.trim() || name.toLowerCase().replace(/\s+/g, '-'),
+      description: (catDescInput).value.trim(),
+      image: (catImageInput)?.value.trim() || null,
+      parent_id: catParentSelect?.value || null,
+      display_order: parseInt(catDisplayOrder?.value || '0', 10),
+      assigned_products: assignedProducts,
+    };
+
+    try {
+      const saveBtn = document.querySelector('#category-form button[type="submit"]');
+      if (saveBtn) { saveBtn.textContent = 'Saving...'; saveBtn.disabled = true; }
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = '/admin/categories?success=true';
+      } else {
+        alert('Error: ' + (data.error || 'Failed to save category'));
+        if (saveBtn) { saveBtn.textContent = 'Save Category'; saveBtn.disabled = false; }
+      }
+    } catch (err) {
+      alert('Network error. Please try again.');
+    }
+  });
+
+  // Delete — real API call
+  deleteBtn?.addEventListener('click', async () => {
+    const id = catEditId.value;
+    const name = catNameInput.value;
+    if (!confirm(`Delete category "${name}"? Make sure no products use this category first.`)) return;
+
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = '/admin/categories?success=true';
+      } else {
+        alert('Error: ' + (data.error || 'Failed to delete'));
+      }
+    } catch (err) {
+      alert('Network error. Please try again.');
+    }
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'open_add_form') {
+      var btn = document.getElementById('btn-add-category');
+      if (btn) btn.click();
+    }
+    else if (action === 'fill_category_form') {
+      var btn = document.getElementById('btn-add-category');
+      var modal = document.getElementById('modal-category');
+      if (btn && modal && modal.classList.contains('hidden')) {
+        btn.click();
+      }
+      setTimeout(() => {
+        if (params.name) document.getElementById('cat-name').value = params.name;
+        if (params.slug) document.getElementById('cat-slug').value = params.slug;
+        if (params.description) document.getElementById('cat-desc').value = params.description;
+        
+        // Notify user to review
+        const saveBtn = document.querySelector('#category-form button[type="submit"]');
+        if (saveBtn) {
+          const orig = saveBtn.innerHTML;
+          saveBtn.innerHTML = '✨ Review & Save';
+          saveBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(() => {
+            saveBtn.innerHTML = orig;
+            saveBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+          }, 3000);
+        }
+      }, 100);
+    }
+    else if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+  });
+</script>
+
+</AdminLayout>

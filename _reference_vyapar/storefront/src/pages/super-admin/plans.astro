@@ -1,0 +1,247 @@
+---
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+import { getPermissionContext, canManagePlans } from '../../lib/permissions';
+import type { SubscriptionPlan } from '../../lib/types/admin';
+import { getCsrfToken } from '../../lib/csrf';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManagePlans(ctx)) {
+  return Astro.redirect('/super-admin/login');
+}
+
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Fetch all subscription plans
+let plans = [];
+try {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .select('*')
+    .order('sort_order', { ascending: true });
+
+  if (error) throw error;
+  plans = data || [];
+} catch (error) {
+  console.error('Error fetching plans:', error);
+}
+---
+
+<SuperAdminLayout title="Subscription Plans | VyaparPe">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Subscription Plans</h1>
+      <p class="text-slate-500 text-sm mt-1">Manage SaaS pricing tiers, limits, and commission rates.</p>
+    </div>
+    <button onclick="document.getElementById('plan-modal').classList.remove('hidden')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+      + Create New Plan
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {plans?.map((plan: SubscriptionPlan) => (
+      <div class="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col relative group">
+        {!plan.is_active && (
+          <div class="absolute top-4 right-4 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider">Inactive</div>
+        )}
+        <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+          <div class="flex items-center gap-2 mb-2">
+            <h3 class="font-bold text-lg text-slate-900">{plan.name}</h3>
+            <span class="bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded font-mono">{plan.slug}</span>
+          </div>
+          <div class="text-3xl font-extrabold text-slate-900">
+            {plan.plan_type === 'free' && 'Free'}
+            {plan.plan_type === 'monthly' && `₹${plan.price_monthly}`}
+            {plan.plan_type === 'yearly' && `₹${plan.price_yearly}/yr`}
+            {plan.plan_type === 'onetime' && `₹${plan.price_onetime}`}
+            {plan.plan_type === 'commission' && 'Rev-Share'}
+            {plan.plan_type === 'marketplace' && 'Marketplace'}
+          </div>
+          {plan.plan_type === 'monthly' && <div class="text-sm text-slate-500 mt-1">/ month</div>}
+        </div>
+
+        <div class="p-6 flex-1 space-y-4">
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-slate-500">Platform Commission</span>
+            <span class="font-bold text-slate-900">{plan.commission_rate}%</span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-slate-500">Max Products</span>
+            <span class="font-bold text-slate-900">{plan.max_products}</span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-slate-500">Max Staff</span>
+            <span class="font-bold text-slate-900">{plan.max_staff}</span>
+          </div>
+
+          <div class="pt-4 border-t border-slate-100">
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Features</div>
+            <ul class="space-y-2 text-sm text-slate-600">
+              <li class="flex items-center gap-2">
+                {plan.features?.custom_domain ? <span class="text-green-500">✓</span> : <span class="text-slate-300">✗</span>}
+                Custom Domain
+              </li>
+              <li class="flex items-center gap-2">
+                {plan.features?.premium_themes ? <span class="text-green-500">✓</span> : <span class="text-slate-300">✗</span>}
+                Premium Themes
+              </li>
+              <li class="flex items-center gap-2">
+                {plan.features?.marketplace_access ? <span class="text-green-500">✓</span> : <span class="text-slate-300">✗</span>}
+                Marketplace Access
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="p-4 border-t border-slate-100 bg-slate-50 flex gap-2">
+          <button 
+            onclick="editPlan(this)"
+            data-plan={JSON.stringify(plan)}
+            class="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+            Edit Plan
+          </button>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Create/Edit Plan Modal -->
+  <div id="plan-modal" class="fixed inset-0 bg-slate-900/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
+        <h2 class="text-xl font-bold text-slate-900" id="modal-title">Create Subscription Plan</h2>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <form action="/api/super-admin/plans" method="POST" class="p-6" id="plan-form">
+        <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name="id" id="plan_id" value="" />
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Plan Name</label>
+            <input type="text" name="name" id="plan_name" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="e.g. Pro Tier" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Slug (Unique ID)</label>
+            <input type="text" name="slug" id="plan_slug" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="e.g. pro-tier" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Billing Type</label>
+            <select name="plan_type" id="plan_type" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="free">Free</option>
+              <option value="monthly">Monthly Subscription</option>
+              <option value="yearly">Yearly Subscription</option>
+              <option value="onetime">One-Time / Ownership</option>
+              <option value="commission">Commission Only (Ad-Spend)</option>
+              <option value="marketplace">Marketplace Only</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
+            <select name="is_active" id="plan_active" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <option value="true">Active (Visible to users)</option>
+              <option value="false">Inactive (Hidden)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Monthly Price (₹)</label>
+            <input type="number" step="0.01" name="price_monthly" id="price_monthly" value="0" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Yearly Price (₹)</label>
+            <input type="number" step="0.01" name="price_yearly" id="price_yearly" value="0" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">One-Time Price (₹)</label>
+            <input type="number" step="0.01" name="price_onetime" id="price_onetime" value="0" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Commission Rate (%)</label>
+            <input type="number" step="0.01" name="commission_rate" id="commission_rate" value="5.0" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Digital Commission Rate (%)</label>
+            <input type="number" step="0.01" name="digital_commission_rate" id="digital_commission_rate" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="e.g. 2.0" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Max Products</label>
+            <input type="number" name="max_products" id="max_products" value="50" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Max Staff Accounts</label>
+            <input type="number" name="max_staff" id="max_staff" value="3" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-slate-700 mb-3">Feature Flags</label>
+          <div class="space-y-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="feat_custom_domain" id="feat_custom_domain" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Custom Domain Support</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="feat_premium_themes" id="feat_premium_themes" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Premium Themes & Visual Editor</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="feat_marketplace_access" id="feat_marketplace_access" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-700">Marketplace Listing Access</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm font-medium hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">Save Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script is:inline>
+    function closeModal() {
+      document.getElementById('plan-modal').classList.add('hidden');
+      document.getElementById('plan-form').reset();
+      document.getElementById('plan_id').value = '';
+      document.getElementById('modal-title').innerText = 'Create Subscription Plan';
+    }
+
+    function editPlan(btn) {
+      const plan = JSON.parse(btn.getAttribute('data-plan'));
+      document.getElementById('plan_id').value = plan.id;
+      document.getElementById('plan_name').value = plan.name;
+      document.getElementById('plan_slug').value = plan.slug;
+      document.getElementById('plan_type').value = plan.plan_type;
+      document.getElementById('plan_active').value = plan.is_active ? 'true' : 'false';
+      
+      document.getElementById('price_monthly').value = plan.price_monthly || 0;
+      document.getElementById('price_yearly').value = plan.price_yearly || 0;
+      document.getElementById('price_onetime').value = plan.price_onetime || 0;
+      document.getElementById('commission_rate').value = plan.commission_rate || 5.0;
+      document.getElementById('digital_commission_rate').value = plan.digital_commission_rate || '';
+      
+      document.getElementById('max_products').value = plan.max_products || 50;
+      document.getElementById('max_staff').value = plan.max_staff || 3;
+
+      document.getElementById('feat_custom_domain').checked = !!plan.features?.custom_domain;
+      document.getElementById('feat_premium_themes').checked = !!plan.features?.premium_themes;
+      document.getElementById('feat_marketplace_access').checked = !!plan.features?.marketplace_access;
+
+      document.getElementById('modal-title').innerText = 'Edit Subscription Plan';
+      document.getElementById('plan-modal').classList.remove('hidden');
+    }
+  </script>
+</SuperAdminLayout>

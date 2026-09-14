@@ -1,0 +1,442 @@
+---
+import { verifyCustomerAuth } from '../../lib/auth';
+
+if (!verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value)) {
+  return Astro.redirect('/account/login');
+}
+
+// Force logout for legacy sessions that don't have login_method tracked
+if (!Astro.cookies.get('login_method')?.value) {
+  Astro.cookies.delete('customer_auth', { path: '/' });
+  return Astro.redirect('/account/login');
+}
+
+import Layout from '../../layouts/Layout.astro';
+import AccountSidebar from '../../components/AccountSidebar.astro';
+import { getCustomerById, getOrdersByCustomerId, getEnrichedAddresses } from '../../lib/database';
+import { storeContext } from '../../lib/storeContext';
+import { getEffectiveAuthMode } from '../../lib/auth';
+
+const customerId = verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value) || '';
+
+// Fetch auth mode early to infer missing login_method
+const { authMode, otpLength, hasTwilio } = await getEffectiveAuthMode(Astro.locals?.storeId);
+const hasBothMode = authMode === 'both';
+
+const loginMethod = Astro.cookies.get('login_method')?.value || '';
+const isEmailAuth = loginMethod === 'email';
+
+let customer: any = null;
+let phone = '';
+let email = '';
+let myOrders: any[] = [];
+
+await storeContext.run({ storeId: Astro.locals.storeId as string }, async () => {
+  if (customerId) {
+    customer = await getCustomerById(customerId);
+    phone = customer?.phone || '';
+    email = customer?.email || '';
+  }
+  
+  if (customer && customer.id) {
+    myOrders = await getOrdersByCustomerId(customer.id);
+  }
+});
+
+// A credential is ONLY verified if it was used to authenticate the current session
+const phoneVerified = !isEmailAuth && !!phone;
+const emailVerified = isEmailAuth && !!customer?.email;
+const canCrossVerify = hasBothMode;
+
+let addresses: any[] = [];
+if (phone) {
+  await storeContext.run({ storeId: Astro.locals.storeId as string }, async () => {
+    addresses = await getEnrichedAddresses(phone, Astro.locals.storeId as string);
+  });
+}
+
+const displayEmail = customer?.email || '';
+const displayId = customer?.name || (isEmailAuth ? displayEmail : phone);
+---
+
+<Layout bodyClass="bg-background-alt" title="My Account" description="Manage your account, orders, and addresses.">
+  <div class="min-h-screen bg-background-alt pt-16 pb-16">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+
+      <!-- Page Header -->
+      <div class="mb-8 pt-6">
+        <h1 class="text-2xl font-serif font-bold text-secondary">My Account</h1>
+        <p class="text-sm text-secondary/50 mt-1">Welcome back, <span class="text-primary font-medium">{customer?.name || displayId}</span></p>
+      </div>
+
+      <div class="flex flex-col lg:flex-row gap-6">
+
+        <AccountSidebar activeTab="profile" customer={customer} phone={phone} emailFromCookie={displayEmail} isEmailAuth={isEmailAuth} addressesCount={addresses.length} ordersCount={myOrders.length} className="hidden lg:block" />
+
+        <!-- ──── MAIN CONTENT ──── -->
+        <div id="account-main-content" class="flex-1 min-w-0 space-y-6">
+          <!-- Mobile Back Button -->
+          <a href="/account" class="lg:hidden flex items-center gap-2 text-secondary hover:text-primary transition-colors font-medium mb-2 px-2 py-1 bg-white rounded-lg shadow-sm border border-gray-100 w-fit">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Menu
+          </a>
+
+          <!-- ── PROFILE SECTION ── -->
+          <section id="section-profile">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div class="flex items-center gap-3 px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 class="text-base font-bold text-secondary">Profile Details</h2>
+                  <p class="text-xs text-secondary/50">Update your personal information</p>
+                </div>
+              </div>
+
+              <form action="/api/account/update-profile" method="POST" class="p-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div>
+                    <label class="block text-sm font-medium text-secondary mb-2">Full Name</label>
+                    <input
+                      type="text" name="name" value={customer?.name || ''} placeholder="Your full name"
+                      class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-secondary mb-2">
+                      Mobile Number
+                      {phoneVerified && <span class="ml-2 text-xs bg-green-100 text-green-600 font-medium px-2 py-0.5 rounded-full">Verified ✓</span>}
+                      {hasBothMode && !phoneVerified && phone && <span class="ml-2 text-xs bg-amber-100 text-amber-600 font-medium px-2 py-0.5 rounded-full">Not verified</span>}
+                    </label>
+                    <div class="relative">
+                      {phoneVerified ? (
+                        <>
+                          <input type="text" value={phone} disabled
+                            class="w-full px-4 py-3 border border-gray-100 rounded-xl bg-gray-50 text-sm text-secondary/50 cursor-not-allowed"
+                          />
+                          {canCrossVerify && (
+                            <button type="button" id="change-phone-btn"
+                              class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline">Change</button>
+                          )}
+                        </>
+                      ) : (
+                        <input
+                          type="text" name="phone" value={phone} placeholder="Your mobile number"
+                          class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all"
+                        />
+                      )}
+                    </div>
+                    {hasBothMode && !phoneVerified && (
+                      <button type="button" id="verify-phone-btn"
+                        class="mt-2 text-xs text-primary font-medium hover:underline flex items-center gap-1">
+                        📱 Verify phone number to enable SMS login
+                      </button>
+                    )}
+                  </div>
+                  <div class="sm:col-span-2">
+                    <label class="block text-sm font-medium text-secondary mb-2">
+                      Email Address
+                      {emailVerified && <span class="ml-2 text-xs bg-green-100 text-green-600 font-medium px-2 py-0.5 rounded-full">Verified ✓</span>}
+                      {hasBothMode && !emailVerified && customer?.email && <span class="ml-2 text-xs bg-amber-100 text-amber-600 font-medium px-2 py-0.5 rounded-full">Not verified</span>}
+                    </label>
+                    <div class="relative">
+                      {emailVerified ? (
+                        <>
+                          <input type="text" value={customer?.email || ''} disabled
+                            class="w-full px-4 py-3 border border-gray-100 rounded-xl bg-gray-50 text-sm text-secondary/50 cursor-not-allowed"
+                          />
+                          {canCrossVerify && (
+                            <button type="button" id="change-email-btn"
+                              class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-primary hover:underline">Change</button>
+                          )}
+                        </>
+                      ) : (
+                        <input
+                          type="email" name="email" value={customer?.email || ''} placeholder="your@email.com"
+                          class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all"
+                        />
+                      )}
+                    </div>
+                    {hasBothMode && !emailVerified && (
+                      <button type="button" id="verify-email-btn"
+                        class="mt-2 text-xs text-primary font-medium hover:underline flex items-center gap-1">
+                        📧 Verify email address to enable email login
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div class="mt-6 flex items-center gap-3">
+                  <button type="submit" class="btn-primary text-sm px-6 py-2.5">
+                    Save Changes
+                  </button>
+                  <p class="text-xs text-secondary/40">Changes apply immediately</p>
+                </div>
+              </form>
+
+              {/* 2-Step Verification Modal */}
+              <div id="cross-verify-modal" class="hidden border-t border-gray-100">
+                <div class="p-6 bg-amber-50">
+                  <div class="flex items-start gap-3 mb-4">
+                    <span class="text-2xl" id="modal-icon">🔐</span>
+                    <div>
+                      <p class="text-sm font-bold text-secondary" id="modal-title">Verify Identity</p>
+                      <p class="text-xs text-secondary/60 mt-0.5" id="modal-desc">We will send a code to your existing credential to unlock edits.</p>
+                    </div>
+                  </div>
+                  
+                  <div id="modal-body-content">
+                    <!-- Dynamic fields will be injected here by JS -->
+                  </div>
+
+                  <p id="modal-error" class="hidden text-xs text-red-600 mt-3"></p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+
+<script define:vars={{ otpLength, hasTwilio }}>
+  // ── Smart 2-Step Profile Edit Modal ─────────────────────────
+  const modal = document.getElementById('cross-verify-modal');
+  const title = document.getElementById('modal-title');
+  const desc = document.getElementById('modal-desc');
+  const bodyContent = document.getElementById('modal-body-content');
+  const errorMsg = document.getElementById('modal-error');
+  
+  let changeType = '';
+  let newValue = '';
+  let currentStep = 0; 
+  /* 
+    0 = Init (Request Unlock)
+    1 = Verify Old OTP
+    2 = Input New Value
+    3 = Verify New OTP
+  */
+
+  function showError(msg) {
+    if (errorMsg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.remove('hidden');
+    }
+  }
+  function hideError() {
+    if (errorMsg) errorMsg.classList.add('hidden');
+  }
+
+  function renderStep() {
+    hideError();
+    if (currentStep === 0) {
+      title.textContent = 'Verify Identity';
+      desc.textContent = `We need to verify your identity before you can change your ${changeType}.`;
+      bodyContent.innerHTML = `
+        <div class="flex gap-3 mt-4">
+          <button id="action-btn" class="btn-primary text-sm px-5 py-2.5">Send Verification Code</button>
+          <button id="cancel-btn" class="text-sm px-5 py-2.5 border border-gray-200 rounded-xl text-secondary hover:bg-gray-50 transition-colors">Cancel</button>
+        </div>
+      `;
+      document.getElementById('action-btn').onclick = requestUnlockOtp;
+      document.getElementById('cancel-btn').onclick = () => modal.classList.add('hidden');
+    } 
+    else if (currentStep === 1) {
+      title.textContent = 'Enter Verification Code';
+      desc.textContent = `Enter the OTP sent to your existing ${changeType}.`;
+      bodyContent.innerHTML = `
+        <input id="otp-input" type="text" maxlength="${otpLength}" placeholder="${Array(otpLength).fill('_').join('')}" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm tracking-[0.5em] text-center font-bold mb-4 outline-none" autocomplete="one-time-code" />
+        <div class="flex gap-3">
+          <button id="action-btn" class="btn-primary text-sm px-5 py-2.5">Verify & Unlock</button>
+          <button id="cancel-btn" class="text-sm px-5 py-2.5 border border-gray-200 rounded-xl text-secondary hover:bg-gray-50 transition-colors">Cancel</button>
+        </div>
+      `;
+      document.getElementById('action-btn').onclick = verifyUnlockOtp;
+      document.getElementById('cancel-btn').onclick = () => modal.classList.add('hidden');
+    }
+    else if (currentStep === 2) {
+      title.textContent = `Enter New ${changeType === 'phone' ? 'Phone Number' : 'Email Address'}`;
+      desc.textContent = `What is your new ${changeType}?`;
+      bodyContent.innerHTML = `
+        <input id="new-val-input" type="${changeType === 'phone' ? 'tel' : 'email'}" placeholder="${changeType === 'phone' ? '10-digit number' : 'your@email.com'}" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm mb-4 outline-none" />
+        <div class="flex gap-3">
+          <button id="action-btn" class="btn-primary text-sm px-5 py-2.5">Continue</button>
+          <button id="cancel-btn" class="text-sm px-5 py-2.5 border border-gray-200 rounded-xl text-secondary hover:bg-gray-50 transition-colors">Cancel</button>
+        </div>
+      `;
+      document.getElementById('action-btn').onclick = requestNewOtp;
+      document.getElementById('cancel-btn').onclick = () => modal.classList.add('hidden');
+    }
+    else if (currentStep === 3) {
+      title.textContent = 'Confirm New Value';
+      desc.textContent = `Enter the OTP sent to your NEW ${changeType} to confirm.`;
+      bodyContent.innerHTML = `
+        <input id="new-otp-input" type="text" maxlength="${otpLength}" placeholder="${Array(otpLength).fill('_').join('')}" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm tracking-[0.5em] text-center font-bold mb-4 outline-none" autocomplete="one-time-code" />
+        <div class="flex gap-3">
+          <button id="action-btn" class="btn-primary text-sm px-5 py-2.5">Save Changes</button>
+          <button id="cancel-btn" class="text-sm px-5 py-2.5 border border-gray-200 rounded-xl text-secondary hover:bg-gray-50 transition-colors">Cancel</button>
+        </div>
+      `;
+      document.getElementById('action-btn').onclick = confirmChange;
+      document.getElementById('cancel-btn').onclick = () => modal.classList.add('hidden');
+    }
+  }
+
+  function openWizard(type, verifyOnly = false) {
+    changeType = type;
+    modal.classList.remove('hidden');
+    if (verifyOnly) {
+       newValue = document.querySelector(`input[name="${type}"]`)?.value || '';
+       if (newValue) {
+           requestNewOtp();
+       }
+    } else {
+       currentStep = 0;
+       renderStep();
+    }
+  }
+
+  document.getElementById('change-phone-btn')?.addEventListener('click', () => openWizard('phone'));
+  document.getElementById('change-email-btn')?.addEventListener('click', () => openWizard('email'));
+  document.getElementById('verify-email-btn')?.addEventListener('click', () => openWizard('email', true));
+  document.getElementById('verify-phone-btn')?.addEventListener('click', () => openWizard('phone', true));
+
+  async function requestUnlockOtp() {
+    const btn = document.getElementById('action-btn');
+    btn.disabled = true; btn.textContent = 'Sending...';
+    try {
+      const res = await fetch('/api/account/request-unlock-otp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changeType })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.bypassed) {
+          // No old credential to unlock, skip to step 2
+          currentStep = 2;
+          renderStep();
+        } else {
+          currentStep = 1;
+          renderStep();
+        }
+      } else {
+        showError(data.error || 'Failed to send OTP');
+        btn.disabled = false; btn.textContent = 'Try Again';
+      }
+    } catch (e) {
+      showError('Network Error');
+      btn.disabled = false; btn.textContent = 'Try Again';
+    }
+  }
+
+  async function verifyUnlockOtp() {
+    const otp = document.getElementById('otp-input').value.trim();
+    if (!otp) return showError('Enter OTP');
+    const btn = document.getElementById('action-btn');
+    btn.disabled = true; btn.textContent = 'Verifying...';
+    try {
+      const res = await fetch('/api/account/verify-unlock-otp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changeType, otp })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        currentStep = 2;
+        renderStep();
+      } else {
+        showError(data.error || 'Invalid OTP');
+        btn.disabled = false; btn.textContent = 'Verify & Unlock';
+      }
+    } catch (e) {
+      showError('Network Error');
+      btn.disabled = false; btn.textContent = 'Verify & Unlock';
+    }
+  }
+
+  async function requestNewOtp() {
+    if (currentStep === 2) {
+        const inputEl = document.getElementById('new-val-input');
+        if (inputEl) newValue = inputEl.value.trim();
+    }
+    if (!newValue) return showError('Enter a valid value');
+    
+    // Check if we can bypass OTP for Phone
+    if (changeType === 'phone' && !hasTwilio) {
+      // Twilio disabled! Bypass step 3, save directly.
+      return confirmChangeBypassed();
+    }
+
+    const btn = document.getElementById('action-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+    try {
+      const res = await fetch('/api/account/request-new-otp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changeType, newValue })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        currentStep = 3;
+        renderStep();
+      } else {
+        showError(data.error || 'Failed to send OTP');
+        if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+      }
+    } catch (e) {
+      showError('Network Error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+    }
+  }
+
+  async function confirmChange() {
+    const otp = document.getElementById('new-otp-input').value.trim();
+    if (!otp) return showError('Enter OTP');
+    const btn = document.getElementById('action-btn');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+      const res = await fetch('/api/account/confirm-change', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changeType, newValue, otp })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Updated successfully!');
+        window.location.reload();
+      } else {
+        showError(data.error || 'Failed to save');
+        btn.disabled = false; btn.textContent = 'Save Changes';
+      }
+    } catch (e) {
+      showError('Network Error');
+      btn.disabled = false; btn.textContent = 'Save Changes';
+    }
+  }
+
+  async function confirmChangeBypassed() {
+    const btn = document.getElementById('action-btn');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+      // Pass a dummy OTP, backend will ignore it because hasTwilio=false
+      const res = await fetch('/api/account/confirm-change', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changeType, newValue, otp: '1111' }) 
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Updated successfully!');
+        window.location.reload();
+      } else {
+        showError(data.error || 'Failed to save');
+        btn.disabled = false; btn.textContent = 'Continue';
+      }
+    } catch (e) {
+      showError('Network Error');
+      btn.disabled = false; btn.textContent = 'Continue';
+    }
+  }

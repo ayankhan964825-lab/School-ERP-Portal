@@ -1,0 +1,344 @@
+---
+import RiderLayout from '../../layouts/RiderLayout.astro';
+import { supabaseAdmin, isSupabase } from '../../lib/database';
+import { verifyRiderAuth } from '../../lib/auth';
+
+const token = Astro.cookies.get('vyaparpe_rider_id')?.value;
+if (!token) return Astro.redirect('/rider');
+
+const authPayload = verifyRiderAuth(token);
+if (!authPayload || !authPayload.riderId) {
+  // Invalid or tampered cookie
+  Astro.cookies.delete('vyaparpe_rider_id', { path: '/' });
+  return Astro.redirect('/rider');
+}
+
+let rider = null;
+let assignedOrders = [];
+let completedToday = 0;
+
+if (isSupabase && supabaseAdmin) {
+  // Fetch rider profile using secure Rider ID
+  const { data: riderData } = await supabaseAdmin
+    .from('riders')
+    .select('*')
+    .eq('id', authPayload.riderId)
+    .single();
+    
+  if (riderData) {
+    rider = riderData;
+    
+    // Fetch orders assigned to this rider
+    const { data: ordersData, error: dbError } = await supabaseAdmin
+      .from('orders')
+      .select('*')
+      .eq('rider_id', rider.id)
+      .in('status', ['placed', 'confirmed', 'shipped', 'dispatched', 'out_for_delivery'])
+      .order('created_at', { ascending: false });
+      
+    if (dbError) console.error("Rider Dashboard DB Error:", dbError);
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+
+    const { count: completedCount, error: countError } = await supabaseAdmin
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('rider_id', rider.id)
+      .in('status', ['delivered', 'completed'])
+      .gte('updated_at', todayISO);
+      
+    if (!countError && completedCount) {
+      completedToday = completedCount;
+    }
+    
+    if (ordersData && ordersData.length > 0) {
+      const orderIds = ordersData.map(o => o.order_id);
+      const { data: fData } = await supabaseAdmin.from('fulfillments').select('id, order_id').in('order_id', orderIds);
+      
+      assignedOrders = ordersData.map(o => ({
+        ...o,
+        fulfillments: (fData || []).filter(f => f.order_id === o.order_id)
+      }));
+    }
+  } else {
+    // Rider not found in DB
+    Astro.cookies.delete('vyaparpe_rider_id', { path: '/' });
+    return Astro.redirect('/rider?error=not_found');
+  }
+}
+---
+
+<RiderLayout title="Rider Dashboard" description="Delivery Rider Portal">
+  <div class="min-h-screen bg-gray-50 flex flex-col pb-20">
+    
+    <!-- Header -->
+    <div class="bg-primary text-white p-5 rounded-b-3xl shadow-lg relative overflow-hidden">
+      <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0); background-size: 16px 16px;"></div>
+      <div class="relative z-10 flex justify-between items-center">
+        <div>
+          <h1 class="text-xl font-bold">Hi, {rider?.name || 'Rider'} 👋</h1>
+          <p class="text-white/80 text-sm mt-0.5">{rider?.vehicle_number || 'Vehicle Not Registered'}</p>
+        </div>
+        {rider?.status === 'active' && (
+          <div class="flex flex-col gap-2 items-end">
+            <div class="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-sm">
+              <div class={`w-2 h-2 rounded-full ${rider?.is_online ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} id="status-indicator"></div>
+              <select id="status-toggle" class="bg-transparent text-sm font-semibold outline-none appearance-none cursor-pointer text-white" data-rider-id={rider?.id}>
+                <option value="true" selected={rider?.is_online} class="text-black">Online</option>
+                <option value="false" selected={!rider?.is_online} class="text-black">Offline</option>
+              </select>
+            </div>
+            <button id="logout-btn" class="text-xs bg-red-500/80 hover:bg-red-500 text-white px-3 py-1.5 rounded-full transition-colors backdrop-blur-sm">
+              Logout
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {rider?.status === 'pending' ? (
+      <div class="flex-1 p-5 space-y-4 mt-8">
+        <div class="bg-yellow-50 rounded-2xl p-8 text-center border border-yellow-100 shadow-sm">
+          <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-2xl">
+            ⏳
+          </div>
+          <h2 class="text-xl font-bold text-yellow-900 mb-2">Pending Approval</h2>
+          <p class="text-sm text-yellow-800/80">Your rider application has been received and is currently under review by the store administrator. Please check back later.</p>
+        </div>
+      </div>
+    ) : (
+      <>
+        <!-- Stats -->
+        <div class="px-5 -mt-6 relative z-20">
+          <div class="bg-white rounded-2xl shadow-sm p-4 grid grid-cols-2 divide-x divide-gray-100 border border-gray-100">
+            <div class="text-center">
+              <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Active Deliveries</p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">{assignedOrders.length}</p>
+            </div>
+            <div class="text-center">
+              <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Completed Today</p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">{completedToday}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Orders -->
+        <div class="flex-1 p-5 space-y-4">
+          <h2 class="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">Current Assignments</h2>
+
+          {assignedOrders.length === 0 ? (
+            <div class="bg-white rounded-2xl p-8 text-center border border-gray-100 shadow-sm mt-8">
+              <div class="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg class="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              </div>
+              <p class="font-semibold text-gray-900">No active orders</p>
+              <p class="text-sm text-gray-500 mt-1">Stay online to receive new delivery requests.</p>
+            </div>
+          ) : (
+            assignedOrders.map((order: any) => (
+              <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm relative overflow-hidden">
+                <!-- Accent Bar -->
+                <div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+                
+                <div class="flex justify-between items-start mb-3">
+                  <div>
+                    <p class="text-xs font-bold text-primary tracking-wide uppercase">#{order.order_id}</p>
+                    <p class="font-bold text-gray-900 text-lg mt-0.5">{order.customer?.name || 'Customer'}</p>
+                  </div>
+                  <a href={`tel:${order.customer?.phone || ''}`} class="w-10 h-10 bg-green-50 text-green-600 rounded-full flex items-center justify-center transition-transform active:scale-95">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                  </a>
+                </div>
+
+                <div class="flex items-start gap-3 text-sm text-gray-600 bg-gray-50 p-3 rounded-xl mb-4">
+                  <svg class="w-5 h-5 text-gray-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  <p class="leading-relaxed">{order.customer?.addressLine || order.customer?.street_address || order.customer?.address}, {order.customer?.city}</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <p class="text-xs text-gray-500 uppercase font-semibold">Payment</p>
+                    <p class="font-bold text-gray-900">{order.payment_method === 'cod' ? 'Cash on Delivery' : 'Prepaid'}</p>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-500 uppercase font-semibold">Amount to Collect</p>
+                    <p class={`font-bold ${order.payment_method === 'cod' ? 'text-green-600' : 'text-gray-900'}`}>
+                      ₹{order.payment_method === 'cod' ? order.amount : 0}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex gap-2">
+                  <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([order.customer?.addressLine || order.customer?.street_address || order.customer?.address, order.customer?.city, order.customer?.state, order.customer?.pincode].filter(Boolean).join(', '))}`} target="_blank" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold py-3 rounded-xl text-center text-sm transition-colors flex items-center justify-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+                    Navigate
+                  </a>
+                  <button class="flex-1 bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-xl text-sm transition-colors shadow-lg shadow-primary/20 update-status-btn" data-order-id={order.order_id} data-current-status={order.status}>
+                    {order.status === 'shipped' || order.status === 'dispatched' || order.status === 'out_for_delivery' ? 'Mark Delivered' : 'Pick Up Order'}
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </>
+    )}
+  </div>
+
+  <script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script is:inline define:vars={{ riderId: rider?.id, SUPABASE_URL: import.meta.env.PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY: import.meta.env.PUBLIC_SUPABASE_ANON_KEY, fids: assignedOrders.flatMap(o => o.fulfillments?.map(f => f.id) || []) }}>
+    // --- 3. Logout ---
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async () => {
+        try {
+          logoutBtn.innerText = 'Logging out...';
+          const res = await fetch('/api/rider/logout', { method: 'POST' });
+          if (res.ok) {
+            window.location.href = '/rider';
+          }
+        } catch (e) {
+          console.error(e);
+          logoutBtn.innerText = 'Logout';
+        }
+      });
+    }
+
+    // Initialize Supabase Client for Realtime GPS Broadcasting
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const channels = fids.map(fid => supabaseClient.channel(`tracking_${fid}`));
+    
+    // --- 1. Update Order Status ---
+    document.querySelectorAll('.update-status-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const orderId = e.currentTarget.dataset.orderId;
+        const currentStatus = e.currentTarget.dataset.currentStatus;
+        const newStatus = (currentStatus === 'shipped' || currentStatus === 'dispatched' || currentStatus === 'out_for_delivery') ? 'delivered' : 'out_for_delivery';
+        
+        const originalText = e.currentTarget.innerText;
+        e.currentTarget.innerText = 'Updating...';
+        e.currentTarget.disabled = true;
+
+        try {
+          const res = await fetch('/api/rider/update-order-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, status: newStatus })
+          });
+          
+          if (res.ok) {
+            window.location.reload();
+          } else {
+            alert('Failed to update status');
+            e.currentTarget.innerText = originalText;
+            e.currentTarget.disabled = false;
+          }
+        } catch (err) {
+          alert('Network error');
+          e.currentTarget.innerText = originalText;
+          e.currentTarget.disabled = false;
+        }
+      });
+    });
+
+    // --- 2. Online/Offline Status Toggle ---
+    const statusToggle = document.getElementById('status-toggle');
+    const statusIndicator = document.getElementById('status-indicator');
+
+    statusToggle.addEventListener('change', async (e) => {
+      const isOnline = e.target.value === 'true';
+      
+      try {
+        const res = await fetch('/api/rider/update-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ riderId, is_online: isOnline })
+        });
+        
+        if (res.ok) {
+          if (isOnline) {
+            statusIndicator.classList.replace('bg-gray-400', 'bg-green-400');
+            statusIndicator.classList.add('animate-pulse');
+            startLocationTracking();
+          } else {
+            statusIndicator.classList.replace('bg-green-400', 'bg-gray-400');
+            statusIndicator.classList.remove('animate-pulse');
+            stopLocationTracking();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to update online status');
+      }
+    });
+
+    // --- 3. Background GPS Tracking (Realtime via WebSockets) ---
+    let locationInterval = null;
+
+    function startLocationTracking() {
+      if (locationInterval) return; // Already running
+      if (!navigator.geolocation) return console.warn('Geolocation not supported');
+
+      console.log('Started tracking GPS coordinates...');
+      
+      // Ping immediately, then every 5s for realtime broadcast
+      sendLocationPing(true); // first time also updates DB
+      locationInterval = setInterval(() => sendLocationPing(false), 5000); 
+    }
+
+    function stopLocationTracking() {
+      if (locationInterval) {
+        clearInterval(locationInterval);
+        locationInterval = null;
+        console.log('Stopped tracking GPS coordinates.');
+      }
+    }
+
+    let pingCount = 0;
+
+    function sendLocationPing(forceDbUpdate = false) {
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        pingCount++;
+
+        // Broadcast directly to active tracking channels (Realtime)
+        channels.forEach(channel => {
+          channel.send({
+            type: 'broadcast',
+            event: 'location_update',
+            payload: { latitude, longitude }
+          });
+        });
+
+        // Only update DB every 30 seconds (6 pings of 5s) to save I/O overhead
+        // If hidden (background), update DB every 2 minutes (24 pings of 5s) to save Vercel Edge requests
+        const pingThreshold = document.hidden ? 24 : 6;
+        if (forceDbUpdate || pingCount >= pingThreshold) {
+          pingCount = 0;
+          try {
+            await fetch('/api/rider/update-location', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ riderId, lat: latitude, lng: longitude })
+            });
+            console.log(`Saved location to DB: ${latitude}, ${longitude}`);
+          } catch (e) {
+            console.error('Failed to save location', e);
+          }
+        }
+      }, (error) => {
+        console.error('GPS Error:', error.message);
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 5000
+      });
+    }
+
+    // Auto-start tracking if rider is online on page load
+    if (statusToggle.value === 'true') {
+      startLocationTracking();
+    }
+  </script>
+</RiderLayout>

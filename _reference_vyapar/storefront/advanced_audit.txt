@@ -1,0 +1,80 @@
+=== ADVANCED PRODUCT SEO AUDIT ===
+
+Product: Karela Powder
+  [WARN] Title too long (75 chars): Buy Karela (Bitter Gourd) Powder Online – Diabetic Superfood | The NutriDry
+
+Product: Daily Wellness Superfood Combo
+  [WARN] Title too long (73 chars): Buy Daily Wellness Superfood Combo Online | Pure & Natural | The NutriDry
+
+Product: Radiant Glow Skincare Combo
+  [WARN] Title too long (73 chars): Buy Radiant Glow Skincare Combo Online | Natural Face Pack | The NutriDry
+
+Product: Rose Powder
+  [WARN] Title too long (73 chars): Buy Rose Petal Powder Online – Beauty & Wellness Superfood | The NutriDry
+
+Product: Spinach / Palak Powder
+  [WARN] Title too long (68 chars): Buy Spinach Powder Online – Iron-Rich Green Superfood | The NutriDry
+
+Product: Tomato Powder
+  [WARN] Title too long (67 chars): Buy Tomato Powder Online – Instant Gravy & Soup Base | The NutriDry
+
+Product: Haldi Powder
+  [WARN] Title too long (74 chars): Buy Haldi (Turmeric) Powder Online – Pure Lakadong Turmeric | The NutriDry
+
+Product: Ginger Powder
+  [WARN] Title too long (67 chars): Buy Ginger Powder (Sonth) Online – Pure Dried Ginger | The NutriDry
+
+Product: Pudina Powder
+  [WARN] Title too long (74 chars): Buy Pudina (Mint) Powder Online – Natural Cooling Superfood | The NutriDry
+
+Product: NutriBoost
+  [WARN] Title too long (69 chars): Buy NutriBoost Powder Online – Daily Nutrition Booster | The NutriDry
+
+Product: Curry Leaves Powder
+  [WARN] Title too long (69 chars): Buy Curry Leaves Powder Online – Hair Growth Superfood | The NutriDry
+
+Product: The Ultimate Kitchen Essentials Combo
+  [WARN] Title too long (74 chars): Buy Kitchen Essentials Spices Combo Online | Pure & Natural | The NutriDry
+
+Product: Lemon Powder
+  [WARN] Title too long (61 chars): Buy Lemon Powder Online – Instant Nimbu Flavor | The NutriDry
+
+Product: Green Chilli Powder
+  [WARN] Title too long (66 chars): Buy Green Chilli Powder Online – Instant Hari Mirch | The NutriDry
+
+Product: Garlic Powder
+  [WARN] Title too long (64 chars): Buy Garlic Powder Online – Pure Dehydrated Lehsun | The NutriDry
+
+Product: Amla Powder
+  [WARN] Title too long (67 chars): Buy Amla Powder Online – 100% Pure Indian Gooseberry | The NutriDry
+
+Product: Dhaniya Leaves Powder
+  [WARN] Title too long (67 chars): Buy Coriander Leaves Powder Online – Instant Dhaniya | The NutriDry
+
+Product: Beet Root Powder
+  [WARN] Title too long (73 chars): Buy Beetroot Powder Online – Natural Pre-Workout Superfood | The NutriDry
+
+Product: Moringa Powder
+  [WARN] Title too long (64 chars): Buy Moringa Powder Online – The Miracle Superfood | The NutriDry
+
+Product: Red Onion Powder
+  [WARN] Title too long (70 chars): Buy Red Onion Powder Online – Instant Cooking Essential | The NutriDry
+
+Product: Raw Banana Powder
+  [WARN] Title too long (75 chars): Buy Raw Banana Powder Online – Gluten-Free Flour Alternative | The NutriDry
+
+Product: Carrot Powder
+  [WARN] Title too long (63 chars): Buy Carrot Powder Online – Rich in Beta-Carotene | The NutriDry
+
+Product: Authentic Indian Tadka Combo
+  [WARN] Title too long (78 chars): Buy Authentic Indian Tadka Combo Online | Curry, Dhaniya, Lemon | The NutriDry
+
+
+=== SUMMARY ===
+Total Active Products: 31
+Titles > 60 chars (Truncation Risk): 23
+Titles < 30 chars (Missed Opportunity): 0
+Desc > 160 chars (Truncation Risk): 0
+Desc < 100 chars (Thin Content Risk): 0
+Ugly/Unoptimized Slugs: 0
+Missing Images: 0

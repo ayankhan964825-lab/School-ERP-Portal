@@ -1,0 +1,9 @@
+---
+// Redirect /affiliate to either dashboard or login based on cookie
+const isLoggedIn = Astro.cookies.has('vyaparpe_affiliate_id');
+if (isLoggedIn) {
+  return Astro.redirect('/affiliate/dashboard');
+} else {
+  return Astro.redirect('/affiliate/login');
+}
+---

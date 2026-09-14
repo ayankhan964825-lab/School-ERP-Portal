@@ -1,0 +1,98 @@
+---
+import MarketplaceLayout from '../../../layouts/MarketplaceLayout.astro';
+import { supabaseAdmin } from '../../../lib/database';
+
+const { slug } = Astro.params;
+if (!slug) return Astro.redirect('/');
+
+// The URL structure is [product-slug]--[store-id]
+// Use lastIndexOf instead of split because slugs might contain '--'
+const lastDash = slug.lastIndexOf('--');
+if (lastDash === -1) return Astro.redirect('/');
+
+const productSlug = slug.substring(0, lastDash);
+const storeId = slug.substring(lastDash + 2);
+
+// Validate UUID format quickly
+if (storeId.length !== 36) return Astro.redirect('/');
+
+// Fetch Product and Store data together
+const { data: product, error } = await supabaseAdmin
+  .from('products')
+  .select('*, stores:store_id (name, subdomain, custom_domain, status)')
+  .eq('slug', productSlug)
+  .eq('store_id', storeId)
+  .eq('is_active', true)
+  .single();
+
+if (error || !product || product.stores?.status !== 'active') {
+  return new Response("Product not found or store inactive", { status: 404 });
+}
+
+// Resolve Store URL for the "Handoff"
+const store = product.stores;
+const storeUrl = store.custom_domain 
+  ? `https://${store.custom_domain}` 
+  : `https://${store.subdomain}.vyaparpe.in`;
+
+const handoffUrl = `${storeUrl}/product/${productSlug}`;
+
+const price = product.variants?.[0]?.price || 0;
+const mrp = product.variants?.[0]?.mrp || 0;
+const imgUrl = product.image || `/products/${product.slug}.webp`;
+---
+
+<MarketplaceLayout title={`${product.name} by ${store.name} | VyaparPe`} description={product.description}>
+  <div class="max-w-6xl mx-auto px-6 py-12">
+    <!-- Breadcrumb -->
+    <nav class="text-sm text-gray-500 mb-8 flex items-center gap-2">
+        <a href="/" class="hover:text-purple-600">Home</a>
+        <span>/</span>
+        <a href={`/m/store/${store.subdomain}`} class="hover:text-purple-600">{store.name}</a>
+        <span>/</span>
+        <span class="text-gray-900 font-semibold">{product.name}</span>
+    </nav>
+
+    <div class="grid md:grid-cols-2 gap-12">
+      <!-- Product Image -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 aspect-square flex items-center justify-center">
+         <img src={imgUrl} alt={product.name} class="w-full h-full object-contain rounded-2xl" />
+      </div>
+
+      <!-- Product Details -->
+      <div class="flex flex-col pt-4">
+         <div class="flex items-center gap-3 mb-4">
+             <div class="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold font-serif text-lg">
+                 {store.name.charAt(0).toUpperCase()}
+             </div>
+             <div>
+                 <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Sold By</p>
+                 <a href={storeUrl} target="_blank" class="text-sm font-bold text-gray-900 hover:text-purple-600 transition-colors">
+                     {store.name}
+                 </a>
+             </div>
+         </div>
+
+         <h1 class="text-4xl font-black text-gray-900 mb-4 tracking-tight leading-tight">{product.name}</h1>
+         
+         <div class="flex items-end gap-3 mb-8 pb-8 border-b border-gray-100">
+             <span class="text-4xl font-black text-purple-700">₹{price}</span>
+             {mrp > price && <span class="text-lg text-gray-400 line-through mb-1">₹{mrp}</span>}
+         </div>
+
+         <p class="text-gray-600 text-lg leading-relaxed mb-10">
+             {product.description || 'No description provided by the seller.'}
+         </p>
+
+         <!-- Handoff Call To Action -->
+         <div class="bg-purple-50 rounded-2xl p-6 border border-purple-100 mt-auto">
+             <h3 class="font-bold text-purple-900 mb-2">Ready to purchase?</h3>
+             <p class="text-sm text-purple-700 mb-6">You will be redirected to the seller's official storefront to complete your secure checkout.</p>
+             <a href={handoffUrl} target="_blank" class="block w-full text-center bg-purple-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg hover:bg-purple-700 hover:shadow-xl transition-all transform hover:-translate-y-0.5">
+                 Continue to Seller's Checkout
+             </a>
+         </div>
+      </div>
+    </div>
+  </div>
+</MarketplaceLayout>

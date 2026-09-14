@@ -1,0 +1,146 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getOrders } from '../../../lib/database';
+import { getPermissionContext } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+const isSuperAdmin = ctx.adminRole === 'super_admin';
+const userPermissions = ctx.permissions;
+const canView = isSuperAdmin || userPermissions['finance'] === 'view' || userPermissions['finance'] === 'manage';
+
+if (!canView) {
+  return Astro.redirect('/admin?error=unauthorized_finance');
+}
+
+const orders = await getOrders(Astro.locals?.storeId);
+const totalOrders = orders.length;
+
+// Metrics calculations
+let rtoOrders = 0;
+let returnedOrders = 0;
+let deliveredOrders = 0;
+let pendingOrders = 0;
+
+let totalDaysToDispatch = 0;
+let dispatchedCount = 0;
+
+orders.forEach((o: any) => {
+  if (o.status === 'rto' || o.status === 'rto_received') {
+    rtoOrders++;
+  } else if (o.status === 'return_requested' || o.status === 'returned') {
+    returnedOrders++;
+  } else if (o.status === 'delivered') {
+    deliveredOrders++;
+  } else if (!['cancelled', 'failed'].includes(o.status)) {
+    pendingOrders++;
+  }
+
+  // Calculate avg dispatch time if dates exist
+  if (o.created_at && o.updated_at && (o.status === 'shipped' || o.status === 'delivered')) {
+    const created = new Date(o.created_at);
+    const dispatched = new Date(o.updated_at);
+    const diffTime = Math.abs(dispatched.getTime() - created.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    totalDaysToDispatch += diffDays;
+    dispatchedCount++;
+  }
+});
+
+const rtoRate = totalOrders > 0 ? ((rtoOrders / totalOrders) * 100).toFixed(1) : '0.0';
+const returnRate = deliveredOrders > 0 ? ((returnedOrders / deliveredOrders) * 100).toFixed(1) : '0.0';
+const avgDispatchTime = dispatchedCount > 0 ? (totalDaysToDispatch / dispatchedCount).toFixed(1) : 'N/A';
+
+const healthScore = totalOrders > 0 ? Math.max(0, 100 - (parseFloat(rtoRate) * 1.5) - (parseFloat(returnRate) * 2)) : 100;
+
+function getHealthColor(score: number) {
+  if (score >= 85) return 'text-green-600 bg-green-50 border-green-200';
+  if (score >= 60) return 'text-amber-600 bg-amber-50 border-amber-200';
+  return 'text-red-600 bg-red-50 border-red-200';
+}
+---
+
+<AdminLayout title="Account Health | Admin Panel" description="Monitor operational health and profitability metrics.">
+  <div class="mb-6">
+    <h1 class="text-2xl font-serif font-bold text-secondary">Account Health Dashboard</h1>
+    <p class="text-sm text-secondary/60 mt-1">Real-time metrics on RTOs, Returns, and Fulfillment efficiency.</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <!-- Health Score Card -->
+    <div class={`col-span-1 lg:col-span-3 rounded-2xl p-6 border flex items-center justify-between ${getHealthColor(healthScore)}`}>
+      <div>
+        <h2 class="text-lg font-bold">Overall Store Health</h2>
+        <p class="text-sm opacity-80 mt-1">Based on RTOs and Return Rates</p>
+      </div>
+      <div class="text-right">
+        <div class="text-4xl font-black">{healthScore.toFixed(0)} / 100</div>
+        <div class="text-sm font-medium opacity-90">
+          {healthScore >= 85 ? 'Excellent' : healthScore >= 60 ? 'Needs Attention' : 'Critical Risk'}
+        </div>
+      </div>
+    </div>
+
+    <!-- RTO Metric -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col">
+      <div class="text-sm font-medium text-secondary/60 mb-2">RTO Rate</div>
+      <div class="text-3xl font-bold text-secondary">{rtoRate}%</div>
+      <div class="mt-4 text-xs text-secondary/50">
+        {rtoOrders} out of {totalOrders} total orders resulted in Return-to-Origin.
+      </div>
+      <div class="mt-auto pt-4">
+        <div class="w-full bg-gray-100 rounded-full h-1.5">
+          <div class={`h-1.5 rounded-full ${parseFloat(rtoRate) > 15 ? 'bg-red-500' : 'bg-green-500'}`} style={`width: ${Math.min(100, parseFloat(rtoRate))}%`}></div>
+        </div>
+        <div class="text-[10px] text-secondary/40 mt-1 flex justify-between">
+          <span>Target: < 15%</span>
+          <a href="/admin/orders/rto" class="text-primary hover:underline font-medium">View Tracker &rarr;</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Return Metric -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col">
+      <div class="text-sm font-medium text-secondary/60 mb-2">Customer Return Rate</div>
+      <div class="text-3xl font-bold text-secondary">{returnRate}%</div>
+      <div class="mt-4 text-xs text-secondary/50">
+        {returnedOrders} returns from {deliveredOrders} delivered orders.
+      </div>
+      <div class="mt-auto pt-4">
+        <div class="w-full bg-gray-100 rounded-full h-1.5">
+          <div class={`h-1.5 rounded-full ${parseFloat(returnRate) > 10 ? 'bg-red-500' : 'bg-green-500'}`} style={`width: ${Math.min(100, parseFloat(returnRate))}%`}></div>
+        </div>
+        <div class="text-[10px] text-secondary/40 mt-1 flex justify-between">
+          <span>Target: < 10%</span>
+          <a href="/admin/orders/returns" class="text-primary hover:underline font-medium">View Returns &rarr;</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dispatch Metric -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col">
+      <div class="text-sm font-medium text-secondary/60 mb-2">Avg Fulfillment Speed</div>
+      <div class="text-3xl font-bold text-secondary">{avgDispatchTime} <span class="text-base font-normal text-secondary/50">Days</span></div>
+      <div class="mt-4 text-xs text-secondary/50">
+        Average time taken to dispatch an order after placement.
+      </div>
+      <div class="mt-auto pt-4">
+        <div class="w-full bg-gray-100 rounded-full h-1.5">
+          <div class={`h-1.5 rounded-full ${avgDispatchTime !== 'N/A' && parseFloat(avgDispatchTime) > 2 ? 'bg-amber-500' : 'bg-green-500'}`} style={`width: ${avgDispatchTime !== 'N/A' ? Math.min(100, parseFloat(avgDispatchTime) * 20) : 0}%`}></div>
+        </div>
+        <div class="text-[10px] text-secondary/40 mt-1 flex justify-between">
+          <span>Target: < 2 Days</span>
+          <a href="/admin/orders/non-dispatched" class="text-primary hover:underline font-medium">Pending Dispatches &rarr;</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-primary/5 border border-primary/10 rounded-2xl p-6">
+    <h3 class="text-sm font-bold text-primary mb-2">Optimization Tips</h3>
+    <ul class="text-sm text-secondary/70 space-y-2 list-disc pl-4">
+      <li><strong>High RTO?</strong> Consider enabling OTP verification for COD orders, or incentivizing prepaid payments.</li>
+      <li><strong>High Returns?</strong> Review your product descriptions and images to ensure they set accurate expectations. Check the Returns dashboard for common feedback.</li>
+      <li><strong>Slow Fulfillment?</strong> Use the Batch Print feature to quickly process daily orders before 12 PM.</li>
+    </ul>
+  </div>
+</AdminLayout>

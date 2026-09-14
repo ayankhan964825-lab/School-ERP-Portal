@@ -1,0 +1,78 @@
+---
+import MarketplaceLayout from '../../layouts/MarketplaceLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+
+// We must bypass standard RLS to fetch ALL products across ALL stores for the global marketplace.
+// To ensure safety, we only fetch active products and active stores.
+const { data: allProducts } = await supabaseAdmin
+    .from('products')
+    .select('*, stores:store_id (name, custom_domain, subdomain, status)')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(60);
+
+// Filter out products from paused/inactive stores
+const activeMarketplaceProducts = allProducts?.filter(p => p.stores && p.stores.status === 'active') || [];
+
+// Featured Global Products (Top 12)
+const globalFeatured = [...activeMarketplaceProducts]
+    .sort(() => 0.5 - Math.random()) // MVP: Randomize for now. Later: Sort by global sales rank.
+    .slice(0, 12);
+---
+
+<MarketplaceLayout title="VyaparPe Marketplace | Buy directly from creators" description="Discover thousands of premium products directly from independent sellers and brands on VyaparPe.">
+    
+    <!-- Global Hero -->
+    <section class="bg-gradient-to-br from-indigo-900 to-purple-900 py-24 text-center">
+        <div class="max-w-4xl mx-auto px-6">
+            <h1 class="text-5xl md:text-6xl font-bold text-white mb-6 tracking-tight">Discover Independent Brands</h1>
+            <p class="text-xl text-indigo-100 mb-10">Shop directly from verified creators, makers, and businesses.</p>
+            <div class="relative max-w-2xl mx-auto">
+                <input type="text" placeholder="Search for anything (e.g. Raw Honey, Shoes)..." class="w-full px-6 py-4 rounded-full text-lg shadow-2xl focus:outline-none focus:ring-4 focus:ring-purple-500/50" />
+                <button class="absolute right-2 top-2 bottom-2 bg-purple-600 text-white px-8 rounded-full font-bold hover:bg-purple-700 transition">Search</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Global Product Grid -->
+    <section class="py-20 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <h2 class="text-3xl font-bold text-gray-900 mb-2">Trending on VyaparPe</h2>
+            <p class="text-gray-600 mb-10">Curated picks from thousands of stores</p>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {globalFeatured.map(product => {
+                    // Collision-Free Routing: append store ID to slug
+                    const marketplaceSlug = `${product.slug}--${product.store_id}`;
+                    const imgUrl = product.image || `/products/${product.slug}.webp`;
+                    const price = product.variants?.[0]?.price || 0;
+                    const mrp = product.variants?.[0]?.mrp || 0;
+                    
+                    return (
+                        <a href={`/m/product/${marketplaceSlug}`} class="group bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100 flex flex-col">
+                            <div class="aspect-square bg-gray-100 relative overflow-hidden">
+                                <img src={imgUrl} alt={product.name} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                                <div class="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-md text-[10px] font-bold text-gray-800 uppercase tracking-wider shadow-sm flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-purple-600" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
+                                    </svg>
+                                    {product.stores.name}
+                                </div>
+                            </div>
+                            <div class="p-5 flex-1 flex flex-col">
+                                <h3 class="font-bold text-gray-900 line-clamp-2 leading-snug mb-2 group-hover:text-purple-600 transition-colors">{product.name}</h3>
+                                <div class="mt-auto flex items-end justify-between">
+                                    <div>
+                                        <span class="text-lg font-black text-gray-900">₹{price}</span>
+                                        {mrp > price && <span class="text-xs text-gray-400 line-through ml-1">₹{mrp}</span>}
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                    )
+                })}
+            </div>
+        </div>
+    </section>
+
+</MarketplaceLayout>

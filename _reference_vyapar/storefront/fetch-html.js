@@ -1,0 +1,1 @@
+fetch('http://localhost:4321/admin/store-details').then(r => r.text()).then(t => console.log(t.includes('Completely Hidden') ? t.substring(t.indexOf('Completely Hidden') - 500, t.indexOf('Completely Hidden') + 500) : 'not found'));

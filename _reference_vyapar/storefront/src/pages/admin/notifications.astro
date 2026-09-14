@@ -1,0 +1,286 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "notifications")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getNotifications } from '../../lib/database';
+
+
+const notifications = await getNotifications(ctx.adminId);
+const unreadCount = notifications.filter((n: any) => !n.is_read).length;
+
+const notificationsForAI = JSON.stringify(notifications.slice(0, 50).map((n: any) => ({
+  id: n.id,
+  type: n.type,
+  message: n.message,
+  is_read: n.is_read,
+  created_at: n.created_at
+})));
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+const typeIcons: Record<string, { icon: string; color: string }> = {
+  order: { icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z', color: 'text-green-600 bg-green-100' },
+  feedback: { icon: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z', color: 'text-blue-600 bg-blue-100' },
+  bulk_order: { icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', color: 'text-purple-600 bg-purple-100' },
+  system: { icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', color: 'text-gray-600 bg-gray-100' },
+};
+---
+
+<AdminLayout title="Notifications | Admin Panel" description="View all notifications.">
+  <div class="max-w-3xl">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Notifications</h1>
+        <p class="text-sm text-secondary/60 mt-1" id="notif-summary">
+          {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'All caught up!'}
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- Auto-refresh indicator -->
+        <div class="flex items-center gap-1.5 text-xs text-secondary/40" id="refresh-indicator">
+          <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+          Live
+        </div>
+        <!-- Mark All Read -->
+        {unreadCount > 0 && (
+          <button
+            id="btn-mark-all-read"
+            class="text-xs font-medium text-primary border border-primary/30 hover:bg-primary hover:text-white px-3 py-1.5 rounded-lg transition-all duration-200"
+          >
+            ✓ Mark All Read
+          </button>
+        )}
+        <!-- Clear All -->
+        <button
+          id="btn-clear-all"
+          class="text-xs font-medium text-secondary/50 border border-gray-200 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-all duration-200"
+        >
+          Clear All
+        </button>
+      </div>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="notifications"
+    title="Notifications Assistant"
+      pageDataJson={notificationsForAI}
+      guideTitleEn="Notifications Guide"
+      guideTitleHi="Notifications Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Updates:</strong> Live updates for new orders, feedback, and system alerts appear here.</li>
+        <li><strong>Actions:</strong> Mark individual notifications as read or use "Mark All Read".</li>
+        <li><strong>Filters:</strong> Use the chips to filter by category (Orders, Feedback, Unread).</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Updates:</strong> Naye orders, feedback, aur system alerts ki live updates yahan dikhti hain.</li>
+        <li><strong>Actions:</strong> Kisi bhi notification ko read mark karein ya ek sath "Mark All Read" karein.</li>
+        <li><strong>Filters:</strong> Sirf orders, feedback ya unread dekhne ke liye chips ka istemal karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '🔴 Unread', query: 'unread notifications dikhao' },
+        { label: '🛒 Orders', query: 'sirf order alerts dikhao' },
+        { label: '✅ Mark All Read', query: 'sabko read mark kar do' }
+      ]}
+    />
+
+    <!-- Filter Tabs -->
+    <div class="flex gap-2 mb-6">
+      <button class="notif-filter active-filter text-xs font-medium px-3 py-1.5 rounded-full border border-primary bg-primary text-white" data-filter="all">All</button>
+      <button class="notif-filter text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-secondary/60 hover:border-primary hover:text-primary transition-colors" data-filter="order">🛒 Orders</button>
+      <button class="notif-filter text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-secondary/60 hover:border-primary hover:text-primary transition-colors" data-filter="feedback">💬 Feedback</button>
+      <button class="notif-filter text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-secondary/60 hover:border-primary hover:text-primary transition-colors" data-filter="unread">🔴 Unread</button>
+    </div>
+
+    <div class="space-y-3" id="notif-list">
+      {notifications.length === 0 ? (
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center" id="empty-state">
+          <div class="text-4xl mb-3">🔔</div>
+          <p class="text-secondary/60 font-medium">No notifications yet.</p>
+          <p class="text-xs text-secondary/40 mt-1">Notifications will appear here when orders are placed.</p>
+        </div>
+      ) : (
+        notifications.map((n: any) => {
+          const typeInfo = typeIcons[n.type] || typeIcons.order;
+          return (
+            <div
+              class={`notif-item bg-white rounded-xl shadow-sm border p-4 flex items-start gap-4 transition-all duration-200 hover:shadow-md cursor-pointer ${n.is_read ? 'border-gray-100 opacity-75' : 'border-primary/20 bg-primary/[0.02]'}`}
+              data-id={n.id}
+              data-type={n.type}
+              data-read={n.is_read ? 'true' : 'false'}
+            >
+              <div class={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${typeInfo.color}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d={typeInfo.icon} />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class={`text-sm ${n.is_read ? 'text-secondary/70' : 'text-secondary font-medium'}`}>{n.message}</p>
+                <div class="flex items-center gap-3 mt-1">
+                  <p class="text-xs text-secondary/40">{timeAgo(n.created_at)}</p>
+                  <span class="text-xs text-secondary/30 capitalize">{n.type?.replace('_', ' ')}</span>
+                </div>
+              </div>
+              {!n.is_read && (
+                <div class="flex-shrink-0 flex flex-col items-center gap-2">
+                  <div class="w-2.5 h-2.5 bg-primary rounded-full mt-1.5"></div>
+                  <button
+                    class="mark-read-btn text-[10px] text-primary/60 hover:text-primary transition-colors"
+                    data-id={n.id}
+                    title="Mark as read"
+                  >
+                    Mark read
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+
+    <!-- Notification Count Badge -->
+    <div class="mt-8 text-center text-xs text-secondary/30">
+      {notifications.length} total · {unreadCount} unread · Auto-refreshes every 30s
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    // ── Mark Read ───────────────────────────────────────────────
+    function markAsRead(id) {
+      const item = document.querySelector(`.notif-item[data-id="${id}"]`);
+      if (!item) return;
+      item.dataset.read = 'true';
+      item.classList.add('opacity-75');
+      item.classList.remove('border-primary/20', 'bg-primary/[0.02]');
+      item.classList.add('border-gray-100');
+      const dot = item.querySelector('.w-2\\.5.h-2\\.5');
+      const markBtn = item.querySelector('.mark-read-btn');
+      if (dot) dot.remove();
+      if (markBtn) markBtn.remove();
+      const msg = item.querySelector('p');
+      if (msg) msg.classList.remove('font-medium');
+      // Update badge count
+      const unread = document.querySelectorAll('.notif-item[data-read="false"]').length;
+      const summary = document.getElementById('notif-summary');
+      if (summary) summary.textContent = unread > 0 ? `${unread} unread notification${unread > 1 ? 's' : ''}` : 'All caught up!';
+      // API call (will work when Supabase live)
+      fetch('/api/admin/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      }).catch(() => {});
+    }
+
+    // Individual mark read buttons
+    document.querySelectorAll('.mark-read-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        markAsRead(btn.dataset.id);
+      });
+    });
+
+    // Mark All Read
+    document.getElementById('btn-mark-all-read')?.addEventListener('click', function() {
+      document.querySelectorAll('.notif-item[data-read="false"]').forEach(item => {
+        markAsRead(item.dataset.id);
+      });
+      this.remove();
+      fetch('/api/admin/notifications/mark-all-read', { method: 'POST' }).catch(() => {});
+    });
+
+    // Clear All
+    document.getElementById('btn-clear-all')?.addEventListener('click', function() {
+      if (!confirm('Sab notifications clear karein?')) return;
+      const list = document.getElementById('notif-list');
+      if (list) list.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
+          <div class="text-4xl mb-3">🎉</div>
+          <p class="text-secondary/60 font-medium">All cleared!</p>
+        </div>`;
+      
+      // Update count
+      const countEl = document.getElementById('unread-count');
+      if (countEl) countEl.style.display = 'none';
+
+      // Call API
+      fetch('/api/admin/notifications/clear-all', { method: 'POST' }).catch(() => {});
+    });
+
+    // ── Filter Tabs ─────────────────────────────────────────────
+    document.querySelectorAll('.notif-filter').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.notif-filter').forEach(b => {
+          b.className = 'notif-filter text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-secondary/60 hover:border-primary hover:text-primary transition-colors';
+          b.dataset.filter && (b.removeAttribute('data-active'));
+        });
+        this.className = 'notif-filter active-filter text-xs font-medium px-3 py-1.5 rounded-full border border-primary bg-primary text-white';
+        const filter = this.dataset.filter;
+        document.querySelectorAll('.notif-item').forEach(item => {
+          const show = filter === 'all' ||
+            (filter === 'unread' && item.dataset.read === 'false') ||
+            item.dataset.type === filter;
+          item.style.display = show ? '' : 'none';
+        });
+      });
+    });
+
+    // ── Auto-refresh every 30s ──────────────────────────────────
+    let refreshTimer = setInterval(() => {
+      // Pulse the indicator
+      const indicator = document.getElementById('refresh-indicator');
+      if (indicator) {
+        indicator.innerHTML = '<span class="w-2 h-2 bg-blue-400 rounded-full animate-ping"></span> Refreshing...';
+        setTimeout(() => {
+          // In production: fetch('/api/admin/notifications').then(r => r.json()).then(data => updateUI(data));
+          // For now: just reset indicator
+          indicator.innerHTML = '<span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span> Live';
+        }, 1000);
+      }
+    }, 30000);
+
+    // Cleanup on page leave
+    window.addEventListener('beforeunload', () => clearInterval(refreshTimer));
+
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'filter_notifications') {
+        var filter = params.filter || 'all';
+        var btn = document.querySelector('.notif-filter[data-filter="' + filter + '"]');
+        if (btn) btn.click();
+      }
+      else if (action === 'mark_all_read') {
+        var btn = document.getElementById('btn-mark-all-read');
+        if (btn) {
+          btn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          const origText = btn.innerHTML;
+          btn.innerHTML = '✨ Click to Mark Read';
+          setTimeout(() => {
+            btn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+            btn.innerHTML = origText;
+          }, 4000);
+        }
+      }
+      else if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      }
+    });
+  </script>
+</AdminLayout>

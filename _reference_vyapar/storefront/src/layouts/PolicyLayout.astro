@@ -1,0 +1,44 @@
+---
+import Layout from './Layout.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  lastUpdated?: string;
+}
+
+const { title, description, lastUpdated } = Astro.props;
+---
+
+<Layout title={title} description={description}>
+  <!-- Spacer for fixed header -->
+  <div class="bg-surface py-12 md:py-20 min-h-screen">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Header -->
+      <div class="mb-10 border-b border-background-alt pb-8">
+        <h1 class="text-3xl md:text-5xl font-serif font-bold text-secondary mb-4">{title}</h1>
+        {lastUpdated && (
+          <p class="text-sm text-secondary/50 uppercase tracking-wider font-medium">
+            Last Updated: {lastUpdated}
+          </p>
+        )}
+      </div>
+
+      <!-- Content -->
+      <div class="
+        text-secondary/80 leading-relaxed
+        [&>h2]:text-2xl [&>h2]:font-serif [&>h2]:font-bold [&>h2]:text-secondary [&>h2]:mt-10 [&>h2]:mb-4
+        [&>h3]:text-xl [&>h3]:font-semibold [&>h3]:text-secondary [&>h3]:mt-8 [&>h3]:mb-3
+        [&>p]:mb-5
+        [&>ul]:list-disc [&>ul]:pl-5 [&>ul]:mb-6 [&>ul>li]:mb-2
+        [&>ol]:list-decimal [&>ol]:pl-5 [&>ol]:mb-6 [&>ol>li]:mb-2
+        [&>a]:text-primary [&>a]:underline [&>a:hover]:text-primary/80
+        [&>strong]:text-secondary [&>strong]:font-semibold
+      ">
+        <slot />
+      </div>
+
+    </div>
+  </div>
+</Layout>

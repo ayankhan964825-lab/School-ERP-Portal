@@ -1,0 +1,818 @@
+[
+  {
+    "id": "p_0",
+    "name": "Lemon Pickle",
+    "slug": "lemon-pickle",
+    "category": "veg-pickle",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782640321/WhatsAppImage2026-06-21at15.39.55(2).jpeg",
+    "variants": [
+      {
+        "id": "v0-base",
+        "weight": "100 gm",
+        "price": 85,
+        "mrp": 100,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 85,
+    "base_mrp": 100,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_1",
+    "name": "Gongura Pickle",
+    "slug": "gongura-pickle",
+    "category": "veg-pickle",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782640421/WhatsAppImage2026-06-21at11.50.06.jpeg",
+    "variants": [
+      {
+        "id": "v1-base",
+        "weight": "100 gm",
+        "price": 90,
+        "mrp": 110,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 90,
+    "base_mrp": 110,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_2",
+    "name": "Amla Pickle",
+    "slug": "amla-pickle",
+    "category": "veg-pickle",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782640453/WhatsAppImage2026-06-21at15.39.55.jpeg",
+    "variants": [
+      {
+        "id": "v2-base",
+        "weight": "100 gm",
+        "price": 100,
+        "mrp": 120,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 100,
+    "base_mrp": 120,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_3",
+    "name": "Red Chilli Pickle",
+    "slug": "red-chilli-pickle",
+    "category": "veg-pickle",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782640478/WhatsAppImage2026-06-21at15.42.29.jpeg",
+    "variants": [
+      {
+        "id": "v3-base",
+        "weight": "100 gm",
+        "price": 70,
+        "mrp": 90,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 70,
+    "base_mrp": 90,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_4",
+    "name": "CHANA DAL PODI",
+    "slug": "chana-dal-podi",
+    "category": "andhra-style-podis",
+    "description": "",
+    "image": "images/7100/2026/05/07/1778168355/CHANADAL.jpg",
+    "variants": [
+      {
+        "id": "v4-base",
+        "weight": "250 gm",
+        "price": 200,
+        "mrp": 200,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v4-1",
+        "weight": "500",
+        "price": 360,
+        "mrp": 400,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v4-2",
+        "weight": "750",
+        "price": 540,
+        "mrp": 600,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v4-3",
+        "weight": "1000",
+        "price": 720,
+        "mrp": 800,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 200,
+    "base_mrp": 200,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_5",
+    "name": "MORINGA CHILLI PODI",
+    "slug": "moringa-chilli-podi",
+    "category": "andhra-style-podis",
+    "description": "",
+    "image": "images/7100/2026/05/07/1778168339/MORINGACHILLI.jpg",
+    "variants": [
+      {
+        "id": "v5-base",
+        "weight": "250 gm",
+        "price": 210,
+        "mrp": 210,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v5-1",
+        "weight": "500",
+        "price": 360,
+        "mrp": 420,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v5-2",
+        "weight": "750",
+        "price": 540,
+        "mrp": 630,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v5-3",
+        "weight": "1000",
+        "price": 720,
+        "mrp": 840,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 210,
+    "base_mrp": 210,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_6",
+    "name": "FLAX SEEDS PODI",
+    "slug": "flax-seeds-podi",
+    "category": "andhra-style-podis",
+    "description": "",
+    "image": "images/7100/2026/05/07/1778168326/FLAXSEEDS.jpg",
+    "variants": [
+      {
+        "id": "v6-base",
+        "weight": "250 gm",
+        "price": 230,
+        "mrp": 230,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v6-1",
+        "weight": "500",
+        "price": 400,
+        "mrp": 460,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v6-2",
+        "weight": "750",
+        "price": 540,
+        "mrp": 690,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v6-3",
+        "weight": "1000",
+        "price": 720,
+        "mrp": 800,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 230,
+    "base_mrp": 230,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_7",
+    "name": "GROUND NUT PODI",
+    "slug": "ground-nut-podi",
+    "category": "andhra-style-podis",
+    "description": "",
+    "image": "images/7100/2026/05/07/1778168314/GROUNDNUT.jpg",
+    "variants": [
+      {
+        "id": "v7-base",
+        "weight": "250 gm",
+        "price": 210,
+        "mrp": 210,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v7-1",
+        "weight": "500",
+        "price": 360,
+        "mrp": 420,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v7-2",
+        "weight": "750",
+        "price": 540,
+        "mrp": 630,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v7-3",
+        "weight": "1000",
+        "price": 720,
+        "mrp": 840,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 210,
+    "base_mrp": 210,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_8",
+    "name": "CURRY LEAF PODI",
+    "slug": "curry-leaf-podi",
+    "category": "andhra-style-podis",
+    "description": "",
+    "image": "images/7100/2026/05/07/1778168262/CURRYLEAF.jpg",
+    "variants": [
+      {
+        "id": "v8-base",
+        "weight": "100 gm",
+        "price": 80,
+        "mrp": 100,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v8-1",
+        "weight": "250 GM",
+        "price": 200,
+        "mrp": 250,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v8-2",
+        "weight": "500 GM",
+        "price": 400,
+        "mrp": 500,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v8-3",
+        "weight": "750 GM",
+        "price": 600,
+        "mrp": 750,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v8-4",
+        "weight": "1000 GM",
+        "price": 800,
+        "mrp": 1000,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 80,
+    "base_mrp": 100,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_9",
+    "name": "Amla Powder",
+    "slug": "dehydrated-powders",
+    "category": "dehydrated-powders",
+    "description": "Dried / Dehydrated Amla Powder",
+    "image": "images/7100/2026/05/07/1778168617/AMLAPOWDER.png",
+    "variants": [
+      {
+        "id": "v9-base",
+        "weight": "100 gm",
+        "price": 219,
+        "mrp": 379,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v9-1",
+        "weight": "200 grams",
+        "price": 379,
+        "mrp": 749,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 219,
+    "base_mrp": 379,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_10",
+    "name": "Betroot Powder",
+    "slug": "betroot-powder",
+    "category": "dehydrated-powders",
+    "description": "Dired/Dehydrated Powders",
+    "image": "images/7100/2026/05/07/1778168602/BETROOTPOWDER.png",
+    "variants": [
+      {
+        "id": "v10-base",
+        "weight": "100 gm",
+        "price": 219,
+        "mrp": 399,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v10-1",
+        "weight": "200grams",
+        "price": 379,
+        "mrp": 799,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 219,
+    "base_mrp": 399,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_11",
+    "name": "Tomato Powder",
+    "slug": "tomato-powder",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated Powders",
+    "image": "images/7100/2026/05/07/1778168589/TOMATOPOWDER.png",
+    "variants": [
+      {
+        "id": "v11-base",
+        "weight": "100 gm",
+        "price": 189,
+        "mrp": 349,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v11-1",
+        "weight": "200 grams",
+        "price": 339,
+        "mrp": 699,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 189,
+    "base_mrp": 349,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_12",
+    "name": "Spinach Powder",
+    "slug": "spinach-powder",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated Powders",
+    "image": "images/7100/2026/05/07/1778168563/SPINACHPOWDER.png",
+    "variants": [
+      {
+        "id": "v12-base",
+        "weight": "100 gm",
+        "price": 219,
+        "mrp": 499,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v12-1",
+        "weight": "200 grams",
+        "price": 339,
+        "mrp": 999,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 219,
+    "base_mrp": 499,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_13",
+    "name": "Moringa Powder",
+    "slug": "moringa-powder",
+    "category": "dehydrated-powders",
+    "description": "Dreid/Dehydrated Powders",
+    "image": "images/7100/2026/05/07/1778168544/MORINGAPOWDER.png",
+    "variants": [
+      {
+        "id": "v13-base",
+        "weight": "100 gm",
+        "price": 219,
+        "mrp": 399,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v13-1",
+        "weight": "200 grams",
+        "price": 339,
+        "mrp": 749,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 219,
+    "base_mrp": 399,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_14",
+    "name": "Ginger Powder",
+    "slug": "ginger-powder",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated Powder",
+    "image": "images/7100/2026/05/07/1778168529/GINGERPOWDER.png",
+    "variants": [
+      {
+        "id": "v14-base",
+        "weight": "100 gm",
+        "price": 189,
+        "mrp": 349,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v14-1",
+        "weight": "200 grams",
+        "price": 329,
+        "mrp": 699,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 189,
+    "base_mrp": 349,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_15",
+    "name": "Garlic Powder",
+    "slug": "garlic-powder",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated Powders",
+    "image": "images/7100/2026/05/07/1778168513/GARLICPOWDER.png",
+    "variants": [
+      {
+        "id": "v15-base",
+        "weight": "100 gm",
+        "price": 189,
+        "mrp": 349,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v15-1",
+        "weight": "200grams",
+        "price": 339,
+        "mrp": 699,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 189,
+    "base_mrp": 349,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_16",
+    "name": "Carrot Powder",
+    "slug": "carrot-powder",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated Powders",
+    "image": "images/7100/2026/05/07/1778168411/CARROTPOWDER.png",
+    "variants": [
+      {
+        "id": "v16-base",
+        "weight": "100 gm",
+        "price": 189,
+        "mrp": 349,
+        "stock": 100,
+        "is_out_of_stock": false
+      },
+      {
+        "id": "v16-1",
+        "weight": "200 grams",
+        "price": 339,
+        "mrp": 699,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 189,
+    "base_mrp": 349,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_17",
+    "name": "Wellness Combo 100Gram Each",
+    "slug": "wellness-combo",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated",
+    "image": "images/7100/2026/05/07/1778168665/WELLNESSCOMBO.png",
+    "variants": [
+      {
+        "id": "v17-base",
+        "weight": "1 box",
+        "price": 559,
+        "mrp": 627,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 559,
+    "base_mrp": 627,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_18",
+    "name": "Immunity Booster Combo 100Gram Each",
+    "slug": "immunity-booster-combo-100gram-each",
+    "category": "dehydrated-powders",
+    "description": "Dried/Dehydrated",
+    "image": "images/7100/2026/05/07/1778168656/IMMUNITYBOOSTERCOMBO.png",
+    "variants": [
+      {
+        "id": "v18-base",
+        "weight": "1 box",
+        "price": 729,
+        "mrp": 816,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 729,
+    "base_mrp": 816,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_19",
+    "name": "Natural Detox Combo 100Gram Each",
+    "slug": "natural-detox-combo-100gram-each",
+    "category": "dehydrated-powders",
+    "description": "Dired/Dehydrated",
+    "image": "images/7100/2026/05/07/1778170605/Untitleddesign(3).png",
+    "variants": [
+      {
+        "id": "v19-base",
+        "weight": "1 box",
+        "price": 549,
+        "mrp": 627,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 549,
+    "base_mrp": 627,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_20",
+    "name": "Daily Green Combo 100Gram Each",
+    "slug": "daily-green-combo-100gram-each",
+    "category": "dehydrated-powders",
+    "description": "Dired/Dehydrated",
+    "image": "images/7100/2026/05/07/1778170683/Untitleddesign(4).png",
+    "variants": [
+      {
+        "id": "v20-base",
+        "weight": "1 box",
+        "price": 579,
+        "mrp": 657,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 579,
+    "base_mrp": 657,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_21",
+    "name": "Hibiscus Dry FLowers",
+    "slug": "herbal-tea",
+    "category": "herbal-tea",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782640918/ChatGPTImageJun28,2026,03_31_21PM.png",
+    "variants": [
+      {
+        "id": "v21-base",
+        "weight": "20 piece",
+        "price": 160,
+        "mrp": 200,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 160,
+    "base_mrp": 200,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_22",
+    "name": "Butterfly Pea Flower",
+    "slug": "herbaltea",
+    "category": "herbal-tea",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782640933/ChatGPTImageJun28,2026,03_27_34PM.png",
+    "variants": [
+      {
+        "id": "v22-base",
+        "weight": "20 piece",
+        "price": 180,
+        "mrp": 300,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 180,
+    "base_mrp": 300,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_23",
+    "name": "Chamomile Dry Flower",
+    "slug": "chamomile-dry-flower",
+    "category": "herbal-tea",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782642731/CHAMOMILE(1).png",
+    "variants": [
+      {
+        "id": "v23-base",
+        "weight": "100 gm",
+        "price": 180,
+        "mrp": 300,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 180,
+    "base_mrp": 300,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_24",
+    "name": "Rose Dry Flower",
+    "slug": "rose-dry-flower",
+    "category": "herbal-tea",
+    "description": "",
+    "image": "images/7100/2026/06/28/1782642838/ROSE(2).png",
+    "variants": [
+      {
+        "id": "v24-base",
+        "weight": "100 gm",
+        "price": 130,
+        "mrp": 200,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 130,
+    "base_mrp": 200,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  },
+  {
+    "id": "p_25",
+    "name": "HONEY GULKHAND",
+    "slug": "honey-gulkhand",
+    "category": "natural-foods",
+    "description": "Treasure Flavours Honey Gulkand",
+    "image": "images/7100/2026/07/02/1782988864/WhatsAppImage2026-07-01at9.20.26AM.jpeg",
+    "variants": [
+      {
+        "id": "v25-base",
+        "weight": "250 gm",
+        "price": 120,
+        "mrp": 150,
+        "stock": 100,
+        "is_out_of_stock": false
+      }
+    ],
+    "base_price": 120,
+    "base_mrp": 150,
+    "rating": {
+      "value": 4.5,
+      "count": 12
+    }
+  }
+]

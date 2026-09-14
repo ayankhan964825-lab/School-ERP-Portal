@@ -1,0 +1,16 @@
+---
+import Layout from '../layouts/Layout.astro';
+import OrderSuccessClient from '../components/react/OrderSuccessClient';
+import { getSettings } from '../lib/database';
+
+const settings = await getSettings(Astro.locals?.storeId);
+const rawWhatsapp = settings?.social_whatsapp || settings?.contact_phone || '919876543211';
+const firstWhatsapp = rawWhatsapp.split(/[\/,]/)[0];
+const contactPhone = firstWhatsapp.replace(/\D/g, '');
+---
+
+<Layout title={`Order Placed Successfully | ${settings?.brand_name || 'Store'}`} description="Thank you for your order.">
+  <div class="bg-surface min-h-screen pt-24 pb-20">
+    <OrderSuccessClient client:only="react" contactPhone={contactPhone} />
+  </div>
+</Layout>

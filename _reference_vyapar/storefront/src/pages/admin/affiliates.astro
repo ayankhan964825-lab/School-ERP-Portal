@@ -1,0 +1,265 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (!canManageSection(ctx, "affiliates")) {
+  return new Response("Forbidden", { status: 403 });
+}
+
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getAffiliates, getOrders, getSettings, getCoupons } from '../../lib/database';
+
+const affiliates = await getAffiliates();
+const orders = await getOrders(Astro.locals?.storeId);
+const settings = await getSettings(Astro.locals?.storeId);
+const coupons = await getCoupons();
+
+const payoutDays = settings?.payoutDays || 30;
+const cutoffDate = new Date();
+cutoffDate.setDate(cutoffDate.getDate() - payoutDays);
+---
+
+<AdminLayout title="Affiliates | Admin Panel" description="Manage influencers and payouts.">
+  <div class="max-w-5xl">
+    <div class="flex justify-between items-center mb-6">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Affiliates</h1>
+        <p class="text-sm text-secondary/60 mt-1">Manage influencers, view earnings, and process payouts.</p>
+      </div>
+    </div>
+
+    <!-- Affiliates Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {affiliates.length === 0 ? (
+        <div class="p-12 text-center text-secondary/60">
+          <p class="mb-2">No affiliates registered yet.</p>
+          <p class="text-xs">Influencers can register at /affiliate</p>
+        </div>
+      ) : (
+        <div class="overflow-x-auto w-full">
+          <table class="min-w-full text-sm text-left">
+            <thead class="text-xs text-secondary/70 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th class="px-5 py-3">Influencer</th>
+                <th class="px-5 py-3">Code / Link</th>
+                <th class="px-5 py-3">Coupon Uses</th>
+                <th class="px-5 py-3">Total Earnings</th>
+                <th class="px-5 py-3">Paid</th>
+                <th class="px-5 py-3">Return Window</th>
+                <th class="px-5 py-3 text-right">Ready to Pay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {affiliates.map((a: any) => {
+                const paid = a.paid_earnings || 0;
+                
+                let earned = 0;
+                let pending = 0;
+                
+                const myOrders = orders.filter((o: any) => o.affiliate_id === a.id && !['cancelled', 'returned', 'rto'].includes(o.status));
+                myOrders.forEach((o: any) => {
+                  const orderDate = new Date(o.createdAt);
+                  const commission = o.affiliate_commission || 0;
+                  if (o.status === 'delivered' && cutoffDate.getTime() >= orderDate.getTime()) {
+                    earned += commission;
+                  } else {
+                    pending += commission;
+                  }
+                });
+                
+                const total = earned + pending;
+                const available = Math.max(0, earned - paid);
+                
+                const myCoupon = coupons.find((c: any) => c.affiliate_id === a.id);
+                const usedCount = myOrders.length;
+
+                return (
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td class="px-5 py-4">
+                      <div class="font-medium text-secondary">{a.name}</div>
+                      <div class="text-xs text-secondary/60">{a.email} <br/> {a.phone}</div>
+                      {a.instagram_handle && (
+                        <div class="mt-1">
+                          <a href={a.instagram_handle.startsWith('http') ? a.instagram_handle : `https://instagram.com/${a.instagram_handle.replace('@', '')}`} target="_blank" rel="noopener noreferrer" class="text-[10px] font-medium text-pink-600 hover:underline">
+                            IG: {a.instagram_handle}
+                          </a>
+                        </div>
+                      )}
+                      {(a.upi_id || a.bank_account_number) && (
+                        <div class="mt-2 p-1.5 bg-gray-50 rounded border border-gray-100 text-[10px]">
+                          {a.upi_id && <div class="font-bold text-gray-700">UPI: <span class="font-mono font-normal text-blue-600">{a.upi_id}</span></div>}
+                          {a.bank_account_number && (
+                            <div class="mt-0.5 text-gray-600">
+                              A/C: <span class="font-mono">{a.bank_account_number}</span><br/>
+                              IFSC: <span class="font-mono">{a.bank_ifsc}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td class="px-5 py-4">
+                      <div class="flex items-center gap-2">
+                        <span class="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{a.referral_code}</span>
+                        {a.is_approved ? (
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 bg-green-100 text-green-700 rounded uppercase tracking-wider">Active</span>
+                        ) : a.status === 'banned' ? (
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 bg-red-100 text-red-700 rounded uppercase tracking-wider">Banned</span>
+                        ) : (
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded uppercase tracking-wider">Pending</span>
+                        )}
+                      </div>
+                    </td>
+                    <td class="px-5 py-4 text-blue-600 font-bold">{usedCount}</td>
+                    <td class="px-5 py-4 font-bold">₹{total}</td>
+                    <td class="px-5 py-4 text-gray-500 font-bold">₹{paid}</td>
+                    <td class="px-5 py-4 text-orange-500 font-bold">₹{pending}</td>
+                    <td class="px-5 py-4 text-right">
+                      <div class="flex items-center justify-end gap-3">
+                        <span class="text-green-600 font-bold text-lg">₹{available}</span>
+                        {!a.is_approved && a.status !== 'banned' && (
+                          <button type="button" class="approve-btn text-xs font-medium px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors" data-id={a.id}>
+                            Approve
+                          </button>
+                        )}
+                        {a.status === 'banned' && (
+                          <button type="button" class="approve-btn text-xs font-medium px-3 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors" data-id={a.id}>
+                            Unban
+                          </button>
+                        )}
+                        {available > 0 && a.is_approved && (
+                          <button type="button" class="pay-btn text-xs font-medium px-3 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition-colors" data-id={a.id} data-pending={available} data-name={a.name}>
+                            Mark Paid
+                          </button>
+                        )}
+                        {a.status !== 'banned' && (
+                          <button type="button" class="delete-affiliate-btn ml-2 text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors" data-id={a.id} title="Ban affiliate">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+
+<!-- Payout Modal -->
+<dialog id="payout-modal" class="p-0 rounded-2xl shadow-xl backdrop:bg-black/50 border border-gray-100 max-w-md w-full">
+  <div class="p-6">
+    <h3 class="text-lg font-bold text-secondary mb-4">Process Payout</h3>
+    <p class="text-sm text-secondary/70 mb-4">Record a payout for <span id="modal-aff-name" class="font-bold"></span>. They will see this receipt in their dashboard.</p>
+    <form id="payout-form" class="space-y-4">
+      <input type="hidden" name="id" id="modal-aff-id" />
+      <div>
+        <label class="block text-xs font-bold text-secondary mb-1">Amount to Pay (₹)</label>
+        <input type="number" name="amount" id="modal-aff-amount" required class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-secondary mb-1">Transaction ID / UTR Number</label>
+        <input type="text" name="transaction_id" required class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" placeholder="e.g. UTR1234567890" />
+      </div>
+      <div class="flex gap-2 justify-end pt-4">
+        <button type="button" onclick="document.getElementById('payout-modal').close()" class="px-4 py-2 text-sm font-medium text-secondary hover:bg-gray-50 rounded-xl transition-colors">Cancel</button>
+        <button type="submit" id="submit-payout-btn" class="px-4 py-2 text-sm font-medium bg-green-600 text-white hover:bg-green-700 rounded-xl transition-colors">Record Payout</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script data-astro-rerun>
+  const payoutModal = document.getElementById('payout-modal');
+  const payoutForm = document.getElementById('payout-form');
+
+  document.querySelectorAll('.approve-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const el = e.currentTarget;
+      const id = el.dataset.id;
+      el.disabled = true;
+      el.innerText = '...';
+      
+      try {
+        const res = await fetch('/api/admin/affiliates', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'approve', id })
+        });
+        if (res.ok) window.location.reload();
+        else {
+          const errBody = await res.json().catch(() => ({}));
+          alert('Error: ' + (errBody.error || 'Failed to approve'));
+          el.disabled = false;
+          el.innerText = 'Approve';
+        }
+      } catch (err) {
+        alert('Network error: ' + err.message);
+        el.disabled = false;
+        el.innerText = 'Approve';
+      }
+    });
+  });
+
+  document.querySelectorAll('.pay-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const el = e.currentTarget;
+      document.getElementById('modal-aff-id').setAttribute('value', el.dataset.id);
+      document.getElementById('modal-aff-name').innerText = el.dataset.name;
+      document.getElementById('modal-aff-amount').setAttribute('value', el.dataset.pending);
+      if(payoutModal.showModal) payoutModal.showModal();
+    });
+  });
+
+  payoutForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-payout-btn');
+    btn.disabled = true;
+    btn.innerText = 'Processing...';
+    
+    const formData = new FormData(payoutForm);
+    try {
+      const res = await fetch('/api/admin/affiliates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'mark_paid',
+          id: formData.get('id'),
+          amount: Number(formData.get('amount')),
+          transaction_id: formData.get('transaction_id')
+        })
+      });
+      
+      if (res.ok) window.location.reload();
+      else {
+        alert('Failed to record payout.');
+        btn.disabled = false;
+        btn.innerText = 'Record Payout';
+      }
+    } catch (err) {
+      alert('Network error');
+      btn.disabled = false;
+      btn.innerText = 'Record Payout';
+    }
+  });
+
+  document.querySelectorAll('.delete-affiliate-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.id;
+      if (!confirm('Are you sure you want to ban this affiliate? Their referral code will stop working immediately. Financial records will be preserved.')) return;
+      
+      try {
+        const res = await fetch('/api/admin/affiliates', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) window.location.reload();
+        else alert('Failed to delete.');
+      } catch (err) { alert('Network error'); }
+    });
+  });
+</script>
+</AdminLayout>

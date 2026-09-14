@@ -1,0 +1,212 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!ctx.adminRole || ctx.adminRole === 'guest') {
+  return Astro.redirect('/admin/login');
+}
+if (!canViewSection(ctx, 'website_config')) {
+  return Astro.redirect('/admin');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+
+// Safe parse web configuration, fallback to defaults
+let webConfig = {
+  category_display_style: 'circular_slider',
+  hide_out_of_stock: false,
+  enable_whatsapp_float: true,
+};
+
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string' 
+      ? JSON.parse(settings.website_configuration) 
+      : settings.website_configuration;
+    webConfig = { ...webConfig, ...parsed };
+  }
+} catch (e) {
+  console.error("Failed to parse website configuration", e);
+}
+
+const isQCommerce = webConfig.theme === 'qcommerce';
+---
+
+<AdminLayout title="Web Configuration | Admin Panel" description="Global storefront settings and layouts.">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Web Configuration</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage global display styles and storefront feature toggles.</p>
+    </div>
+    <button id="save-config-btn" class="btn-primary !px-6 !py-2.5 !rounded-xl text-sm font-bold flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+      Save Configuration
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-20">
+    
+    <!-- LAYOUT SETTINGS -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="p-5 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="font-bold text-secondary flex items-center gap-2">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
+          Layout & Displays
+        </h2>
+      </div>
+      {isQCommerce ? (
+        <div class="p-6">
+          <div class="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+            <div>
+              <p class="font-semibold text-amber-800 text-sm">Q-Commerce Theme is Active</p>
+              <p class="text-amber-700 text-xs mt-0.5">Category display layouts are managed by the Q-Commerce theme. You can still manage delivery times and storefront features below.</p>
+            </div>
+          </div>
+          
+          <div class="mt-6 pt-6 border-t border-gray-100">
+            <label class="block text-sm font-medium text-secondary mb-2">Quick Commerce Delivery ETA</label>
+            <div class="flex items-center gap-2 relative">
+              <input type="number" id="delivery_time" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" placeholder="e.g. 10" value={settings?.delivery_time ? settings.delivery_time.toString().replace(/[^0-9]/g, '') : '10'} />
+              <span class="absolute right-4 text-sm text-gray-500 pointer-events-none">minutes</span>
+            </div>
+            <p class="text-xs text-secondary/50 mt-1.5">This will be shown on the header of the Q-Commerce app (e.g. "Delivery in 10 minutes").</p>
+          </div>
+        </div>
+      ) : (
+      <div class="p-6 space-y-6">
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-2">Home Page Category Section Style</label>
+          <select id="category_display_style" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors">
+            <option value="circular_slider" selected={webConfig.category_display_style === 'circular_slider'}>Circular Slider (Auto-scrolling icons/images)</option>
+            <option value="grid_cards" selected={webConfig.category_display_style === 'grid_cards'}>Image Grid Cards (Rectangular cards with overlay)</option>
+            <option value="image_carousel" selected={webConfig.category_display_style === 'image_carousel'}>Image Carousel (Horizontal swipeable banners)</option>
+          </select>
+          <p class="text-xs text-secondary/50 mt-1.5">Determines how the main product categories are showcased on the home page.</p>
+        </div>
+
+        <div class="pt-4 border-t border-gray-100">
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <div class="relative flex items-center justify-center mt-0.5">
+              <input type="checkbox" id="hide_out_of_stock" class="peer sr-only" checked={webConfig.hide_out_of_stock} />
+              <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </div>
+            <div>
+              <span class="text-sm font-medium text-secondary block">Hide "Out of Stock" Products</span>
+              <span class="text-xs text-secondary/50 block mt-0.5">If enabled, products with 0 stock will be completely hidden from the storefront instead of showing an "Out of Stock" badge.</span>
+            </div>
+          </label>
+        </div>
+      </div>
+      )}
+    </div>
+
+    <!-- FEATURE TOGGLES -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="p-5 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="font-bold text-secondary flex items-center gap-2">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          Storefront Features
+        </h2>
+      </div>
+      <div class="p-6 space-y-6">
+        
+        <div>
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <div class="relative flex items-center justify-center mt-0.5">
+              <input type="checkbox" id="enable_whatsapp_float" class="peer sr-only" checked={webConfig.enable_whatsapp_float} />
+              <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </div>
+            <div>
+              <span class="text-sm font-medium text-secondary block">Enable Floating WhatsApp Button</span>
+              <span class="text-xs text-secondary/50 block mt-0.5">Shows a sticky WhatsApp chat icon in the bottom corner of the website.</span>
+            </div>
+          </label>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="config-data" data-webconfig={JSON.stringify(webConfig)} class="hidden"></div>
+
+<script is:inline data-astro-rerun>
+  (function() {
+    const dataEl = document.getElementById('config-data');
+    if (dataEl && dataEl.dataset.webconfig) {
+      try {
+        window.__currentWebConfig = JSON.parse(dataEl.dataset.webconfig);
+      } catch(e) {}
+    }
+    const saveBtn = document.getElementById('save-config-btn');
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        saveBtn.innerHTML = 'Saving...';
+        saveBtn.disabled = true;
+        
+        const categoryStyleSelect = document.getElementById('category_display_style');
+        
+        // Start with the existing config so we don't blow away theme: 'qcommerce'
+        const existingConfig = window.__currentWebConfig || {};
+        const config = {
+          ...existingConfig,
+          hide_out_of_stock: document.getElementById('hide_out_of_stock')?.checked ?? existingConfig.hide_out_of_stock,
+          enable_whatsapp_float: document.getElementById('enable_whatsapp_float')?.checked ?? existingConfig.enable_whatsapp_float,
+        };
+        
+        // Only update category style if the input exists (it's hidden in QCommerce mode)
+        if (categoryStyleSelect) {
+          config.category_display_style = categoryStyleSelect.value;
+        }
+        
+        // Setup payload
+        const payload = {
+          website_configuration: JSON.stringify(config)
+        };
+        
+        // If delivery time exists (Q-Commerce mode)
+        const deliveryTimeInput = document.getElementById('delivery_time');
+        if (deliveryTimeInput) {
+          payload.delivery_time = deliveryTimeInput.value;
+        }
+
+        let success = false;
+        try {
+          const res = await fetch('/api/admin/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', settings: payload })
+          });
+          const data = await res.json();
+          if(data.success) {
+            success = true;
+            saveBtn.innerHTML = '✅ Configuration Saved!';
+            saveBtn.style.backgroundColor = '#16a34a';
+            saveBtn.style.borderColor = '#16a34a';
+            saveBtn.style.color = '#fff';
+            setTimeout(() => {
+              saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Save Configuration`; 
+              saveBtn.style.backgroundColor = '';
+              saveBtn.style.borderColor = '';
+              saveBtn.style.color = '';
+              saveBtn.disabled = false;
+            }, 2000);
+          } else {
+            alert('Error saving configuration: ' + data.error);
+          }
+        } catch(err) {
+          alert('Network error while saving.');
+        }
+        
+        if (!success) {
+          saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Save Configuration`; 
+          saveBtn.disabled = false; 
+        }
+      };
+    }
+  })();
+</script>
+
+</AdminLayout>

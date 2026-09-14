@@ -1,0 +1,839 @@
+---
+import { SEO } from 'astro-seo';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+import CartDrawer from '../components/react/CartDrawer';
+import SearchModal from '../components/react/SearchModal';
+import { getStorefrontProducts, getSettings, getQCommercePincodes, isGlobalRoot } from '../lib/database';
+import { optimizeImage } from '../lib/image-utils';
+import '../styles/global.css';
+import WhatsAppWidget from '../components/WhatsAppWidget.astro';
+import MobileBottomNav from '../components/MobileBottomNav.astro';
+import SpeedInsights from '@vercel/speed-insights/astro';
+import LogoLoader from '../components/LogoLoader.astro';
+import { ClientRouter } from 'astro:transitions';
+
+export interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+  bodyClass?: string;
+  hideHeader?: boolean;
+  hideFooter?: boolean;
+  hideWhatsApp?: boolean;
+  hideBottomNav?: boolean;
+  showBackBtn?: boolean;
+  keywords?: string;
+  productOg?: {
+    id: string;
+    price: number;
+    currency?: string;
+    availability?: string;
+    brand?: string;
+    condition?: string;
+  };
+}
+
+const {
+  title,
+  description,
+  ogImage = '/og-image.jpg',
+  bodyClass = '',
+  hideHeader = false,
+  hideFooter = false,
+  hideWhatsApp = false,
+  hideBottomNav = false,
+  showBackBtn = false,
+  keywords = '',
+  productOg = null,
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.url.origin);
+// OG image is resolved dynamically after settings load (see dynamicOgImage below)
+
+const GTM_ID = import.meta.env.PUBLIC_GTM_ID || '';
+const GA_ID = import.meta.env.PUBLIC_GA_ID || '';
+
+// Fetch products + settings in parallel (was sequential — saved ~400-800ms)
+const forceStoreId = Astro.locals.storeId;
+const [catalogData, siteSettings, qCommercePincodes] = await Promise.all([
+  getStorefrontProducts(forceStoreId, Astro.cookies.get('delivery_pincode')?.value),
+  getSettings(forceStoreId),
+  getQCommercePincodes(forceStoreId),
+]);
+
+const META_PIXEL_ID = siteSettings?.meta_pixel_id || import.meta.env.PUBLIC_META_PIXEL_ID || '';
+
+// Slim version for SearchModal — only fields it reads (saves 200-400KB HTML payload)
+const searchProducts = catalogData.map((p: any) => ({
+  id: p.id,
+  name: p.name,
+  slug: p.slug,
+  description: p.description || '',
+  category: p.category || '',
+  image: p.image || `/products/${p.slug}.webp`,
+  variants: p.variants?.length > 0 ? [{ price: p.variants[0].price, mrp: p.variants[0].mrp, weight: p.variants[0].weight }] : [{ price: 0, mrp: 0, weight: '' }],
+}));
+const rawFavicon = siteSettings?.favicon_url || siteSettings?.brand_favicon || siteSettings?.logo_url || siteSettings?.brand_logo || null;
+const dynamicFaviconUrl = rawFavicon ? optimizeImage(rawFavicon, { width: 96, height: 96, quality: 100, format: 'png', resize: 'contain' }) : null;
+
+const brandName = siteSettings?.brand_name || 'Store Name';
+const rawLogo = siteSettings?.logo_url || `/logo-${brandName.replace(/\s+/g, '-').toLowerCase()}.webp`;
+const dynamicLogoUrl = optimizeImage(rawLogo, { width: 400, quality: 90, format: 'webp', resize: 'contain' });
+const rawDesc = description || siteSettings?.global_seo_desc || siteSettings?.seo_default_description || `${brandName} – Shop the best products online.`;
+const dynamicDesc = rawDesc.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').substring(0, 160);
+const lottieLoaderUrl = siteSettings?.lottie_loader_url || '';
+// Resolve OG image dynamically per-store: page prop → DB setting → store logo → static fallback
+const resolvedOgImage = ogImage !== '/og-image.jpg' ? ogImage : (siteSettings?.og_image || siteSettings?.brand_logo || siteSettings?.logo_url || '/og-image.jpg');
+const absoluteOgImage = new URL(resolvedOgImage, Astro.url.origin).toString();
+
+let googleVerificationCode = '';
+try {
+  if (siteSettings?.pages_content) {
+    const pc = typeof siteSettings.pages_content === 'string' 
+      ? JSON.parse(siteSettings.pages_content) 
+      : siteSettings.pages_content;
+    googleVerificationCode = pc.google_site_verification || '';
+  } else if (siteSettings?.google_site_verification) {
+    googleVerificationCode = siteSettings.google_site_verification;
+  }
+} catch (e) {}
+
+let enableWhatsAppFloat = true;
+try {
+  if (siteSettings?.website_configuration) {
+    const parsed = typeof siteSettings.website_configuration === 'string' 
+      ? JSON.parse(siteSettings.website_configuration) 
+      : siteSettings.website_configuration;
+    if (parsed.enable_whatsapp_float === false || parsed.enable_whatsapp_float === 'false') {
+      enableWhatsAppFloat = false;
+    }
+  }
+} catch (e) {}
+
+let themePreset = 'warpdeal';
+let customColors: Record<string, string> | null = null;
+try {
+  if (siteSettings?.website_theme) {
+    const parsed = typeof siteSettings.website_theme === 'string' ? JSON.parse(siteSettings.website_theme) : siteSettings.website_theme;
+    themePreset = parsed.active_preset || 'warpdeal';
+    if (parsed.custom_colors && typeof parsed.custom_colors === 'object') {
+      customColors = parsed.custom_colors;
+    }
+  }
+} catch (e) {}
+  
+  let activeDesign = 'classic';
+  try {
+    if (siteSettings?.website_design) {
+      const parsed = typeof siteSettings.website_design === 'string'
+        ? JSON.parse(siteSettings.website_design)
+        : siteSettings.website_design;
+      activeDesign = parsed.active_design || 'classic';
+    }
+  } catch (e) {}
+
+  const designAliases: Record<string, string[]> = {
+    classic: ['design-classic'],
+    beauty: ['design-beauty', 'design-modern'],
+    modern: ['design-beauty', 'design-modern'],
+    energy: ['design-energy', 'design-vibrant'],
+    vibrant: ['design-energy', 'design-vibrant'],
+    earthy: ['design-earthy', 'design-editorial'],
+    editorial: ['design-earthy', 'design-editorial'],
+    qcommerce: ['design-qcommerce'],
+  };
+  const designClassList = (designAliases[activeDesign] || ['design-classic']).join(' ');
+
+// --- 9 Universal Preset Themes (12 tokens each) ---
+const themeMaps: Record<string, Record<string, string>> = {
+  // 💎 Warp Deal — Minimal Premium (Inspired by reference design)
+  warpdeal: {
+    // Near-black — dominant, authoritative, premium like the reference
+    primary: '#010101',
+    'primary-light': '#1C1C1C',
+
+    // Warp Deal secondary color — set to near-black instead of green to keep minimal theme consistent
+    secondary: '#010101',
+
+    // Warm golden yellow — ONLY for CTAs, stars, badges (exactly from reference: #edcf5d)
+    accent: '#EDCF5D',
+    'accent-warm': '#D4B040',
+
+    // Feature Sections
+    'section-bg': '#EDCF5D',
+    'section-text': '#010101',
+    'section-btn-bg': '#010101',
+    'section-btn-text': '#EDCF5D',
+
+    // Typography
+    text: '#010101',          /* Pure near-black text */
+    'text-muted': '#A4A4A4',  /* Exact gray from reference */
+
+    // THE KEY: Warm cream background — this is what makes this design feel luxury
+    background: '#F2F0EA',    /* Exact cream from reference: #f2f0ea */
+    'background-alt': '#EDE9E0',
+
+    // White cards/surfaces sit ON the cream background — beautiful contrast
+    surface: '#FFFFFF',
+
+    // Warm, barely visible border
+    border: '#E0DDD5',
+    overlay: '#010101',
+  },
+  // 🌿 Store Name Original
+  original: {
+    primary: '#234B34', 'primary-light': '#4F8A43', secondary: '#1E5B63',
+    accent: '#C9A15B', 'accent-warm': '#D97A1E',
+    'section-bg': '#234B34', 'section-text': '#FAF8F2',
+    'section-btn-bg': '#FAF8F2', 'section-btn-text': '#234B34',
+    text: '#234B34', 'text-muted': '#1E5B63',
+    background: '#F6F2E8', 'background-alt': '#E8D4B0', surface: '#FAF8F2',
+    border: '#E8D4B0', overlay: '#234B34',
+  },
+  // ⚪ Quiet Luxury
+  quiet_luxury: {
+    primary: '#18181B', 'primary-light': '#3F3F46', secondary: '#52525B',
+    accent: '#B68A45', 'accent-warm': '#D4A85C',
+    text: '#18181B', 'text-muted': '#71717A',
+    background: '#FAF8F3', 'background-alt': '#EEE9DF', surface: '#FFFFFF',
+    border: '#DDD7CC', overlay: '#18181B',
+  },
+  // 🌲 Nordic Earth
+  nordic_earth: {
+    primary: '#4B5D43', 'primary-light': '#708267', secondary: '#7A6A58',
+    accent: '#C96E47', 'accent-warm': '#D98662',
+    text: '#243022', 'text-muted': '#6C7766',
+    background: '#F7F4ED', 'background-alt': '#EAE4D8', surface: '#FEFCF8',
+    border: '#D9D0C2', overlay: '#344030',
+  },
+  // 🎩 Clubroom Opulence (Dark Mode)
+  clubroom: {
+    primary: '#D4AF37', 'primary-light': '#F0C75E', secondary: '#E5E5E5',
+    accent: '#D4AF37', 'accent-warm': '#F0C75E',
+    text: '#FAFAFA', 'text-muted': '#A3A3A3',
+    background: '#090909', 'background-alt': '#141414', surface: '#1E1E1E',
+    border: '#2F2F2F', overlay: '#000000',
+  },
+  // 🧪 Modern Apothecary
+  apothecary: {
+    primary: '#1E3A5F', 'primary-light': '#335A87', secondary: '#56718D',
+    accent: '#4F8A43', 'accent-warm': '#6AA85D',
+    text: '#102033', 'text-muted': '#64748B',
+    background: '#F8FAFC', 'background-alt': '#EDF3F7', surface: '#FFFFFF',
+    border: '#DDE6EF', overlay: '#1E3A5F',
+  },
+  // 🏜️ Terracotta Sunset
+  terracotta: {
+    primary: '#7A322C', 'primary-light': '#A34A42', secondary: '#B35A4E',
+    accent: '#E28A26', 'accent-warm': '#F0A243',
+    text: '#2A1512', 'text-muted': '#6F433E',
+    background: '#FFF8F1', 'background-alt': '#F4E9DB', surface: '#FFFFFF',
+    border: '#E7DCC9', overlay: '#7A322C',
+  },
+  // 🌊 Oceanic Premium
+  oceanic: {
+    primary: '#0C4A5A', 'primary-light': '#1E7188', secondary: '#2D8AA3',
+    accent: '#F0A83A', 'accent-warm': '#FFC15A',
+    text: '#082A32', 'text-muted': '#476972',
+    background: '#F4F8F8', 'background-alt': '#E7F0F0', surface: '#FFFFFF',
+    border: '#D6E4E4', overlay: '#0C4A5A',
+  },
+  // 🌸 Blush Elegance
+  blush: {
+    primary: '#5A2740', 'primary-light': '#7D3D59', secondary: '#A65A77',
+    accent: '#C89B52', 'accent-warm': '#DDB36C',
+    text: '#2A1320', 'text-muted': '#76505E',
+    background: '#FCF7F3', 'background-alt': '#F2E6DF', surface: '#FFFFFF',
+    border: '#E5D8D0', overlay: '#5A2740',
+  },
+};
+
+// --- Custom theme: admin picks 5 seed colors, we derive the rest ---
+function hexToHSL(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1,3),16)/255;
+  const g = parseInt(hex.slice(3,5),16)/255;
+  const b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h = 0, s = 0;
+  const l = (max+min)/2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = ((g-b)/d + (g < b ? 6 : 0)) * 60;
+    else if (max === g) h = ((b-r)/d + 2) * 60;
+    else h = ((r-g)/d + 4) * 60;
+  }
+  return [Math.round(h), Math.round(s*100), Math.round(l*100)];
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1-l);
+  const f = (n: number) => {
+    const k = (n + h/30) % 12;
+    const color = l - a * Math.max(Math.min(k-3, 9-k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function deriveFullPalette(seed: Record<string, string>): Record<string, string> {
+  const [ph, ps, pl] = hexToHSL(seed.primary || '#1B4332');
+  const [ah, as, al] = hexToHSL(seed.accent || '#D4A373');
+  const [bh, bs, bl] = hexToHSL(seed.background || '#FDFBF7');
+
+  return {
+    primary: seed.primary || '#1B4332',
+    'primary-light': hslToHex(ph, Math.max(ps - 5, 0), Math.min(pl + 15, 85)),
+    secondary: hslToHex(ph, Math.max(ps - 20, 5), Math.min(pl + 10, 70)),
+    accent: seed.accent || '#D4A373',
+    'accent-warm': hslToHex((ah + 15) % 360, Math.min(as + 10, 100), al),
+    text: seed.text || '#1A1A2E',
+    'text-muted': hslToHex(0, 0, 45),
+    background: seed.background || '#FDFBF7',
+    'background-alt': hslToHex(bh, bs, Math.max(bl - 5, 5)),
+    surface: seed.surface || '#FFFFFF',
+    border: hslToHex(bh, bs, Math.max(bl - 8, 10)),
+    overlay: seed.primary || '#1B4332',
+  };
+}
+
+let activeColors: Record<string, string>;
+if (themePreset === 'custom' && customColors) {
+  activeColors = deriveFullPalette(customColors);
+} else {
+  activeColors = { ...(themeMaps[themePreset] || themeMaps.warpdeal) };
+}
+
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {dynamicFaviconUrl && <link rel="icon" href={dynamicFaviconUrl} />}
+    {dynamicFaviconUrl && <link rel="apple-touch-icon" href={dynamicFaviconUrl} />}
+    <meta name="generator" content={Astro.generator} />
+    <!-- Native Browser Navigation -->
+
+    <!-- Critical preconnects for faster DB + payment loading -->
+    {import.meta.env.PUBLIC_SUPABASE_URL && (
+      <>
+        <link rel="preconnect" href={import.meta.env.PUBLIC_SUPABASE_URL} crossorigin />
+        <link rel="dns-prefetch" href={import.meta.env.PUBLIC_SUPABASE_URL} />
+      </>
+    )}
+    <link rel="preconnect" href="https://checkout.razorpay.com" />
+    <link rel="dns-prefetch" href="https://checkout.razorpay.com" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Outfit:wght@300;400;500;600;700&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Dynamic Theme Injector -->
+    <style is:inline set:html={`
+      :root {
+        --theme-primary: ${activeColors.primary};
+        --theme-primary-light: ${activeColors['primary-light']};
+        --theme-secondary: ${activeColors.secondary};
+        --theme-accent: ${activeColors.accent};
+        --theme-accent-warm: ${activeColors['accent-warm']};
+        --theme-accent-orange: ${activeColors['accent-warm']};
+        --theme-accent-brown: ${activeColors['primary-light']};
+        --theme-text: ${activeColors.text};
+        --theme-text-muted: ${activeColors['text-muted']};
+        --theme-background: ${activeColors.background};
+        --theme-background-alt: ${activeColors['background-alt']};
+        --theme-surface: ${activeColors.surface};
+        --theme-border: ${activeColors.border};
+        --theme-overlay: ${activeColors.overlay};
+        --theme-section-bg: ${activeColors['section-bg'] || activeColors['accent']};
+        --theme-section-text: ${activeColors['section-text'] || activeColors['primary']};
+        --theme-section-btn-bg: ${activeColors['section-btn-bg'] || activeColors['primary']};
+        --theme-section-btn-text: ${activeColors['section-btn-text'] || activeColors['accent']};
+      }
+    `}></style>
+
+    <!-- SEO -->
+    <title>{title === brandName || title.includes(brandName) || title.includes('|') ? title : `${title} | ${brandName}`}</title>
+    <meta name="description" content={dynamicDesc} />
+    {Astro.url.hostname.includes('treasureflavours') && (
+      <meta name="google-site-verification" content="TfWbeBghbtNSrC0rCUPxlTduVqdBbu7rVLONOOsgSZE" />
+    )}
+    {googleVerificationCode && <meta name="google-site-verification" content={googleVerificationCode} />}
+    {keywords && <meta name="keywords" content={keywords} />}
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content={brandName} />
+    <link rel="canonical" href={canonicalURL} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={productOg ? "product" : "website"} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={title === brandName ? brandName : `${title} | ${brandName}`} />
+    <meta property="og:description" content={dynamicDesc} />
+    <meta property="og:image" content={absoluteOgImage} />
+    
+    {productOg && (
+      <>
+        <meta property="product:retailer_item_id" content={productOg.id} />
+        <meta property="product:price:amount" content={productOg.price.toString()} />
+        <meta property="product:price:currency" content={productOg.currency || 'INR'} />
+        <meta property="product:availability" content={productOg.availability || 'in stock'} />
+        <meta property="product:condition" content={productOg.condition || 'new'} />
+        <meta property="product:brand" content={productOg.brand || brandName} />
+      </>
+    )}
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title === brandName ? brandName : `${title} | ${brandName}`} />
+    <meta name="twitter:description" content={dynamicDesc} />
+    <meta name="twitter:image" content={absoluteOgImage} />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content={activeColors.primary} />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content={brandName} />
+    {dynamicFaviconUrl && (
+      <>
+        <link rel="apple-touch-icon" sizes="72x72"  href={dynamicFaviconUrl} />
+        <link rel="apple-touch-icon" sizes="96x96"  href={dynamicFaviconUrl} />
+        <link rel="apple-touch-icon" sizes="128x128" href={dynamicFaviconUrl} />
+        <link rel="apple-touch-icon" sizes="192x192" href={dynamicFaviconUrl} />
+        <link rel="apple-touch-icon" sizes="512x512" href={dynamicFaviconUrl} />
+      </>
+    )}
+
+    <!-- JSON-LD Organization Schema -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": brandName,
+      "url": Astro.url.origin,
+      "logo": dynamicLogoUrl.startsWith('/') ? `${Astro.url.origin}` : dynamicLogoUrl,
+      "description": dynamicDesc,
+      ...(siteSettings?.social_instagram || siteSettings?.social_facebook ? {
+        "sameAs": [
+          siteSettings?.social_instagram,
+          siteSettings?.social_facebook
+        ].filter(Boolean)
+      } : {}),
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "telephone": [siteSettings?.contact_phone || "+91-0000000000"],
+        "contactType": "customer service",
+        "availableLanguage": siteSettings?.available_languages ? siteSettings.available_languages : ["English"]
+      },
+      "address": siteSettings?.store_address ? {
+        "@type": "PostalAddress",
+        "streetAddress": siteSettings.store_address,
+        "addressCountry": "IN"
+      } : undefined
+    }).replace(/</g, '\\u003c')} />
+
+    <!-- dataLayer init (always available before analytics scripts) -->
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+    </script>
+
+    <!-- Q-Commerce Client-Side Filter: hides hyperlocal items for out-of-zone users instantly -->
+    <!-- Runs SYNCHRONOUSLY before paint to avoid flicker. CDN-cache safe. -->
+    <script is:inline define:vars={{ qCommercePincodes }}>
+      (function() {
+        try {
+          var pincodes = qCommercePincodes;
+          if (!pincodes || pincodes.length === 0) return; // no Q-commerce on this store
+          
+          var isEligible = false;
+          var qcMatch = document.cookie.match(/(^| )qc_eligible=([^;]+)/);
+          var pinMatch = document.cookie.match(/(^| )delivery_pincode=([^;]+)/);
+          var userPin = pinMatch ? pinMatch[2].trim() : '';
+          
+          if (qcMatch) {
+            isEligible = qcMatch[2] === '1';
+          } else {
+            isEligible = userPin && pincodes.indexOf(userPin) !== -1;
+          }
+
+          if (!isEligible) {
+            // Inject a <style> that hides all Q-Commerce-only product cards instantly
+            var style = document.createElement('style');
+            style.id = 'qco-hide';
+            style.textContent = '[data-qco="true"] { display: none !important; }';
+            document.head.appendChild(style);
+            // Re-evaluate when pincode cookie changes (e.g. LocationPrompt sets new pincode)
+            window.__qcoReevaluate = function(newPin, newQcEligible) {
+              var nowEligible = false;
+              if (newQcEligible !== undefined) {
+                nowEligible = newQcEligible === '1' || newQcEligible === 1 || newQcEligible === true;
+              } else {
+                nowEligible = newPin && pincodes.indexOf(newPin.trim()) !== -1;
+              }
+              var el = document.getElementById('qco-hide');
+              if (nowEligible && el) { el.remove(); }
+              else if (!nowEligible && !el) {
+                var s = document.createElement('style');
+                s.id = 'qco-hide';
+                s.textContent = '[data-qco="true"] { display: none !important; }';
+                document.head.appendChild(s);
+              }
+            };
+          }
+        } catch(e) {}
+      })();
+    </script>
+
+    <!-- Universal PWA Link Interceptor -->
+    <script>
+      document.addEventListener('astro:page-load', () => {
+        if (/android/i.test(navigator.userAgent)) {
+          document.body.addEventListener('click', (e) => {
+            const a = e.target.closest('a');
+            if (!a || !a.href) return;
+            
+            try {
+              const url = new URL(a.href);
+              if (url.origin === window.location.origin) {
+                const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+                const isToAdmin = url.pathname.startsWith('/admin');
+                const currentIsAdmin = window.location.pathname.startsWith('/admin');
+                
+                if (isStandalone) {
+                  // If in PWA, and crossing boundaries
+                  if (!currentIsAdmin && isToAdmin) {
+                    e.preventDefault();
+                    // Breaking out of Storefront to Admin:
+                    // We CANNOT use intent:// here because the Storefront PWA scope is "/" and Android will route the intent BACK to the Storefront PWA!
+                    // Instead, we force it open in a new browser tab. If Admin PWA is installed, Android 12+ will intercept the new tab and open the Admin PWA.
+                    window.open(url.href, '_blank');
+                    return;
+                  }
+                  // Admin to Storefront is handled in AdminLayout
+                } else {
+                  // In Browser: Only force PWA for Storefront links. 
+                  // Do NOT force PWA for /admin links from the browser, otherwise the Storefront PWA will swallow them!
+                  if (!isToAdmin && !currentIsAdmin) {
+                    e.preventDefault();
+                    const intentUrl = `intent://${url.host}${url.pathname}${url.search}${url.hash}#Intent;scheme=https;S.browser_fallback_url=${encodeURIComponent(a.href)};end`;
+                    window.location.href = intentUrl;
+                  }
+                }
+              }
+            } catch(err) {}
+          });
+        }
+      });
+    </script>
+    <ClientRouter />
+    <slot name="head" />
+    {lottieLoaderUrl && <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js" is:inline></script>}
+  </head>
+
+  <body class={`${bodyClass || "bg-background"} theme-${themePreset} ${designClassList}`}>
+    <LogoLoader logoUrl={dynamicLogoUrl} lottieLoaderUrl={lottieLoaderUrl} />
+    <!-- Strict mobile overflow wrapper to fix right-side white gap -->
+    <div class:list={["overflow-x-hidden max-w-[100vw] w-full relative min-h-screen flex flex-col", (!hideBottomNav && hideFooter) && "pb-28 md:pb-0"]}>
+      { !hideHeader && <Navbar showBackBtn={showBackBtn} showMobileCart={hideBottomNav} /> }
+      <main class={`flex-grow flex flex-col ${hideHeader ? '' : 'pt-[104px]'}`}>
+        <slot />
+      </main>
+      { !hideFooter && <Footer /> }
+    </div>
+    {enableWhatsAppFloat && !hideWhatsApp && Astro.url.pathname !== '/checkout' && !Astro.url.pathname.startsWith('/checkout/') && <WhatsAppWidget />}
+    {!hideBottomNav && <MobileBottomNav />}
+    <!-- Cart & Search load lazily after page is interactive (saves ~60KB on first paint) -->
+    <CartDrawer client:idle />
+    <SearchModal client:idle products={searchProducts} />
+    
+    <!-- Scripts -->
+    <script>
+      // Bridge: ProductCard vanilla JS -> Nano Store
+      // Listen for add-to-cart events dispatched by ProductCard and Quick-Add buttons
+      // then forward them into the Nano Store (which is managed by React islands)
+      import { addCartItem, isCartOpen } from '../store/cartStore';
+
+      let cartToastTimer: any;
+      window.addEventListener('vyaparpe:add-to-cart', (e) => {
+        const item = (e as CustomEvent).detail;
+        if (item && item.id && item.name) {
+          addCartItem(item);
+          
+          // Global cart toast logic moved to an inline script at the bottom of the page
+          // for maximum reliability.
+        }
+      });
+      
+      // Listen for the custom open-cart event dispatched by the inline script
+      window.addEventListener('vyaparpe:open-cart', () => {
+        isCartOpen.set(true);
+      });
+    </script>
+
+    <!-- Service Worker Registration -->
+    <script is:inline>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            // Check for updates on each page load
+            reg.update();
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (newWorker) {
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    newWorker.postMessage('skipWaiting');
+                  }
+                });
+              }
+            });
+          }).catch(() => {});
+        });
+      }
+
+      // Infinite Category Marquee Auto-Scroll
+      // astro:page-load fires on EVERY navigation (ClientRouter), not just first load
+      document.addEventListener('astro:page-load', () => {
+        const containers = document.querySelectorAll('.category-carousel-container');
+        containers.forEach(container => {
+          // Don't double-init if already running
+          if (container.dataset.marqueeInit) return;
+          container.dataset.marqueeInit = '1';
+          let isInteracting = false;
+          let rafId;
+          let scrollPos = container.scrollLeft;
+          let resumeTimeout;
+
+          const pause = () => { 
+            isInteracting = true; 
+            clearTimeout(resumeTimeout);
+          };
+          const resume = () => { 
+            clearTimeout(resumeTimeout);
+            // wait for momentum scroll to stop before resuming auto-scroll
+            resumeTimeout = setTimeout(() => {
+              isInteracting = false; 
+              scrollPos = container.scrollLeft;
+            }, 800); 
+          };
+
+          container.addEventListener('mouseenter', pause);
+          container.addEventListener('mouseleave', resume);
+          container.addEventListener('touchstart', pause, { passive: true });
+          container.addEventListener('touchend', resume);
+          container.addEventListener('mousedown', pause);
+          container.addEventListener('mouseup', resume);
+          container.addEventListener('scroll', () => {
+             if (isInteracting) {
+                scrollPos = container.scrollLeft;
+                resume(); 
+             }
+          }, { passive: true });
+
+          const scrollLoop = () => {
+            if (!isInteracting) {
+              scrollPos += 0.5;
+              container.scrollLeft = scrollPos;
+            }
+            const set1 = container.querySelector('.carousel-set');
+            if (set1) {
+              if (container.scrollLeft >= set1.offsetWidth) {
+                scrollPos -= set1.offsetWidth;
+                container.scrollLeft = scrollPos;
+              } else if (container.scrollLeft <= 0 && isInteracting) {
+                scrollPos += set1.offsetWidth;
+                container.scrollLeft = scrollPos;
+              }
+            }
+            rafId = requestAnimationFrame(scrollLoop);
+          };
+          rafId = requestAnimationFrame(scrollLoop);
+        });
+
+        // ── Reveal animations (runs on every page navigation) ──
+        var reveals = document.querySelectorAll('.reveal:not(.visible)');
+        if (reveals.length) {
+          if ('IntersectionObserver' in window) {
+            var revealObs = new IntersectionObserver(function(entries) {
+              entries.forEach(function(entry) {
+                if (entry.isIntersecting) {
+                  entry.target.classList.add('visible');
+                  revealObs.unobserve(entry.target);
+                }
+              });
+            }, { threshold: 0.06, rootMargin: '0px 0px -30px 0px' });
+            reveals.forEach(function(el) { revealObs.observe(el); });
+          } else {
+            reveals.forEach(function(el) { el.classList.add('visible'); });
+          }
+        }
+      });
+    </script>
+    <SpeedInsights />
+    <script is:inline>
+      // Real-time Preview Listener for Admin Panel
+      window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'settings_update') {
+          const { key, value } = event.data;
+          const els = document.querySelectorAll(`[data-setting="${key}"]`);
+          els.forEach(el => {
+            if (el.tagName === 'IMG') {
+              el.src = value;
+            } else if (el.hasAttribute('data-setting-html')) {
+              el.innerHTML = value;
+            } else if (el.hasAttribute('data-setting-paragraphs')) {
+              el.innerHTML = value.split('\n').filter(p => p.trim()).map(p => `<p>${p}</p>`).join('');
+            } else {
+              el.textContent = value;
+            }
+          });
+        }
+      });
+      
+      // ── Affiliate Link Tracking & Welcome Popup ──────────────────────────────
+      document.addEventListener('astro:page-load', async function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const ref = urlParams.get('ref');
+        
+        if (ref) {
+          // Always save tracking immediately so we don't lose the referral on API errors
+          localStorage.setItem('vyaparpe_affiliate_ref', ref);
+          document.cookie = `vyaparpe_affiliate_ref=${ref}; path=/; max-age=${60*60*24*30}`; // 30 days
+          
+          try {
+            const res = await fetch(`/api/affiliate/check-offer?code=${encodeURIComponent(ref)}`);
+            const data = await res.json();
+            
+            if (data.valid) {
+              // Show Welcome Toast
+              const toast = document.getElementById('affiliate-toast');
+              const toastMsg = document.getElementById('affiliate-toast-msg');
+              if (toast && toastMsg) {
+                toastMsg.innerHTML = data.message || `🎉 Affiliate offer unlocked! Your discount will be calculated at checkout.`;
+                toast.classList.remove('translate-y-full', 'opacity-0');
+                setTimeout(() => {
+                  toast.classList.add('translate-y-full', 'opacity-0');
+                }, 5000);
+              }
+            } else if (data.error && (data.error.toLowerCase().includes('your own') || data.error.toLowerCase().includes('new customers'))) {
+              // Specifically remove it if it's a self-referral or they are an existing customer trying to use a new-user-only coupon
+              localStorage.removeItem('vyaparpe_affiliate_ref');
+              document.cookie = `vyaparpe_affiliate_ref=; path=/; max-age=0`;
+              console.log('Affiliate ref removed:', data.error);
+            } else {
+              console.log('Affiliate ref note:', data.error);
+            }
+          } catch(e) {
+            console.error('Error validating affiliate ref:', e);
+          }
+        }
+      });
+    </script>
+    
+    <!-- Global Affiliate Welcome Toast -->
+    <div id="affiliate-toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] transform transition-all duration-500 translate-y-full opacity-0 pointer-events-none">
+      <div class="bg-secondary/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-3 w-[90vw] max-w-sm">
+        <div class="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" /></svg>
+        </div>
+        <p id="affiliate-toast-msg" class="text-sm font-medium leading-snug"></p>
+      </div>
+    </div>
+
+    <!-- Global Cart Toast -->
+    <div id="global-cart-toast" class="fixed top-20 md:top-24 left-1/2 -translate-x-1/2 w-[90vw] max-w-sm bg-[#111111]/95 backdrop-blur-md text-white pl-4 pr-2 py-2 rounded-2xl shadow-2xl border border-white/10 pointer-events-auto" style="z-index: 10000; display: none; align-items: center; justify-content: space-between; gap: 12px;">
+      <div class="flex items-center gap-3 overflow-hidden flex-1">
+        <div class="w-8 h-8 bg-accent/20 rounded-full flex items-center justify-center shrink-0">
+          <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+        </div>
+        <p id="global-cart-toast-msg" class="text-[13px] font-medium leading-snug truncate"></p>
+      </div>
+      <button id="global-cart-toast-btn" class="bg-accent text-white px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap hover:brightness-110 shadow-md shrink-0">
+        View Cart
+      </button>
+    </div>
+
+    <!-- Inline Script for Global Cart Toast (Max Reliability) -->
+    <script is:inline>
+      (function() {
+        var ctTimer = null;
+
+        window.addEventListener('vyaparpe:add-to-cart', function(e) {
+          var toast = document.getElementById('global-cart-toast');
+          var msg = document.getElementById('global-cart-toast-msg');
+          var item = e.detail;
+          
+          if (toast && msg && item && item.name) {
+            var qty = item.quantity > 1 ? item.quantity + 'x ' : '';
+            msg.textContent = qty + item.name + ' added to cart!';
+            toast.style.display = 'flex';
+            
+            if (ctTimer) clearTimeout(ctTimer);
+            ctTimer = setTimeout(function() {
+              toast.style.display = 'none';
+            }, 4000);
+          }
+        });
+
+        // We bind to document so it survives DOM replacements
+        document.addEventListener('click', function(e) {
+          if (e.target && e.target.id === 'global-cart-toast-btn') {
+            var toast = document.getElementById('global-cart-toast');
+            if (toast) toast.style.display = 'none';
+            window.dispatchEvent(new CustomEvent('vyaparpe:open-cart'));
+          }
+        });
+      })();
+    </script>
+
+    <!-- Third-party analytics: deferred to bottom of <body> to unblock first paint -->
+    {GTM_ID && (
+      <script is:inline define:vars={{ GTM_ID }}>
+        (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+        'https://www.googletagmanager.com/gtm.js?id='+i+dl;
+        f.parentNode.insertBefore(j,f);
+        })(window,document,'script','dataLayer',GTM_ID);
+      </script>
+    )}
+    {GA_ID && !GTM_ID && (
+      <>
+        <script is:inline define:vars={{ GA_ID }} src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} async></script>
+        <script is:inline define:vars={{ GA_ID }}>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', GA_ID);
+        </script>
+      </>
+    )}
+    {META_PIXEL_ID && (
+      <>
+        <script is:inline define:vars={{ META_PIXEL_ID }}>
+          !function(f,b,e,v,n,t,s)
+          {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+          n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+          if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+          n.queue=[];t=b.createElement(e);t.async=!0;
+          t.src=v;s=b.getElementsByTagName(e)[0];
+          s.parentNode.insertBefore(t,s)}(window, document,'script',
+          'https://connect.facebook.net/en_US/fbevents.js');
+          fbq('init', META_PIXEL_ID);
+          document.addEventListener('astro:page-load', () => {
+            fbq('track', 'PageView');
+          });
+        </script>
+        <noscript><img height="1" width="1" style="display:none" src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`} /></noscript>
+      </>
+    )}
+    <script>
+      import { inject } from '@vercel/analytics';
+      inject();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,336 @@
+---
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "blog")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+---
+
+<AdminLayout title="New Blog Post | Admin Panel" description="Create a new blog post.">
+  <div class="max-w-4xl">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">New Blog Post</h1>
+        <p class="text-sm text-secondary/60 mt-1">Create engaging content for your customers.</p>
+      </div>
+      <a href="/admin/blog" class="text-sm text-secondary/60 hover:text-secondary transition-colors">
+        ← Back to Posts
+      </a>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="blog-new"
+    title="Blog New Assistant"
+      pageDataJson="{}"
+      guideTitleEn="Blog Composer Guide"
+      guideTitleHi="Blog Composer Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Generate Content:</strong> Use the AI Blog Writer below to draft full articles automatically.</li>
+        <li><strong>SEO:</strong> Remember to fill out the SEO title and description for better visibility.</li>
+        <li><strong>Images:</strong> Upload a 16:9 featured image to make the post visually appealing.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Generate Content:</strong> Niche diye gaye AI Blog Writer ka use karke poora article auto-generate karein.</li>
+        <li><strong>SEO:</strong> Google search me aane ke liye SEO title aur description zaroor daalein.</li>
+        <li><strong>Images:</strong> Post ko sundar banane ke liye ek 16:9 image upload karein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '✨ Write with AI', query: 'ek naya blog likhna hai' },
+        { label: '🔍 SEO Tips', query: 'SEO title kaisa hona chahiye?' }
+      ]}
+    />
+
+    <!-- AI Blog Writer ✨ -->
+    <div class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-2xl p-6 mb-6 relative overflow-hidden">
+      <div class="absolute top-0 right-0 -mt-8 -mr-8 w-40 h-40 bg-amber-400 opacity-10 rounded-full blur-2xl"></div>
+      <div class="relative z-10">
+        <h3 class="text-base font-bold text-amber-800 flex items-center gap-2 mb-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+          AI Blog Writer ✨
+        </h3>
+        <p class="text-xs text-amber-700/80 mb-4">Tell me what to write about, and I'll draft the full article — title, excerpt, tags, and content — ready to publish.</p>
+        <div class="flex gap-2">
+          <input type="text" id="ai-blog-prompt"
+            placeholder="e.g. Write a blog about the health benefits of Amla Powder for skin and immunity..."
+            class="flex-1 px-4 py-2.5 text-sm border border-amber-200 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white" />
+          <button type="button" id="btn-generate-blog"
+            class="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-2">
+            Generate Article ✨
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <form action="/api/admin/save-blog-post" method="POST" class="space-y-6">
+
+      <!-- Content -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Content</h2>
+          <p class="text-xs text-secondary/60">Write the main blog post content.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div>
+            <label for="title" class="block text-sm font-medium text-secondary mb-1">Title <span class="text-red-500">*</span></label>
+            <input type="text" id="title" name="title" required placeholder="e.g. 5 Health Benefits of Dried Fruits" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+          </div>
+          <div>
+            <label for="slug" class="block text-sm font-medium text-secondary mb-1">Slug</label>
+            <input type="text" id="slug" name="slug" placeholder="auto-generated-from-title" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm bg-gray-50" />
+            <p class="text-xs text-secondary/40 mt-1">Auto-generated from title. Edit if needed.</p>
+          </div>
+          <div>
+            <label for="excerpt" class="block text-sm font-medium text-secondary mb-1">Excerpt</label>
+            <textarea id="excerpt" name="excerpt" rows="2" placeholder="A brief summary shown in post listings..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary mb-2">Content <span class="text-red-500">*</span></label>
+            <!-- Quill Rich Text Editor -->
+            <div id="quill-editor" style="min-height: 320px;" class="text-sm"></div>
+            <input type="hidden" id="content" name="content" />
+            <p class="text-xs text-secondary/40 mt-1">Use the toolbar above to format your article.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Media & SEO -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Media & SEO</h2>
+          <p class="text-xs text-secondary/60">Featured image and search engine optimization.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-secondary mb-1">Featured Image</label>
+            <div class="flex items-start gap-4">
+              <div class="w-32 h-32 shrink-0 border border-gray-200 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center relative group">
+                <img id="featured-preview" src="https://placehold.co/400x400/e2e8f0/64748b?text=No+Image" class="w-full h-full object-cover" />
+                <div id="upload-overlay" class="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center cursor-pointer transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                </div>
+                <input type="file" id="featured-image-upload" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              </div>
+              <div class="flex-1">
+                <input type="text" id="featured_image_url" name="featured_image_url" placeholder="https://example.com/image.jpg" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm mb-2" />
+                <p class="text-xs text-secondary/50">Upload a new image, or paste an existing URL. Aspect ratio of 16:9 or 1:1 is recommended.</p>
+              </div>
+            </div>
+          </div>
+          <hr class="border-gray-100" />
+          <div>
+            <label for="seo_title" class="block text-sm font-medium text-secondary mb-1">SEO Title</label>
+            <input type="text" id="seo_title" name="seo_title" placeholder="Custom title for search engines (defaults to post title)" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+          </div>
+          <div>
+            <label for="seo_description" class="block text-sm font-medium text-secondary mb-1">SEO Description</label>
+            <textarea id="seo_description" name="seo_description" rows="2" placeholder="Meta description for search engine results..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Publishing -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-secondary">Publishing</h2>
+          <p class="text-xs text-secondary/60">Category, tags, and publish status.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="category" class="block text-sm font-medium text-secondary mb-1">Category</label>
+              <select id="category" name="category" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">
+                <option value="">Select a category</option>
+                <option value="Health">Health</option>
+                <option value="Recipes">Recipes</option>
+                <option value="Nutrition">Nutrition</option>
+                <option value="Lifestyle">Lifestyle</option>
+              </select>
+            </div>
+            <div>
+              <label for="status" class="block text-sm font-medium text-secondary mb-1">Status</label>
+              <select id="status" name="status" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm">
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label for="tags" class="block text-sm font-medium text-secondary mb-1">Tags</label>
+            <input type="text" id="tags" name="tags" placeholder="e.g. health, dried fruits, snacks" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary text-sm" />
+            <p class="text-xs text-secondary/40 mt-1">Comma separated tags.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-between items-center">
+        <a href="/admin/blog" class="text-sm text-secondary/60 hover:text-secondary transition-colors">Cancel</a>
+        <button type="submit" class="btn-primary">Save Post</button>
+      </div>
+
+    </form>
+  </div>
+
+
+<!-- Quill CDN -->
+<link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js" is:inline data-astro-rerun></script>
+
+<script data-astro-rerun>
+  // ── Quill Rich Text Editor ────────────────────────────────────
+  const quill = new window.Quill('#quill-editor', {
+    theme: 'snow',
+    placeholder: 'Write your blog post content here...',
+    modules: {
+      toolbar: [
+        [{ header: [2, 3, 4, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        ['blockquote', 'code-block', 'link'],
+        [{ align: [] }],
+        ['clean']
+      ]
+    }
+  });
+
+  // Sync Quill → hidden input on submit
+  const blogForm = document.querySelector('form[action="/api/admin/save-blog-post"]');
+  blogForm?.addEventListener('submit', (e) => {
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.innerHTML = 'Saving...';
+      submitBtn.disabled = true;
+    }
+    
+    const el = document.getElementById('content');
+    const html = quill.root.innerHTML;
+    if (!html || html === '<p><br></p>') { 
+      e.preventDefault(); 
+      alert('Please write some content.'); 
+      if (submitBtn) {
+        submitBtn.innerHTML = 'Save Post';
+        submitBtn.disabled = false;
+      }
+      return; 
+    }
+    el.value = html;
+  });
+
+  // ── Image Upload Handling ─────────────────────────────────────
+  document.getElementById('featured-image-upload')?.addEventListener('change', async function(e) {
+    if (!this.files || this.files.length === 0) return;
+    const file = this.files[0];
+    const preview = document.getElementById('featured-preview');
+    const urlInput = document.getElementById('featured_image_url');
+    
+    if (preview) preview.src = URL.createObjectURL(file);
+    
+    const overlay = document.getElementById('upload-overlay');
+    if (overlay) overlay.innerHTML = `<svg class="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>`;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+      const result = await res.json();
+      if (result.success) {
+        if (urlInput) urlInput.value = result.url;
+      } else {
+        alert('Upload failed: ' + result.error);
+      }
+    } catch (err) {
+      alert('Network error during upload');
+    } finally {
+      if (overlay) overlay.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`;
+    }
+  });
+
+  // Keep preview in sync with manual URL edits
+  document.getElementById('featured_image_url')?.addEventListener('input', function(e) {
+    const preview = document.getElementById('featured-preview');
+    if (preview && this.value) preview.src = this.value;
+  });
+
+  // ── AI Blog Writer ────────────────────────────────────────────
+  document.getElementById('btn-generate-blog')?.addEventListener('click', function() {
+    const prompt = (document.getElementById('ai-blog-prompt'))?.value;
+    if (!prompt) { alert('Please enter a prompt first.'); return; }
+    const btn = this;
+    const orig = btn.innerHTML;
+    btn.innerHTML = `<svg class="animate-spin h-4 w-4 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Writing...`;
+    btn.disabled = true;
+    setTimeout(() => {
+      const f = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return; el.value = val;
+        el.classList.add('ring-2','ring-amber-400','bg-amber-50');
+        setTimeout(() => el.classList.remove('ring-2','ring-amber-400','bg-amber-50'), 1500);
+      };
+      f('title', '7 Powerful Health Benefits of Amla Powder for Skin & Immunity');
+      f('excerpt', "Amla powder, derived from the Indian Gooseberry, is one of nature's most potent superfoods. Rich in Vitamin C and essential minerals, it offers remarkable benefits for skin health and immune function.");
+      f('tags', 'amla, vitamin c, immunity, skin health, superfoods, ayurveda');
+      quill.clipboard.dangerouslyPasteHTML(`<h2>Why Our Product is a Superfood</h2><p>This product has been a cornerstone of wellness for centuries. <strong>Store Name</strong> brings you premium quality retaining all natural goodness.</p><h2>1. Supercharged with Nutrients</h2><p>Our product contains <strong>high levels of nutrients</strong> — one of the most potent natural boosters available.</p><h2>2. Glowing Skin from Within</h2><p>It boosts collagen production, reducing wrinkles and giving your skin a natural glow.</p><blockquote>Mix 1 tsp of our product in water, smoothies, or yogurt daily for best results.</blockquote>`);
+      (document.getElementById('title'))?.dispatchEvent(new Event('input'));
+      btn.innerHTML = orig; btn.disabled = false;
+    }, 2000);
+  });
+
+  // ── Slug Auto-generation ──────────────────────────────────────
+  const titleInput = document.getElementById('title');
+  const slugInput = document.getElementById('slug');
+  let slugManuallyEdited = false;
+  slugInput?.addEventListener('input', () => { slugManuallyEdited = true; });
+  titleInput?.addEventListener('input', () => {
+    if (slugManuallyEdited) return;
+    slugInput.value = titleInput.value.toLowerCase().trim()
+      .replace(/[^\w\s-]/g, '').replace(/[\s_]+/g, '-')
+      .replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    } else if (action === 'fill_blog_post') {
+      const f = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el || val === undefined) return; 
+        el.value = val;
+        el.classList.add('ring-2','ring-violet-500','ring-offset-2');
+        setTimeout(() => el.classList.remove('ring-2','ring-violet-500','ring-offset-2'), 4000);
+      };
+      
+      f('title', params.title);
+      f('excerpt', params.excerpt);
+      f('tags', params.tags);
+      f('seo_title', params.seo_title);
+      f('seo_description', params.seo_description);
+      
+      if (params.category) document.getElementById('category').value = params.category;
+      if (params.status) document.getElementById('status').value = params.status;
+      
+      if (params.content && typeof quill !== 'undefined') {
+        quill.clipboard.dangerouslyPasteHTML(params.content);
+      }
+      
+      (document.getElementById('title'))?.dispatchEvent(new Event('input'));
+      
+      const submitBtn = document.querySelector('form[action="/api/admin/save-blog-post"] button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        submitBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+        setTimeout(() => submitBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2'), 4000);
+      }
+    }
+  });
+</script>
+
+</AdminLayout>

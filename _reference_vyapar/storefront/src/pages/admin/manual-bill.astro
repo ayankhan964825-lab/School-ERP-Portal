@@ -1,0 +1,886 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+import { getProducts, getSettings, getCoupons, getActiveMilestone, supabaseAdmin, isSupabase } from '../../lib/database';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManageSection(ctx, "orders_manual")) {
+  return new Response("Forbidden", { status: 403 });
+}
+
+const products = await getProducts(Astro.locals?.storeId);
+const settings = await getSettings(Astro.locals?.storeId);
+const coupons = await getCoupons();
+const milestoneOffer = await getActiveMilestone();
+
+// Filter only active/inStock products
+const activeProducts = products.filter((p: any) => p.inStock !== false && !p.outOfStock);
+
+const productsJson = JSON.stringify(activeProducts.map((p: any) => ({
+  id: p.id,
+  name: p.name,
+  price: p.price,
+  originalPrice: p.originalPrice,
+  hsn_code: p.hsn_code || settings.default_hsn_code || '0813',
+  gst_rate: p.gst_rate || settings.default_gst_rate || 12,
+  image: p.images?.[0] || '',
+  hasVariants: p.hasVariants || (p.variants && p.variants.length > 0),
+  variants: p.variants || []
+})));
+
+const settingsJson = JSON.stringify({
+  free_shipping_threshold: settings.free_shipping_threshold || 499,
+  flat_shipping_rate: settings.flat_shipping_rate || 60,
+  prepaid_discount_enabled: settings.prepaid_discount_enabled,
+  prepaid_discount_value: settings.prepaid_discount_value,
+  prepaid_discount_type: settings.prepaid_discount_type,
+  prepaid_discount_min_order: settings.prepaid_discount_min_order,
+  allow_coupon_stacking: settings.allow_coupon_stacking,
+  pos_upi_id: settings.pos_upi_id || ''
+});
+
+const couponsJson = JSON.stringify(coupons || []);
+const milestoneJson = JSON.stringify(milestoneOffer || {});
+
+let locations: any[] = [];
+if (isSupabase && supabaseAdmin && Astro.locals?.storeId) {
+  const { data } = await supabaseAdmin
+    .from('locations')
+    .select('id, name, is_default')
+    .eq('store_id', Astro.locals.storeId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+  if (data) locations = data;
+}
+const locationsJson = JSON.stringify(locations);
+---
+
+<AdminLayout title="Manual Bill Generator | Your Brand Admin">
+  
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div>
+      <div class="flex items-center gap-3 mb-1">
+        <div class="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">WhatsApp / Manual Bill</h1>
+      </div>
+      <p class="text-sm text-secondary/55 ml-[52px]">Quickly generate bills for direct orders</p>
+    </div>
+  </div>
+
+  <PageAiPanel 
+    page="manual-bill"
+    title="Manual Billing Assistant"
+    pageDataJson={JSON.stringify({})}
+    guideTitleEn="Manual Billing Guide"
+    guideTitleHi="Manual Billing Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Customer:</strong> Enter guest checkout details.</li>
+      <li><strong>Products:</strong> Search and add products, select variants if applicable.</li>
+      <li><strong>Coupons:</strong> Enter a valid public or private coupon code to apply system discounts.</li>
+      <li><strong>Discount:</strong> Add arbitrary flat discounts to negotiate via WhatsApp.</li>
+      <li><strong>Print:</strong> Click Generate Bill to instantly get the printable PDF.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Customer:</strong> Customer ki details dalein.</li>
+      <li><strong>Products:</strong> Products search karke add karein.</li>
+      <li><strong>Coupons:</strong> Coupon code (public ya private) apply kar sakte hain.</li>
+      <li><strong>Discount:</strong> WhatsApp par bargaining handle karne ke liye manual discount de sakte hain.</li>
+      <li><strong>Print:</strong> Generate dabaate hi invoice PDF taiyaar ho jayegi.</li>
+    </ul>`}
+    quickActions={[]}
+  />
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-32">
+    <!-- Left Column: Customer & Products -->
+    <div class="lg:col-span-2 space-y-6">
+      
+      <!-- Customer Details Form -->
+      <div class="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Customer Details
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Full Name (Optional)</label>
+            <input type="text" id="cust-name" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="e.g. Rahul Kumar" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Phone Number (Optional)</label>
+            <input type="tel" id="cust-phone" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="e.g. 9876543210" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Email Address (Optional)</label>
+            <input type="email" id="cust-email" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="e.g. rahul@example.com" />
+          </div>
+          <div class="md:col-span-2">
+            <label id="lbl-address" class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Address *</label>
+            <textarea id="cust-address" rows="2" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="House No, Street, Area" required></textarea>
+          </div>
+          <div>
+            <label id="lbl-city" class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">City *</label>
+            <input type="text" id="cust-city" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="City" required />
+          </div>
+          <div>
+            <label id="lbl-state" class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">State *</label>
+            <input type="text" id="cust-state" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="State" required />
+          </div>
+          <div>
+            <label id="lbl-pincode" class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Pincode *</label>
+            <input type="text" id="cust-pincode" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none" placeholder="Pincode" required />
+          </div>
+        </div>
+      </div>
+
+      <!-- Product Selection -->
+      <div class="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+            Order Items
+          </h2>
+          <label class="flex items-center gap-2 cursor-pointer" title="Apply website deals/offers or use custom prices">
+            <span class="text-xs font-semibold text-secondary/70">Website Pricing</span>
+            <div class="relative">
+              <input type="checkbox" id="toggle-deals" class="sr-only peer" checked>
+              <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Product Search/Select -->
+        <div class="relative mb-4">
+          <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Search & Add Product</label>
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <input type="text" id="product-search" autocomplete="off" placeholder="Type to search product..." class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none bg-gray-50/50">
+              <div id="product-dropdown" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg hidden max-h-60 overflow-y-auto">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+            <button type="button" id="btn-add-product" class="px-4 py-2 bg-secondary text-white text-sm font-semibold rounded-xl hover:bg-secondary/90 transition-colors">
+              Add
+            </button>
+          </div>
+        </div>
+
+        <!-- Selected Items Table -->
+        <div class="overflow-x-auto border border-gray-100 rounded-xl mt-4">
+          <table class="w-full text-sm text-left">
+            <thead class="bg-gray-50/80 text-xs text-secondary/50 uppercase tracking-wider border-b border-gray-100">
+              <tr>
+                <th class="px-4 py-3">Item</th>
+                <th class="px-4 py-3 w-32">Variant</th>
+                <th class="px-4 py-3 w-24">Price</th>
+                <th class="px-4 py-3 w-24">Qty</th>
+                <th class="px-4 py-3 w-24 text-right">Total</th>
+                <th class="px-4 py-3 w-10"></th>
+              </tr>
+            </thead>
+            <tbody id="cart-tbody" class="divide-y divide-gray-50">
+              <tr id="empty-cart-row">
+                <td colspan="6" class="px-4 py-8 text-center text-secondary/40 font-medium">No items added yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Order Summary & Actions -->
+    <div class="space-y-6">
+      
+      <div class="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 sticky top-24">
+        <h2 class="text-lg font-bold text-secondary mb-4">Order Summary</h2>
+        
+        <div class="space-y-3 text-sm mb-6 pb-6 border-b border-gray-100">
+          <div class="flex justify-between text-secondary/70">
+            <span>Subtotal</span>
+            <span class="font-semibold text-secondary">₹<span id="summary-subtotal">0</span></span>
+          </div>
+
+          <!-- Coupon Code Input -->
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center gap-2 relative">
+              <input type="text" id="input-coupon" placeholder="Coupon Code" class="w-full px-3 py-1.5 text-sm uppercase border border-gray-200 rounded-lg focus:border-primary outline-none disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed" disabled />
+              <button id="btn-apply-coupon" class="px-3 py-1.5 bg-primary/10 text-primary font-bold rounded-lg hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>Apply</button>
+            </div>
+            <p id="coupon-hint" class="text-[10px] text-secondary/50">Enter phone number to enable coupons.</p>
+          </div>
+          <div id="coupon-message" class="text-[10px] mt-0 hidden"></div>
+
+          <div class="flex justify-between items-center text-secondary/70">
+            <span>Manual Extra Discount</span>
+            <div class="relative w-24">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-secondary/50">₹</span>
+              <input type="number" id="input-discount" value="0" min="0" class="w-full pl-7 pr-2 py-1 text-right border border-gray-200 rounded-lg focus:border-primary outline-none font-semibold text-secondary" />
+            </div>
+          </div>
+          
+          <div id="row-coupon" class="flex justify-between text-emerald-600 hidden">
+            <span>Coupon Discount</span>
+            <span class="font-semibold" id="summary-coupon">-₹0</span>
+          </div>
+          
+          <div id="row-milestone" class="flex justify-between text-emerald-600 hidden">
+            <span>Milestone Offer</span>
+            <span class="font-semibold" id="summary-milestone">-₹0</span>
+          </div>
+
+          <div id="row-prepaid" class="flex justify-between text-emerald-600 hidden">
+            <span>Prepaid Discount</span>
+            <span class="font-semibold" id="summary-prepaid">-₹0</span>
+          </div>
+
+          <div class="flex justify-between text-secondary/70">
+            <span>Shipping <span id="shipping-label" class="text-[10px] bg-primary/10 text-primary px-1.5 rounded ml-1 hidden">FREE</span></span>
+            <span class="font-semibold text-secondary" id="summary-shipping">₹0</span>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-end mb-6">
+          <span class="font-bold text-secondary">Grand Total</span>
+          <span class="text-2xl font-black text-primary">₹<span id="summary-total">0</span></span>
+        </div>
+
+        <!-- Payment Mode -->
+        <div class="mb-4">
+          <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Payment Method</label>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="payment-methods-container">
+            <label class="border border-gray-200 rounded-xl p-3 flex items-center justify-center gap-2 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/5 transition-colors">
+              <input type="radio" name="payment" value="COD" checked class="hidden payment-radio" />
+              <span class="font-bold text-secondary text-sm">COD</span>
+            </label>
+            <label class="border border-gray-200 rounded-xl p-3 flex items-center justify-center gap-2 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/5 transition-colors">
+              <input type="radio" name="payment" value="Prepaid" class="hidden payment-radio" />
+              <span class="font-bold text-secondary text-sm">Prepaid</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Payment Status -->
+        <div class="mb-6">
+          <label class="block text-xs font-semibold text-secondary/50 mb-1.5 uppercase">Initial Payment Status</label>
+          <select id="payment-status" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:border-primary outline-none bg-gray-50/50">
+            <option value="pending">Pending (Unpaid)</option>
+            <option value="paid">Paid (Received)</option>
+          </select>
+          <p class="text-[10px] text-secondary/40 mt-1">If COD but already paid via UPI, mark as Paid.</p>
+        </div>
+
+        <button id="btn-submit-order" class="w-full py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-[0_4px_14px_0_rgba(139,90,43,0.39)] hover:shadow-[0_6px_20px_rgba(139,90,43,0.23)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+          <span>Generate Bill</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+</AdminLayout>
+
+<div id="page-data" 
+  data-products={productsJson} 
+  data-settings={settingsJson}
+  data-coupons={couponsJson}
+  data-milestone={milestoneJson}
+  data-locations={locationsJson}
+  class="hidden"></div>
+
+<script data-astro-rerun>
+  // Setup data
+  const products = JSON.parse(document.getElementById('page-data').dataset.products);
+  const settings = JSON.parse(document.getElementById('page-data').dataset.settings);
+  const couponsList = JSON.parse(document.getElementById('page-data').dataset.coupons);
+  const milestoneOffer = JSON.parse(document.getElementById('page-data').dataset.milestone);
+  const locationsList = JSON.parse(document.getElementById('page-data').dataset.locations || '[]');
+  
+  let cart = []; // Array of items: { pid, vIndex, name, variantName, price, qty, hsn_code, gst_rate }
+  let appliedCoupons = [];
+  let computedTotalDiscount = 0;
+
+  // DOM Elements
+  const pSearch = document.getElementById('product-search');
+  const pDropdown = document.getElementById('product-dropdown');
+  const btnAdd = document.getElementById('btn-add-product');
+  const tbody = document.getElementById('cart-tbody');
+  const emptyRow = document.getElementById('empty-cart-row');
+  
+  const sumSubtotal = document.getElementById('summary-subtotal');
+  const sumShipping = document.getElementById('summary-shipping');
+  const shipLabel = document.getElementById('shipping-label');
+  const inputDiscount = document.getElementById('input-discount');
+  const sumTotal = document.getElementById('summary-total');
+  
+  const inputCoupon = document.getElementById('input-coupon');
+  const btnApplyCoupon = document.getElementById('btn-apply-coupon');
+  const couponMessage = document.getElementById('coupon-message');
+  const couponHint = document.getElementById('coupon-hint');
+  const custPhone = document.getElementById('cust-phone');
+  
+  const rowCoupon = document.getElementById('row-coupon');
+  const sumCoupon = document.getElementById('summary-coupon');
+  
+  const rowMilestone = document.getElementById('row-milestone');
+  const sumMilestone = document.getElementById('summary-milestone');
+  
+  const rowPrepaid = document.getElementById('row-prepaid');
+  const sumPrepaid = document.getElementById('summary-prepaid');
+  
+  const paymentRadios = document.querySelectorAll('input[name="payment"]');
+  const paymentMethodsContainer = document.getElementById('payment-methods-container');
+
+  // Custom Dropdown Logic
+  function renderDropdown(filterText = '') {
+    pDropdown.innerHTML = '';
+    const term = filterText.toLowerCase().trim();
+    
+    let displayItems = [];
+    products.forEach(p => {
+       const pNameMatches = p.name.toLowerCase().includes(term);
+       
+       if (p.hasVariants && p.variants && p.variants.length > 0) {
+          p.variants.forEach((v, vIdx) => {
+             const variantName = v.weight || v.name || 'Default';
+             const fullName = `${p.name} - ${variantName}`;
+             if (pNameMatches || fullName.toLowerCase().includes(term)) {
+                displayItems.push({
+                   type: 'variant',
+                   product: p,
+                   vIndex: vIdx,
+                   displayName: fullName,
+                   price: v.price || p.price
+                });
+             }
+          });
+       } else {
+          if (pNameMatches) {
+             displayItems.push({
+                type: 'product',
+                product: p,
+                vIndex: 0,
+                displayName: p.name,
+                price: p.price
+             });
+          }
+       }
+    });
+    
+    if (displayItems.length === 0) {
+      pDropdown.innerHTML = '<div class="px-4 py-3 text-sm text-gray-500 text-center">No products found</div>';
+      pDropdown.classList.remove('hidden');
+      return;
+    }
+
+    // Limit to top 50 to prevent freezing
+    const displayMatches = displayItems.slice(0, 50);
+
+    displayMatches.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-secondary border-b border-gray-100 last:border-0 flex justify-between items-center';
+      div.innerHTML = `
+        <span class="font-medium">${item.displayName}</span>
+        <span class="text-primary font-semibold text-xs">₹${item.price}</span>
+      `;
+      div.addEventListener('click', () => {
+        pSearch.value = '';
+        pDropdown.classList.add('hidden');
+        addToCart(item.product, item.vIndex);
+      });
+      pDropdown.appendChild(div);
+    });
+    pDropdown.classList.remove('hidden');
+  }
+
+  pSearch.addEventListener('focus', () => renderDropdown(pSearch.value));
+  pSearch.addEventListener('input', (e) => renderDropdown(e.target.value));
+
+  // Hide dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!pSearch.contains(e.target) && !pDropdown.contains(e.target)) {
+      pDropdown.classList.add('hidden');
+    }
+  });
+  
+  function attachPaymentRadioListeners() {
+    document.querySelectorAll('.payment-radio').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const statusDropdown = document.getElementById('payment-status');
+        if (statusDropdown) {
+          if (val === 'Prepaid') {
+            statusDropdown.value = 'paid';
+          } else {
+            statusDropdown.value = 'pending';
+          }
+        }
+        updateTotals();
+      });
+    });
+  }
+  attachPaymentRadioListeners();
+
+  // Coupon enable/disable based on Phone Number
+  custPhone.addEventListener('input', () => {
+    if (custPhone.value.trim().length > 0) {
+      inputCoupon.disabled = false;
+      btnApplyCoupon.disabled = false;
+      couponHint.classList.add('hidden');
+    } else {
+      inputCoupon.disabled = true;
+      btnApplyCoupon.disabled = true;
+      couponHint.classList.remove('hidden');
+      
+      // If phone is removed, also remove the applied coupon
+      if (appliedCoupons.length > 0) {
+        appliedCoupons = [];
+        couponMessage.textContent = '';
+        couponMessage.className = 'hidden';
+        inputCoupon.value = '';
+        updateTotals();
+      }
+    }
+  });
+
+  // Apply Coupon button
+  btnApplyCoupon.addEventListener('click', () => {
+    const code = inputCoupon.value.trim().toUpperCase();
+    if (!code) {
+      appliedCoupons = [];
+      couponMessage.textContent = 'Coupon removed.';
+      couponMessage.className = 'text-[10px] mt-0 text-red-500 block';
+      inputCoupon.value = '';
+      updateTotals();
+      return;
+    }
+    
+    // Find coupon in DB
+    const found = couponsList.find(c => c.code.toUpperCase() === code && c.is_active !== false);
+    if (!found) {
+      couponMessage.textContent = 'Invalid or expired coupon code.';
+      couponMessage.className = 'text-[10px] mt-0 text-red-500 block';
+      return;
+    }
+    
+    // Check minimum order amount requirement (lazy check now, exact check in updateTotals)
+    appliedCoupons = [found]; // Admin can override and type only one at a time via input
+    couponMessage.textContent = 'Coupon applied successfully!';
+    couponMessage.className = 'text-[10px] mt-0 text-emerald-600 block';
+    updateTotals();
+  });
+
+  // Calculate Totals
+  function updateTotals() {
+    let subtotal = 0;
+    cart.forEach(item => {
+      subtotal += item.price * item.qty;
+    });
+
+    const manualDiscount = parseInt(inputDiscount.value || '0', 10) || 0;
+    
+    const toggleDeals = document.getElementById('toggle-deals');
+    const applyDeals = toggleDeals ? toggleDeals.checked : true;
+    
+    // Milestone Discount
+    let milestoneAmount = 0;
+    let activeTierDiscount = 0;
+    if (applyDeals && milestoneOffer && milestoneOffer.tiers && milestoneOffer.tiers.length > 0) {
+      // Ensure tiers are sorted ascending by target
+      const sortedTiers = [...milestoneOffer.tiers].sort((a, b) => a.target - b.target);
+      for (let i = sortedTiers.length - 1; i >= 0; i--) {
+        if (subtotal >= sortedTiers[i].target) {
+          activeTierDiscount = sortedTiers[i].discount;
+          break;
+        }
+      }
+    }
+    if (activeTierDiscount > 0) {
+      milestoneAmount = Math.floor(subtotal * (activeTierDiscount / 100));
+    }
+    
+    // Coupon Discount
+    let couponAmount = 0;
+    let validCoupons = [];
+    appliedCoupons.forEach(coupon => {
+      if (subtotal >= (coupon.min_order_amount || 0)) {
+        validCoupons.push(coupon);
+        if (coupon.discount_type === 'percentage') {
+          let d = Math.floor(subtotal * (coupon.discount_value / 100));
+          if (coupon.max_discount_amount) d = Math.min(d, coupon.max_discount_amount);
+          couponAmount += d;
+        } else {
+          couponAmount += coupon.discount_value;
+        }
+      } else {
+        couponMessage.textContent = `Requires min order of ₹${coupon.min_order_amount}`;
+        couponMessage.className = 'text-[10px] mt-0 text-red-500 block';
+      }
+    });
+    appliedCoupons = validCoupons;
+    
+    const allowStacking = settings.allow_coupon_stacking === true || settings.allow_coupon_stacking === 'true';
+    let systemDiscount = 0;
+    
+    if (allowStacking) {
+      systemDiscount = couponAmount + milestoneAmount;
+    } else {
+      systemDiscount = Math.max(couponAmount, milestoneAmount);
+      if (systemDiscount === couponAmount && couponAmount > 0) {
+         milestoneAmount = 0; // Coupon wins
+      } else {
+         couponAmount = 0; // Milestone wins
+      }
+    }
+    
+    // Prepaid Discount
+    let prepaidAmount = 0;
+    const isPrepaid = document.querySelector('input[name="payment"]:checked').value === 'Prepaid';
+    if (isPrepaid && settings.prepaid_discount_enabled && settings.prepaid_discount_value > 0) {
+      if (subtotal >= (settings.prepaid_discount_min_order || 0)) {
+        if (settings.prepaid_discount_type === 'percentage') {
+          prepaidAmount = Math.floor(subtotal * (settings.prepaid_discount_value / 100));
+        } else {
+          prepaidAmount = settings.prepaid_discount_value;
+        }
+      }
+    }
+
+    computedTotalDiscount = Math.min(systemDiscount + prepaidAmount + manualDiscount, subtotal);
+    const discountedSubtotal = Math.max(0, subtotal - computedTotalDiscount);
+
+    let shipping = 0;
+    if (discountedSubtotal > 0 && discountedSubtotal < Number(settings.free_shipping_threshold)) {
+      shipping = Number(settings.flat_shipping_rate) || 0;
+      shipLabel.classList.add('hidden');
+    } else if (discountedSubtotal > 0) {
+      shipLabel.textContent = 'FREE';
+      shipLabel.classList.remove('hidden');
+    } else {
+      shipLabel.classList.add('hidden');
+    }
+
+    const total = discountedSubtotal + shipping;
+
+    sumSubtotal.textContent = subtotal.toLocaleString('en-IN');
+    sumShipping.textContent = shipping > 0 ? `₹${shipping}` : '₹0';
+    
+    if (couponAmount > 0) {
+      sumCoupon.textContent = `-₹${couponAmount}`;
+      rowCoupon.classList.remove('hidden');
+    } else {
+      rowCoupon.classList.add('hidden');
+    }
+    
+    if (milestoneAmount > 0) {
+      sumMilestone.textContent = `-₹${milestoneAmount} (${activeTierDiscount}%)`;
+      rowMilestone.classList.remove('hidden');
+    } else {
+      rowMilestone.classList.add('hidden');
+    }
+    
+    if (prepaidAmount > 0) {
+      const typeStr = settings.prepaid_discount_type === 'percentage' ? `(${settings.prepaid_discount_value}%)` : '';
+      sumPrepaid.textContent = `-₹${prepaidAmount} ${typeStr}`;
+      rowPrepaid.classList.remove('hidden');
+    } else {
+      rowPrepaid.classList.add('hidden');
+    }
+
+    sumTotal.textContent = total.toLocaleString('en-IN');
+  }
+
+  // Render Cart Table
+  function renderCart() {
+    if (cart.length === 0) {
+      emptyRow.style.display = 'table-row';
+      Array.from(tbody.children).forEach(c => { if(c !== emptyRow) c.remove(); });
+      updateTotals();
+      return;
+    }
+    emptyRow.style.display = 'none';
+    
+    // Clear old rows
+    Array.from(tbody.children).forEach(c => { if(c !== emptyRow) c.remove(); });
+
+    cart.forEach((item, index) => {
+      const tr = document.createElement('tr');
+      tr.className = 'group hover:bg-gray-50 transition-colors';
+      
+      // Select variants dropdown if applicable
+      const p = products.find(prod => prod.id === item.pid);
+      let variantHtml = `<span class="text-secondary/50 text-xs">N/A</span>`;
+      if (p && p.hasVariants && p.variants.length > 0) {
+        variantHtml = `<select class="variant-select text-xs border border-gray-200 rounded px-2 py-1 outline-none focus:border-primary" data-index="${index}">`;
+        p.variants.forEach((v, vIdx) => {
+          variantHtml += `<option value="${vIdx}" ${item.vIndex === vIdx ? 'selected' : ''}>${v.weight || v.name} - ₹${v.price}</option>`;
+        });
+        variantHtml += `</select>`;
+      }
+
+      tr.innerHTML = `
+        <td class="px-4 py-3 font-semibold text-secondary">${item.name}</td>
+        <td class="px-4 py-3">${variantHtml}</td>
+        <td class="px-4 py-3 text-secondary/70">₹${item.price.toLocaleString('en-IN')}</td>
+        <td class="px-4 py-3">
+          <input type="number" min="1" value="${item.qty}" class="qty-input w-16 px-2 py-1 text-sm border border-gray-200 rounded outline-none focus:border-primary text-center" data-index="${index}" />
+        </td>
+        <td class="px-4 py-3 text-right font-bold text-secondary">₹${(item.price * item.qty).toLocaleString('en-IN')}</td>
+        <td class="px-4 py-3 text-right">
+          <button type="button" class="btn-remove text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity" data-index="${index}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Attach events
+    document.querySelectorAll('.qty-input').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        const val = parseInt(e.target.value);
+        if (val > 0) cart[idx].qty = val;
+        renderCart();
+      });
+    });
+
+    document.querySelectorAll('.variant-select').forEach(el => {
+      el.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        const vIdx = parseInt(e.target.value);
+        const item = cart[idx];
+        const p = products.find(prod => prod.id === item.pid);
+        if (p && p.variants[vIdx]) {
+          item.vIndex = vIdx;
+          item.variantName = p.variants[vIdx].weight || p.variants[vIdx].name;
+          const toggleDeals = document.getElementById('toggle-deals');
+          const applyDeals = toggleDeals ? toggleDeals.checked : true;
+          
+          let finalPrice = p.variants[vIdx].price;
+          if (!applyDeals && p.variants[vIdx].pos_price) {
+             finalPrice = parseFloat(p.variants[vIdx].pos_price);
+          }
+          item.price = finalPrice;
+          renderCart();
+        }
+      });
+    });
+
+    document.querySelectorAll('.btn-remove').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index);
+        cart.splice(idx, 1);
+        renderCart();
+      });
+    });
+
+    updateTotals();
+  }
+
+  function addToCart(p, vIndex = 0) {
+    const existing = cart.find(item => item.pid === p.id && item.vIndex === vIndex);
+    const validVariants = p.variants && p.variants.length > 0;
+    const isVariantProd = p.hasVariants && validVariants;
+
+    const toggleDeals = document.getElementById('toggle-deals');
+    const applyDeals = toggleDeals ? toggleDeals.checked : true;
+
+    let finalPrice = isVariantProd && p.variants[vIndex] ? (p.variants[vIndex].price || p.price) : p.price;
+    if (!applyDeals) {
+       if (isVariantProd && p.variants[vIndex] && p.variants[vIndex].pos_price) {
+           finalPrice = parseFloat(p.variants[vIndex].pos_price);
+       } else if (p.specifications && p.specifications._pos_price) {
+           finalPrice = parseFloat(p.specifications._pos_price);
+       }
+    }
+
+    if (existing) {
+      existing.qty += 1;
+    } else {
+      cart.push({
+        pid: p.id,
+        vIndex: vIndex,
+        name: p.name,
+        variantName: isVariantProd && p.variants[vIndex] ? (p.variants[vIndex].weight || p.variants[vIndex].name || 'Default') : 'N/A',
+        price: finalPrice,
+        qty: 1,
+        hsn_code: p.hsn_code,
+        gst_rate: p.gst_rate
+      });
+    }
+    
+    pSearch.value = '';
+    renderCart();
+  }
+  
+  const toggleDeals = document.getElementById('toggle-deals');
+  if (toggleDeals) {
+    toggleDeals.addEventListener('change', () => {
+       cart.forEach(item => {
+          const p = products.find(prod => prod.id === item.pid);
+          if (!p) return;
+          const validVariants = p.variants && p.variants.length > 0;
+          const isVariantProd = p.hasVariants && validVariants;
+          
+          let finalPrice = isVariantProd && p.variants[item.vIndex] ? (p.variants[item.vIndex].price || p.price) : p.price;
+          
+          if (!toggleDeals.checked) {
+             if (isVariantProd && p.variants[item.vIndex] && p.variants[item.vIndex].pos_price) {
+                 finalPrice = parseFloat(p.variants[item.vIndex].pos_price);
+             } else if (p.specifications && p.specifications._pos_price) {
+                 finalPrice = parseFloat(p.specifications._pos_price);
+             }
+          }
+          item.price = finalPrice;
+       });
+       renderCart();
+    });
+  }
+
+  // Add Product button
+  btnAdd.addEventListener('click', () => {
+    const searchVal = pSearch.value.trim();
+    if (!searchVal) return;
+    
+    const searchValLower = searchVal.toLowerCase();
+    
+    let matchedItem = null;
+    products.forEach(p => {
+       if (p.hasVariants && p.variants && p.variants.length > 0) {
+          p.variants.forEach((v, vIdx) => {
+             const variantName = v.weight || v.name || 'Default';
+             const fullName = `${p.name} - ${variantName}`.toLowerCase();
+             if ((p.name.toLowerCase() === searchValLower || fullName.includes(searchValLower)) && !matchedItem) {
+                matchedItem = { product: p, vIndex: vIdx };
+             }
+          });
+       } else {
+          if (p.name.toLowerCase().includes(searchValLower) && !matchedItem) {
+             matchedItem = { product: p, vIndex: 0 };
+          }
+       }
+    });
+
+    if (!matchedItem) {
+      alert("Product not found. Please select from the dropdown or check the spelling.");
+      return;
+    }
+
+    addToCart(matchedItem.product, matchedItem.vIndex);
+  });
+
+  pSearch.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnAdd.click();
+    }
+  });
+
+  inputDiscount.addEventListener('input', updateTotals);
+
+  // Submit Order
+  const btnSubmit = document.getElementById('btn-submit-order');
+  btnSubmit.addEventListener('click', async () => {
+    // Validate
+    let requiredFields = ['cust-address', 'cust-city', 'cust-state', 'cust-pincode'];
+    const allFields = ['cust-name', 'cust-phone', 'cust-address', 'cust-city', 'cust-state', 'cust-pincode', 'cust-email'];
+    let valid = true;
+    const custData = {};
+    allFields.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el.value.trim() && requiredFields.includes(id)) {
+        el.classList.add('ring-2', 'ring-red-400', 'border-red-400');
+        valid = false;
+      } else {
+        el.classList.remove('ring-2', 'ring-red-400', 'border-red-400');
+        custData[id.replace('cust-', '')] = el.value.trim();
+      }
+    });
+
+    if (!valid) {
+      alert("Please fill all required customer details.");
+      return;
+    }
+
+    if (cart.length === 0) {
+      alert("Please add at least one product.");
+      return;
+    }
+
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+
+    // Construct Payload
+    const paymentMode = document.querySelector('input[name="payment"]:checked').value;
+    const paymentStatus = document.getElementById('payment-status').value;
+
+    const subtotal = parseFloat(sumSubtotal.textContent.replace(/,/g, '')) || 0;
+    const shipping = parseFloat(sumShipping.textContent.replace(/[₹,]/g, '')) || 0;
+    const grandTotal = parseFloat(sumTotal.textContent.replace(/,/g, '')) || 0;
+    const discount = computedTotalDiscount || 0;
+
+    const payload = {
+      customer: custData,
+      items: cart.map(c => ({
+        product_id: c.pid,
+        name: c.name,
+        price: c.price,
+        quantity: c.qty,
+        variant_name: c.variantName || '',
+        variant: c.variantName || '',
+        hsn_code: c.hsn_code,
+        gst_rate: c.gst_rate,
+        location_id: null
+      })),
+      subtotal,
+      shipping,
+      discount,
+      grandTotal,
+      couponCode: appliedCoupons.map(c => c.code).join(',') || null,
+      paymentMethod: paymentMode,
+      paymentStatus: paymentStatus,
+      is_pos: false,
+      notes: "Generated via Manual POS / WhatsApp"
+    };
+
+    try {
+      const res = await fetch('/api/admin/create-manual-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        // Standard redirect
+        window.location.href = `/admin/invoice/${data.orderId}`;
+      } else {
+        throw new Error(data.error || 'Failed to create order');
+      }
+    } catch (err) {
+      alert("Error: " + err.message);
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = `<span>Generate Bill</span>...`;
+    }
+  });
+
+  // Init
+  updateTotals();
+</script>\n

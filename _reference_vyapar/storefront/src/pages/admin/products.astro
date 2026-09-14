@@ -1,0 +1,537 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getProducts, getCategories } from '../../lib/database';
+import { getPermissionContext } from '../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+const isSuperAdmin = ctx.adminRole === 'super_admin';
+const userPermissions = ctx.permissions;
+const canManage = isSuperAdmin || userPermissions['products'] === 'manage';
+
+const products = await getProducts(Astro.locals?.storeId);
+const dbCategories = await getCategories(Astro.locals?.storeId);
+
+// Build label map from DB
+const categoryLabels: Record<string, string> = {};
+dbCategories.forEach((c: any) => { categoryLabels[c.slug] = c.name; });
+
+const productsForAI = JSON.stringify(products.map((p: any) => ({
+  id: p.id,
+  name: p.name,
+  category: p.category,
+  variants: p.variants,
+  price: p.variants?.[0]?.price
+})));
+
+const page = parseInt(Astro.url.searchParams.get('page') || '1', 10);
+const limit = 50;
+const searchQuery = (Astro.url.searchParams.get('q') || '').toLowerCase().trim();
+const activeCategory = Astro.url.searchParams.get('category') || 'all';
+
+let filteredProducts = products;
+if (searchQuery) {
+  filteredProducts = filteredProducts.filter((p: any) => 
+    p.name.toLowerCase().includes(searchQuery) || 
+    (p.slug && p.slug.toLowerCase().includes(searchQuery))
+  );
+}
+if (activeCategory && activeCategory !== 'all') {
+  filteredProducts = filteredProducts.filter((p: any) => p.category === activeCategory);
+}
+
+const totalProducts = filteredProducts.length;
+const totalPages = Math.max(1, Math.ceil(totalProducts / limit));
+const paginatedProducts = filteredProducts.slice((page - 1) * limit, page * limit);
+---
+
+<AdminLayout title="Products | Admin Panel" description="Manage your product catalog.">
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Product Catalog</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage {products.length} products and their variants.</p>
+    </div>
+    <div class="flex items-center gap-3 w-full sm:w-auto">
+      <!-- Search -->
+      <form action="" method="GET" class="relative flex-1 sm:w-64">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary/40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          id="product-search"
+          name="q"
+          value={searchQuery}
+          type="search"
+          placeholder="Search all products..."
+          class="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white"
+        />
+        {activeCategory && activeCategory !== 'all' && <input type="hidden" name="category" value={activeCategory} />}
+      </form>
+      <a href="/api/admin/export-catalog?format=csv" class="px-4 py-2 text-sm font-medium border border-gray-200 bg-white text-secondary hover:bg-gray-50 rounded-lg shadow-sm whitespace-nowrap flex items-center gap-1.5" download>
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        CSV
+      </a>
+      <a href="/api/admin/export-catalog?format=json" class="px-4 py-2 text-sm font-medium border border-gray-200 bg-white text-secondary hover:bg-gray-50 rounded-lg shadow-sm whitespace-nowrap flex items-center gap-1.5" download>
+        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        JSON
+      </a>
+      {canManage ? (
+        <a href="/admin/products/edit" class="btn-primary !py-2 !px-4 !text-sm !rounded-lg whitespace-nowrap flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Product
+        </a>
+      ) : (
+        <button onclick="showFakeBugAlert()" class="btn-primary !py-2 !px-4 !text-sm !rounded-lg whitespace-nowrap flex items-center gap-2 opacity-80">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Product
+        </button>
+      )}
+    </div>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="products"
+    title="Products Assistant"
+    pageDataJson={productsForAI}
+    guideTitleEn="Products Guide"
+    guideTitleHi="Products Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Add/Edit:</strong> Click "Add Product" to create new or the pencil icon to edit existing.</li>
+      <li><strong>Stock Toggle:</strong> Quickly mark products in/out of stock using the toggle switch.</li>
+      <li><strong>Filter:</strong> Use category chips to filter products quickly.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Add/Edit:</strong> Naya product daalne ke liye "Add Product" dabayein, aur edit ke liye pencil icon.</li>
+      <li><strong>Stock Toggle:</strong> Product stock mein hai ya nahi, ye toggle switch se direct badlein.</li>
+      <li><strong>Filter:</strong> Category chips se jaldi products dhundhein.</li>
+    </ul>`}
+    quickActions={[
+      { label: '🔍 Search product', query: 'tulsi powder dhoondo' },
+      { label: '📦 Out of stock', query: 'kaun se products out of stock hain' },
+      { label: '📊 Product count', query: 'kitne products hain total' },
+      { label: '🌿 Vegetables', query: 'vegetables category dikhao' }
+    ]}
+  />
+
+  <!-- Category Filter Pills -->
+  <div class="flex flex-wrap gap-2 mb-6" id="category-filters">
+    <button class="category-filter text-xs font-medium px-3 py-1.5 rounded-full border border-primary bg-primary text-white transition-all" data-category="all">
+      All ({products.length})
+    </button>
+    {dbCategories.map((cat: any) => {
+      const count = products.filter((p: any) => p.category === cat.slug).length;
+      return (
+        <button class="category-filter text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-secondary/70 hover:border-primary hover:text-primary transition-all bg-white" data-category={cat.slug}>
+          {cat.name} ({count})
+        </button>
+      );
+    })}
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    {products.length === 0 ? (
+      <div class="p-12 text-center text-secondary/60">
+        No products found in the catalog.
+      </div>
+    ) : (
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full text-sm text-left" id="products-table">
+          <thead class="text-xs text-secondary/70 uppercase bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th class="px-6 py-4">Product Details</th>
+              <th class="px-6 py-4 w-1/2">Variants & Status</th>
+              <th class="px-6 py-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedProducts.length === 0 && (
+              <tr>
+                <td colspan="7" class="py-8 text-center text-secondary/60">No products found.</td>
+              </tr>
+            )}
+            {paginatedProducts.map((product: any) => {
+              const imageSrc = product.image || `/products/${product.slug}.webp`;
+              const rating = product.rating || {};
+              return (
+                <tr class="product-row border-b border-gray-50 hover:bg-gray-50/50 transition-colors" data-category={product.category} data-name={product.name.toLowerCase()}>
+                  <td class="px-6 py-4 align-top">
+                    <div class="flex items-start gap-4">
+                      <img
+                        src={imageSrc}
+                        alt={product.name}
+                        class="w-16 h-16 rounded-lg object-cover bg-gray-100 flex-shrink-0"
+                        onerror="this.src='/placeholder-product.webp'"
+                      />
+                      <div>
+                        <div class="font-medium text-secondary text-base flex items-center gap-2">
+                          {product.name}
+                          {product.is_active === false && (
+                            <span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" title="Draft product: only available for B2B and manual order">
+                              Draft - B2B/Manual Only
+                            </span>
+                          )}
+                          {product.rating && (
+                            <span class="text-xs text-amber-500 flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100">
+                              ⭐ {product.rating?.value ?? product.rating} ({product.rating?.count ?? product.reviews_count ?? 0})
+                            </span>
+                          )}
+                        </div>
+                        <div class="text-xs text-secondary/50 mt-1 mb-2 line-clamp-2">{product.description}</div>
+                        <div class="flex flex-wrap gap-1.5 mb-2">
+                          <span class="inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-gray-100 text-secondary/70">
+                            {categoryLabels[product.category] || product.category}
+                          </span>
+                          {product.badges && product.badges.map((badge: string) => (
+                            <span class="inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                              {badge}
+                            </span>
+                          ))}
+                        </div>
+                        <div class="text-[10px] text-secondary/40 flex items-center gap-2">
+                          <span>Listing Quality:</span>
+                          <span class={product.long_description ? 'text-green-600' : 'text-red-500'}>
+                            {product.long_description ? '✓ Long Desc' : '✗ Long Desc'}
+                          </span>
+                          <span class={product.bullet_points?.length ? 'text-green-600' : 'text-red-500'}>
+                            {product.bullet_points?.length ? `✓ ${product.bullet_points.length} Bullets` : '✗ Bullets'}
+                          </span>
+                          <span class={product.specifications ? 'text-green-600' : 'text-red-500'}>
+                            {product.specifications ? `✓ ${Object.keys(product.specifications).length} Specs` : '✗ Specs'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  
+                  <td class="px-6 py-4 align-top">
+                    <div class="space-y-3">
+                      {(product.variants || []).map((v: any, index: number) => (
+                        <div class="flex items-center justify-between p-2.5 rounded-lg border border-gray-100 bg-white shadow-sm hover:shadow-md transition-shadow">
+                          <div class="flex items-center gap-4">
+                            <span class="text-sm font-bold text-secondary bg-primary/5 text-primary px-2.5 py-1 rounded-md">{v.weight}</span>
+                            <div class="flex flex-col">
+                              <span class="text-sm font-semibold text-secondary">₹{v.price}</span>
+                              <span class="text-[10px] text-secondary/40 line-through">₹{v.mrp}</span>
+                              {product.track_inventory && (
+                                <span class={`text-[10px] font-bold mt-0.5 ${v.stock <= 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                  {v.stock <= 0 ? 'Out of Stock' : v.stock + ' in stock'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div class="flex items-center gap-2">
+                            <!-- Out of Stock Toggle -->
+                            <button
+                              class={`stock-toggle inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all hover:-translate-y-0.5 ${v.is_out_of_stock ? 'border-red-200 bg-red-50 text-red-700' : 'bg-green-50 text-green-700 border-green-200'}`}
+                              data-variant-id={v.id}
+                              data-product-slug={product.slug}
+                              data-status={v.is_out_of_stock ? 'out-of-stock' : 'in-stock'}
+                              title="Toggle Stock Status"
+                            >
+                              <span class={`status-dot w-2 h-2 rounded-full ${v.is_out_of_stock ? 'bg-red-500' : 'bg-green-500'}`}></span>
+                              <span class="status-label">{v.is_out_of_stock ? 'Out of Stock' : 'In Stock'}</span>
+                            </button>
+                            
+                            <!-- Visibility Toggle -->
+                            <button
+                              class={`visibility-toggle inline-flex items-center justify-center p-1.5 rounded-md border transition-all hover:-translate-y-0.5 ${v.is_hidden ? 'bg-amber-50 text-amber-600 border-amber-200' : 'text-secondary/60 hover:text-secondary bg-white border-gray-200'}`}
+                              data-variant-id={v.id}
+                              data-product-slug={product.slug}
+                              data-status={v.is_hidden ? 'hidden' : 'visible'}
+                              title="Toggle Visibility"
+                            >
+                              <svg class="eye-icon w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                {v.is_hidden 
+                                  ? <Fragment set:html={'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />'} />
+                                  : <Fragment set:html={'<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /><circle cx="12" cy="12" r="3" />'} />
+                                }
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+
+                  <td class="px-6 py-4 align-top text-right">
+                    <div class="flex flex-col gap-2 items-end">
+                      {canManage ? (
+                        <a href={`/admin/products/edit?id=${product.id}`} class="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                          Edit
+                        </a>
+                      ) : (
+                        <button onclick="showFakeBugAlert()" class="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                          Edit
+                        </button>
+                      )}
+                      <!-- Quick Category Change -->
+                      <div class="relative">
+                        <select
+                          aria-label="Change category"
+                          class="quick-category-select text-[11px] border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-secondary/70 focus:border-primary focus:ring-1 focus:ring-primary outline-none cursor-pointer hover:border-primary/50 transition-colors"
+                          data-product-slug={product.slug}
+                          title="Change Category"
+                          disabled={!canManage}
+                        >
+                          {!dbCategories.some((c: any) => c.slug === product.category || c.name === product.category || c.id === product.category) && (
+                            <option value={product.category || 'uncategorized'} selected>
+                              {product.category || 'Uncategorized'} (Current)
+                            </option>
+                          )}
+                          {dbCategories.map((cat: any) => (
+                            <option value={cat.slug} selected={product.category === cat.slug || product.category === cat.name || product.category === cat.id}>{cat.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- Pagination footer -->
+  {totalPages > 1 && (
+    <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+      <span class="text-sm text-gray-500">Showing page {page} of {totalPages} ({totalProducts} products)</span>
+      <div class="flex gap-2">
+        {page > 1 && <a href={`?page=${page - 1}&q=${searchQuery}&category=${activeCategory}`} class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Previous</a>}
+        {page < totalPages && <a href={`?page=${page + 1}&q=${searchQuery}&category=${activeCategory}`} class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 bg-primary/5 text-primary border-primary/20">Next</a>}
+      </div>
+    </div>
+  )}
+
+  <!-- Results count -->
+  <p id="results-info" class="text-xs text-secondary/50 mt-4 text-center"></p>
+
+
+<div id="products-page-data" class="hidden" data-manage={canManage ? 'true' : 'false'}></div>
+<script is:inline data-astro-rerun>
+  const dataEl = document.getElementById('products-page-data');
+  const canManage = dataEl ? dataEl.dataset.manage === 'true' : false;
+  window.showFakeBugAlert = () => {
+    alert("Currently editing is disabled by developer because of certain bug. Please try again later.");
+  };
+
+  // ---- Search ----
+  const searchInput = document.getElementById('product-search');
+  const rows = document.querySelectorAll('.product-row');
+  const resultsInfo = document.getElementById('results-info');
+  let activeCategory = 'all';
+
+  function filterRows() {
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    let visible = 0;
+    rows.forEach(row => {
+      const el = row;
+      const name = el.dataset.name || '';
+      const category = el.dataset.category || '';
+      const matchSearch = !query || name.includes(query);
+      const matchCategory = activeCategory === 'all' || category === activeCategory;
+      const show = matchSearch && matchCategory;
+      el.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    if (resultsInfo) {
+      resultsInfo.textContent = query || activeCategory !== 'all'
+        ? `Showing ${visible} of ${rows.length} products`
+        : '';
+    }
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', filterRows);
+  }
+
+  // ---- Category Filter ----
+  document.querySelectorAll('.category-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeCategory = btn.dataset.category || 'all';
+      // Update active styles
+      document.querySelectorAll('.category-filter').forEach(b => {
+        b.classList.remove('bg-primary', 'text-white', 'border-primary');
+        b.classList.add('bg-white', 'text-secondary/70', 'border-gray-200');
+      });
+      btn.classList.add('bg-primary', 'text-white', 'border-primary');
+      btn.classList.remove('bg-white', 'text-secondary/70', 'border-gray-200');
+      filterRows();
+    });
+  });
+
+  // ---- Variant Stock Toggle ----
+  document.querySelectorAll('.stock-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!canManage) return window.showFakeBugAlert();
+      const el = btn;
+      const dot = el.querySelector('.status-dot');
+      const label = el.querySelector('.status-label');
+      const current = el.dataset.status;
+      const productSlug = el.dataset.productSlug;
+      const variantId = el.dataset.variantId;
+      
+      const isOut = current === 'in-stock';
+
+      if (isOut) {
+        el.dataset.status = 'out-of-stock';
+        dot.classList.remove('bg-green-500');
+        dot.classList.add('bg-red-500');
+        label.textContent = 'Out of Stock';
+        el.className = 'stock-toggle inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all hover:-translate-y-0.5 border-red-200 bg-red-50 text-red-700';
+      } else {
+        el.dataset.status = 'in-stock';
+        dot.classList.remove('bg-red-500');
+        dot.classList.add('bg-green-500');
+        label.textContent = 'In Stock';
+        el.className = 'stock-toggle inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-all hover:-translate-y-0.5 bg-green-50 text-green-700 border-green-200';
+      }
+
+      fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_variant', slug: productSlug, variantId, updates: { is_out_of_stock: isOut } })
+      }).then(r => r.json()).then(d => {
+        if (!d.success) {
+           console.error('API Error:', d);
+           showToast(`Failed to save stock status: ${d.error || ''}`, 'error');
+        }
+      }).catch(err => {
+         console.error('Fetch Error:', err);
+         showToast('Network error', 'error');
+      });
+    });
+  });
+
+  // ---- Variant Visibility Toggle ----
+  document.querySelectorAll('.visibility-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!canManage) return window.showFakeBugAlert();
+      const el = btn;
+      const icon = el.querySelector('.eye-icon');
+      const current = el.dataset.status;
+      const productSlug = el.dataset.productSlug;
+      const variantId = el.dataset.variantId;
+      
+      const isHidden = current === 'visible';
+
+      if (isHidden) {
+        el.dataset.status = 'hidden';
+        el.className = 'visibility-toggle inline-flex items-center justify-center p-1.5 rounded-md border transition-all hover:-translate-y-0.5 bg-amber-50 text-amber-600 border-amber-200';
+        icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />';
+      } else {
+        el.dataset.status = 'visible';
+        el.className = 'visibility-toggle inline-flex items-center justify-center p-1.5 rounded-md border transition-all hover:-translate-y-0.5 text-secondary/60 hover:text-secondary bg-white border-gray-200';
+        icon.innerHTML = '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /><circle cx="12" cy="12" r="3" />';
+      }
+
+      fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_variant', slug: productSlug, variantId, updates: { is_hidden: isHidden } })
+      }).then(r => r.json()).then(d => {
+        if (!d.success) {
+           console.error('API Error:', d);
+           showToast(`Failed to save visibility: ${d.error || ''}`, 'error');
+        }
+      }).catch(err => {
+         console.error('Fetch Error:', err);
+         showToast('Network error', 'error');
+      });
+    });
+  });
+
+  // ---- Quick Category Change ----
+  function showToast(msg, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-white text-sm font-medium ${type === 'success' ? 'bg-green-600' : 'bg-red-600'}`;
+    toast.innerHTML = `<span>${type === 'success' ? '✓' : '✗'}</span><span>${msg}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 2500);
+  }
+
+  document.querySelectorAll('.quick-category-select').forEach(select => {
+    const el = select;
+    
+    // If user cannot manage, intercept the interaction
+    if (!canManage) {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        window.showFakeBugAlert();
+      });
+      return;
+    }
+
+    el.addEventListener('change', async () => {
+      const newCategory = el.value;
+      const productSlug = el.dataset.productSlug;
+      const row = el.closest('.product-row');
+      if (row) row.dataset.category = newCategory;
+      filterRows();
+      try {
+        const res = await fetch('/api/admin/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update', slug: productSlug, category: newCategory }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Category updated to "${newCategory}" ✅`, 'success');
+        } else {
+          showToast('Failed to save category', 'error');
+        }
+      } catch (err) {
+        showToast('Network error saving category', 'error');
+      }
+    });
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    const action = e.detail.action;
+    const params = e.detail.params || {};
+
+    if (action === 'search_product') {
+      const inp = document.getElementById('product-search');
+      if (inp) { inp.value = params.query || ''; inp.dispatchEvent(new Event('input')); }
+    }
+    else if (action === 'filter_category') {
+      const btn = document.querySelector(`.category-filter[data-category="${params.category}"]`);
+      if (btn) btn.click();
+    }
+    else if (action === 'show_all') {
+      const allBtn = document.querySelector('.category-filter[data-category="all"]');
+      if (allBtn) allBtn.click();
+      const inp = document.getElementById('product-search');
+      if (inp) { inp.value = ''; inp.dispatchEvent(new Event('input')); }
+    }
+    else if (action === 'toggle_stock') {
+      const btn = document.querySelector(`.stock-toggle[data-product-slug="${params.productSlug}"][data-variant-id="${params.variantId}"]`);
+      if (btn) btn.click();
+    }
+    else if (action === 'navigate_edit') {
+      const sel = document.querySelector(`.quick-category-select[data-product-slug="${params.productSlug}"]`);
+      if (sel) {
+        const link = sel.parentElement?.parentElement?.querySelector('a');
+        if (link) window.location.href = link.href;
+      }
+    }
+  });
+</script>
+
+</AdminLayout>

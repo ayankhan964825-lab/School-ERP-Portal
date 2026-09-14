@@ -1,0 +1,54 @@
+---
+import PolicyLayout from '../layouts/PolicyLayout.astro';
+import { getSettings } from '../lib/database';
+
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : '';
+};
+const brandName = settings?.brand_name || '';
+---
+
+<PolicyLayout title="Sustainability" lastUpdated="May 2026">
+  {s('page_sustainability_0') && (
+  <div data-setting="page_sustainability_0" data-setting-html><Fragment set:html={s('page_sustainability_0')} /></div>
+)}
+
+  {s('page_sustainability_1') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Our Commitment to the Environment</h2>
+  <div data-setting="page_sustainability_1" data-setting-html><Fragment set:html={s('page_sustainability_1')} /></div>
+  </>
+)}
+
+  {s('page_sustainability_2') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Ethical Sourcing & Practices</h2>
+  <div data-setting="page_sustainability_2" data-setting-html><Fragment set:html={s('page_sustainability_2')} /></div>
+  </>
+)}
+
+  {s('page_sustainability_3') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Eco-Friendly Production</h2>
+  <div data-setting="page_sustainability_3" data-setting-html><Fragment set:html={s('page_sustainability_3')} /></div>
+  </>
+)}
+
+  {s('page_sustainability_4') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Sustainable Packaging</h2>
+  <div data-setting="page_sustainability_4" data-setting-html><Fragment set:html={s('page_sustainability_4')} /></div>
+  </>
+)}
+
+  {s('page_sustainability_5') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Join Us in Our Sustainability Journey</h2>
+  <div data-setting="page_sustainability_5" data-setting-html><Fragment set:html={s('page_sustainability_5')} /></div>
+  </>
+)}
+
+</PolicyLayout>

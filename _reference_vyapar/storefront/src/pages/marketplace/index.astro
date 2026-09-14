@@ -1,0 +1,43 @@
+---
+import MarketplaceLayout from '../../layouts/MarketplaceLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+
+// Only allow on global domain
+const isGlobalRoot = Astro.url.hostname === 'vyaparpe.com' || Astro.url.hostname === 'www.vyaparpe.com' || Astro.url.hostname === 'vyaparpe.in' || Astro.url.hostname === 'www.vyaparpe.in' || Astro.url.hostname === 'localhost';
+if (!isGlobalRoot && !Astro.url.searchParams.has('marketplace')) {
+  return new Response("Not found", { status: 404 });
+}
+
+const { data: allProducts } = await supabaseAdmin
+    .from('products')
+    .select('*, stores:store_id (name, custom_domain, subdomain, status)')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(60);
+
+const activeMarketplaceProducts = allProducts?.filter(p => p.stores && p.stores.status === 'active') || [];
+
+const globalFeatured = [...activeMarketplaceProducts]
+    .sort(() => 0.5 - Math.random())
+    .slice(0, 12);
+---
+
+<MarketplaceLayout title="VyaparPe Marketplace | Coming Soon" description="The VyaparPe Marketplace is launching soon!">
+    <section class="min-h-[80vh] flex items-center justify-center bg-gray-50 py-12 md:py-20 px-6">
+        <div class="max-w-3xl mx-auto text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-100 text-purple-700 font-semibold text-sm mb-8 animate-pulse">
+                <span>🚀</span> Launching Soon
+            </div>
+            <h1 class="text-5xl md:text-7xl font-black text-gray-900 mb-6 tracking-tight">VyaparPe <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">Marketplace</span></h1>
+            <p class="text-xl text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed">We're building the ultimate destination to discover and shop directly from independent creators, makers, and brands. Stay tuned!</p>
+            
+            <div class="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 max-w-md mx-auto">
+                <h3 class="font-bold text-gray-900 mb-2">Get notified when we launch</h3>
+                <form class="flex gap-2" onsubmit="event.preventDefault(); alert('Thanks for your interest! We will notify you once we are live.');">
+                    <input type="email" placeholder="Enter your email" required class="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+                    <button type="submit" class="bg-gray-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-gray-800 transition">Notify Me</button>
+                </form>
+            </div>
+        </div>
+    </section>
+</MarketplaceLayout>

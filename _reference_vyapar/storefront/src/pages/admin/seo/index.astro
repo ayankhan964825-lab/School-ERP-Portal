@@ -1,0 +1,357 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+import { getSettings } from '../../../lib/database';
+
+const settings = (await getSettings(Astro.locals?.storeId)) || {};
+
+// Mock Pages with keyword hints for AI
+const pages = [
+  { id: 'home', name: 'Homepage', route: '/', keyword: 'buy premium products online India' },
+  { id: 'products', name: 'Products', route: '/products', keyword: 'buy best products online' },
+  { id: 'about', name: 'About Us', route: '/about', keyword: 'about our premium e-commerce store' },
+  { id: 'contact', name: 'Contact', route: '/contact', keyword: 'contact customer support' },
+  { id: 'blog', name: 'Blog', route: '/blog', keyword: 'top 10 benefits of our products' }
+];
+
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+
+const seoForAI = JSON.stringify({
+  pages: pages,
+  global_title: settings.global_seo_title,
+  global_desc: settings.global_seo_desc
+});
+---
+
+<AdminLayout title="SEO Settings | Admin Panel" description="Manage SEO tags across all pages.">
+  <div class="max-w-4xl mx-auto">
+    <div class="flex items-center gap-4 mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">SEO Manager</h1>
+        <p class="text-sm text-secondary/60 mt-1">Manage global default SEO and page-specific overrides.</p>
+      </div>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="seo"
+    title="Seo Assistant"
+      pageDataJson={seoForAI}
+      guideTitleEn="SEO Guide"
+      guideTitleHi="SEO Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Global SEO:</strong> Set the default title and description for any page that doesn't have its own.</li>
+        <li><strong>Page Overrides:</strong> Give specific pages (like Home, About) their own unique SEO tags.</li>
+        <li><strong>AI SEO Assistant:</strong> Expand a page override and use the AI tool to write optimized titles and descriptions.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Global SEO:</strong> Har page ke liye default title/description yahan set karein.</li>
+        <li><strong>Page Overrides:</strong> Khaas pages (Home, About) ka SEO alag se likhein.</li>
+        <li><strong>AI Assistant:</strong> AI ki madad se automatically SEO title aur description likhwayein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '✨ Write Global SEO', query: 'global seo description ke liye idea do' },
+        { label: '📝 Optimize Home', query: 'homepage ka seo title kya hona chahiye?' }
+      ]}
+    />
+
+    <!-- Analytics IDs -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
+      <div class="mb-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            Analytics & Ads Tracking
+          </h2>
+          <p class="text-sm text-secondary/60">Add IDs to your <code class="text-xs bg-gray-100 px-1 rounded">.env</code> file to activate tracking on all pages.</p>
+        </div>
+        <span class="text-xs bg-orange-50 text-orange-600 font-semibold px-2 py-1 rounded-full border border-orange-100">Env Vars</span>
+      </div>
+
+      <div class="space-y-5">
+        <!-- GTM -->
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium text-secondary flex items-center gap-2">
+            Google Tag Manager Container ID
+            <span class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">PUBLIC_GTM_ID</span>
+          </label>
+          <div class="flex gap-2">
+            <input type="text" id="inp-gtm" placeholder="GTM-XXXXXXX" class="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none font-mono" />
+            <button onclick="copyEnvLine('PUBLIC_GTM_ID', document.getElementById('inp-gtm').value)" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-secondary text-xs rounded-lg transition-colors whitespace-nowrap">📋 Copy .env line</button>
+          </div>
+          <p class="text-xs text-secondary/50">GTM se automatically Meta Pixel, Google Ads, GA4 sab fire honge.</p>
+        </div>
+
+        <!-- Meta Pixel -->
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium text-secondary flex items-center gap-2">
+            Meta Pixel ID (Facebook/Instagram)
+            <span class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">PUBLIC_META_PIXEL_ID</span>
+          </label>
+          <div class="flex gap-2">
+            <input type="text" id="inp-pixel" placeholder="1234567890123456" class="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none font-mono" />
+            <button onclick="copyEnvLine('PUBLIC_META_PIXEL_ID', document.getElementById('inp-pixel').value)" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-secondary text-xs rounded-lg transition-colors whitespace-nowrap">📋 Copy .env line</button>
+          </div>
+        </div>
+
+        <!-- GA4 -->
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium text-secondary flex items-center gap-2">
+            Google Analytics 4 ID (Direct, if no GTM)
+            <span class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">PUBLIC_GA_ID</span>
+          </label>
+          <div class="flex gap-2">
+            <input type="text" id="inp-ga" placeholder="G-XXXXXXXXXX" class="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none font-mono" />
+            <button onclick="copyEnvLine('PUBLIC_GA_ID', document.getElementById('inp-ga').value)" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-secondary text-xs rounded-lg transition-colors whitespace-nowrap">📋 Copy .env line</button>
+          </div>
+        </div>
+
+        <!-- Env instructions box -->
+        <div class="bg-gray-900 rounded-xl p-4 font-mono text-xs text-green-400">
+          <p class="text-gray-500 mb-2"># .env file mein paste karo (storefront/.env)</p>
+          <p id="env-preview">PUBLIC_GTM_ID=<span class="text-yellow-400">GTM-XXXXXXX</span></p>
+          <p>PUBLIC_META_PIXEL_ID=<span class="text-yellow-400">your_pixel_id</span></p>
+          <p>PUBLIC_GA_ID=<span class="text-yellow-400">G-XXXXXXXXXX</span></p>
+          <p class="text-gray-500 mt-2"># Phir server restart karo — auto-active!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robots.txt Editor -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+      <div class="mb-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" /></svg>
+            Robots.txt Editor
+          </h2>
+          <p class="text-sm text-secondary/60">Crawlers ko batao kya index karna hai. Product pages = index, admin = noindex.</p>
+        </div>
+        <a href="/robots.txt" target="_blank" class="text-xs text-primary underline">View current ↗</a>
+      </div>
+      <textarea id="robots-editor" rows="14" class="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-y bg-gray-50">User-agent: *
+Allow: /
+Allow: /products/
+Allow: /blog/
+Allow: /about
+Allow: /contact
+Allow: /faq
+Allow: /shipping-policy
+Allow: /refund-policy
+Allow: /privacy-policy
+Allow: /terms
+Disallow: /admin/
+Disallow: /api/
+Disallow: /account/
+
+# Sitemaps
+Sitemap: https://yourdomain.com/sitemap.xml</textarea>
+      <div class="flex justify-between items-center mt-3">
+        <p class="text-xs text-secondary/40">⚠️ Note: File system access ke liye Supabase + server deploy chahiye. Abhi ye preview hai.</p>
+        <button onclick="downloadRobots()" class="btn-primary !px-4 !py-2 !rounded-lg text-sm">⬇ Download robots.txt</button>
+      </div>
+    </div>
+
+    {success && (
+      <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+        SEO settings saved successfully.
+      </div>
+    )}
+    {error && (
+      <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+        Failed to save SEO settings. Please try again.
+      </div>
+    )}
+
+    <!-- Global SEO -->
+    <form action="/api/admin/update-settings" method="POST" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+      <div class="mb-5 pb-4 border-b border-gray-100">
+        <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Global Default SEO
+        </h2>
+        <p class="text-sm text-secondary/60">These tags act as a fallback if a specific page or product does not have its own SEO tags defined.</p>
+      </div>
+
+      <div class="space-y-5">
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium text-secondary">Global Site Title Template</label>
+          <input type="text" name="global_seo_title" value={settings.global_seo_title || "%s | Shop Online"} class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
+          <p class="text-xs text-secondary/50">%s will be replaced by the page name.</p>
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium text-secondary">Default Meta Description</label>
+          <textarea rows="3" name="global_seo_desc" class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none">{settings.global_seo_desc || "Shop premium products online."}</textarea>
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium text-secondary">Default OpenGraph (OG) Image URL</label>
+          <input type="text" name="global_seo_image" value={settings.global_seo_image || ''} placeholder="https://..." class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
+        </div>
+        <div class="flex justify-end pt-2">
+          <button type="submit" class="btn-primary !px-6 !py-2 !rounded-lg text-sm">Save Global SEO</button>
+        </div>
+      </div>
+    </form>
+
+    <!-- Page Overrides -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="p-6 border-b border-gray-100">
+        <h2 class="text-lg font-bold text-secondary">Page-Specific Overrides</h2>
+        <p class="text-sm text-secondary/60">Define specific SEO for standard pages. Use AI ✨ to auto-generate in seconds.</p>
+      </div>
+      
+      <div class="divide-y divide-gray-100">
+        {pages.map((page) => (
+          <div class="p-6">
+            <div class="flex justify-between items-center cursor-pointer group" onclick={`document.getElementById('seo-${page.id}').classList.toggle('hidden')`}>
+              <div>
+                <h3 class="font-medium text-secondary group-hover:text-primary transition-colors">{page.name}</h3>
+                <p class="text-xs text-secondary/40">{page.route}</p>
+              </div>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            
+            <div id={`seo-${page.id}`} class="hidden mt-6 pt-6 border-t border-gray-50">
+              
+              <!-- AI SEO Assistant -->
+              <div class="mb-5 bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-100 rounded-xl p-4 relative overflow-hidden">
+                <div class="absolute top-0 right-0 -mt-4 -mr-4 w-20 h-20 bg-violet-400 opacity-10 rounded-full blur-xl"></div>
+                <div class="relative z-10">
+                  <p class="text-xs font-bold text-violet-800 flex items-center gap-1.5 mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                    AI SEO Assistant ✨
+                  </p>
+                  <div class="flex gap-2">
+                    <input type="text" 
+                      id={`ai-seo-prompt-${page.id}`}
+                      placeholder={`e.g. Generate SEO for the ${page.name} page focusing on ${page.keyword}`}
+                      class="flex-1 px-3 py-1.5 text-xs border border-violet-200 rounded-lg focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none bg-white"
+                    />
+                    <button type="button" 
+                      class="ai-seo-btn bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
+                      data-page-id={page.id}
+                      data-page-name={page.name}>
+                      Generate ✨
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <form action="/api/admin/update-settings" method="POST" class="space-y-4">
+                <input type="hidden" name="action" value="update_page_seo" />
+                <input type="hidden" name="page_id" value={page.id} />
+                <div class="space-y-1.5">
+                  <label class="text-sm font-medium text-secondary">Meta Title</label>
+                  <input type="text" name="title" value={settings[`page_seo_${page.id}`]?.title || ''} id={`seo-title-${page.id}`} placeholder={`e.g. ${page.name} | Shop Online`} class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50 focus:bg-white transition-colors" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-sm font-medium text-secondary">Meta Description</label>
+                  <textarea rows="2" name="desc" id={`seo-desc-${page.id}`} class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none bg-gray-50/50 focus:bg-white transition-colors" placeholder="Custom description for this page...">{settings[`page_seo_${page.id}`]?.desc || ''}</textarea>
+                </div>
+                <div class="flex justify-end">
+                  <button type="submit" class="btn-primary !px-6 !py-2 !rounded-lg text-sm">Update {page.name}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    document.querySelectorAll('.ai-seo-btn').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        const pageId = this.dataset.pageId;
+        const pageName = this.dataset.pageName;
+        const promptInput = document.getElementById(`ai-seo-prompt-${pageId}`);
+        const userPrompt = promptInput ? promptInput.value : '';
+        const originalHtml = this.innerHTML;
+
+        this.innerHTML = `<svg class="animate-spin h-3 w-3 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>Generating...`;
+        this.disabled = true;
+
+        try {
+          const res = await fetch('/api/admin/generate-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'seo',
+              context: `Page Name: ${pageName}`,
+              prompt: userPrompt || `Generate SEO title and description for ${pageName} page.`
+            })
+          });
+          const data = await res.json();
+          
+          if (!res.ok) throw new Error(data.error || 'Failed to generate');
+
+          const applyField = (id, val) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.value = val;
+            el.classList.add('bg-violet-50', 'border-violet-400');
+            setTimeout(() => el.classList.remove('bg-violet-50', 'border-violet-400'), 1500);
+          };
+
+          applyField(`seo-title-${pageId}`, data.title);
+          applyField(`seo-desc-${pageId}`, data.desc);
+        } catch (err) {
+          alert('Error generating SEO: ' + err.message);
+        } finally {
+          this.innerHTML = originalHtml;
+          this.disabled = false;
+        }
+      });
+    });
+
+    // Copy env line to clipboard
+    function copyEnvLine(key, value) {
+      if (!value.trim()) { alert('Pehle value enter karo!'); return; }
+      const line = `${key}=${value.trim()}`;
+      navigator.clipboard.writeText(line).then(() => {
+        const toast = document.createElement('div');
+        toast.className = 'fixed bottom-6 right-6 bg-secondary text-white text-sm px-4 py-3 rounded-xl shadow-xl z-50 flex items-center gap-2';
+        toast.innerHTML = `✅ Copied: <code class="font-mono text-xs bg-white/20 px-1 rounded">${line}</code>`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      });
+    }
+
+    // Download robots.txt
+    function downloadRobots() {
+      const content = document.getElementById('robots-editor').value;
+      const blob = new Blob([content], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'robots.txt';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      } else if (action === 'fill_global_seo') {
+        if (params.title) document.querySelector('input[name="global_seo_title"]').value = params.title;
+        if (params.desc) document.querySelector('textarea[name="global_seo_desc"]').value = params.desc;
+        if (params.image) document.querySelector('input[name="global_seo_image"]').value = params.image;
+        
+        const submitBtn = document.querySelector('form[action="/api/admin/update-settings"] button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          submitBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(() => submitBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2'), 4000);
+        }
+      }
+    });
+  </script>
+</AdminLayout>

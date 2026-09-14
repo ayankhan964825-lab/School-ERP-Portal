@@ -1,0 +1,315 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getSettings } from '../../lib/database';
+import { getEffectiveAuthMode } from '../../lib/auth';
+
+// If already logged in, redirect
+if (Astro.cookies.has('vyaparpe_affiliate_id')) {
+  return Astro.redirect('/affiliate/dashboard');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+const { authMode, otpLength, testMode } = await getEffectiveAuthMode(Astro.locals?.storeId);
+---
+
+<Layout title="Affiliate Partner Portal" hideHeader={true} hideFooter={true} hideWhatsApp={true}>
+  <div class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
+      <!-- Header -->
+      <div class="bg-gradient-to-br from-primary to-emerald-700 p-8 text-white text-center relative overflow-hidden">
+        <div class="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay"></div>
+        <div class="relative z-10">
+          <h1 class="text-3xl font-serif font-bold mb-2">Partner Portal</h1>
+          <p class="text-sm opacity-90">Join Your Brand affiliate program</p>
+        </div>
+      </div>
+      
+      <!-- Body -->
+      <div class="p-8 relative">
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 mb-6 relative">
+          <button id="tab-login" class="flex-1 py-3 text-sm font-bold text-primary border-b-2 border-primary transition-colors">Log In</button>
+          <button id="tab-register" class="flex-1 py-3 text-sm font-medium text-secondary/60 hover:text-secondary transition-colors border-b-2 border-transparent">Apply Now</button>
+        </div>
+
+        <!-- Details Step -->
+        <div id="details-step">
+          <!-- Login Form -->
+          <form id="login-form" class="space-y-4">
+            <div id="login-phone-field" class={authMode === 'email_only' ? 'hidden' : ''}>
+              <label class="block text-xs font-bold text-secondary mb-1">Phone Number</label>
+              <div class="flex">
+                <span class="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-200 bg-gray-50 text-secondary text-sm font-bold">+91</span>
+                <input type="tel" name="phone" id="login-phone" maxlength="10" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-r-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="Enter 10-digit number" />
+              </div>
+            </div>
+            
+            <div id="login-email-field" class={authMode === 'phone_only' ? 'hidden' : ''}>
+              <label class="block text-xs font-bold text-secondary mb-1">Email Address</label>
+              <input type="email" name="email" id="login-email" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="you@example.com" />
+            </div>
+
+            {authMode === 'both' && (
+              <p class="text-xs text-secondary/50 text-center">
+                <button type="button" id="toggle-login-method-btn" class="text-primary font-medium hover:underline">Use Email instead</button>
+              </p>
+            )}
+
+            <button type="submit" id="login-btn" class="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors mt-2">Send OTP</button>
+          </form>
+
+          <!-- Register Form -->
+          <form id="register-form" class="space-y-4 hidden">
+            <div>
+              <label class="block text-xs font-bold text-secondary mb-1">Full Name</label>
+              <input type="text" name="name" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="Your Name" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-secondary mb-1">Phone Number</label>
+              <div class="flex">
+                <span class="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-200 bg-gray-50 text-secondary text-sm font-bold">+91</span>
+                <input type="tel" name="phone" required maxlength="10" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-r-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="Enter 10-digit number" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-secondary mb-1">Email Address</label>
+              <input type="email" name="email" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="you@example.com" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-secondary mb-1">Instagram Handle (Optional)</label>
+              <input type="text" name="instagram" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="@username or Profile Link" />
+            </div>
+
+            <div class="pt-4 border-t border-gray-100">
+              <h3 class="text-sm font-bold text-secondary mb-3">Payout Details <span class="text-xs font-medium text-secondary/50 font-normal">(Optional)</span></h3>
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-bold text-secondary mb-1">UPI ID</label>
+                  <input type="text" name="upi_id" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm" placeholder="yourname@upi" />
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" id="register-btn" class="w-full py-3 bg-secondary text-white font-bold rounded-xl hover:bg-secondary/90 transition-colors mt-4">Send OTP to Verify</button>
+          </form>
+          
+          <p id="error-msg" class="text-red-500 text-xs font-medium text-center mt-4 hidden"></p>
+        </div>
+
+        <!-- OTP Step -->
+        <div id="otp-step" class="hidden">
+          <div class="text-center mb-6">
+            <h2 class="text-lg font-bold text-secondary mb-1">Verify OTP</h2>
+            <p class="text-sm text-secondary/60">We sent a {otpLength}-digit code to <br/><span id="otp-target-display" class="font-bold text-secondary"></span></p>
+          </div>
+          
+          <form id="verify-otp-form" class="space-y-4">
+            <div>
+              <input type="text" id="otp-input" required maxlength={otpLength} class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-center text-xl tracking-[0.5em] font-bold" placeholder="••••" />
+              {testMode && <p class="text-xs text-secondary/50 text-center mt-2">Test mode: Enter any {otpLength}-digit code</p>}
+            </div>
+            <button type="submit" id="verify-btn" class="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors mt-2">Verify & Continue</button>
+            <button type="button" id="back-btn" class="w-full text-center text-sm text-primary font-medium hover:underline mt-2">← Back</button>
+            <p id="otp-error-msg" class="text-red-500 text-xs font-medium text-center mt-4 hidden"></p>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script define:vars={{ authMode, otpLength }}>
+    // State
+    let currentAction = 'login'; // 'login' | 'register'
+    let currentLoginVia = authMode === 'email_only' ? 'email' : 'phone';
+    let pendingFormData = null;
+
+    // Elements
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const detailsStep = document.getElementById('details-step');
+    const otpStep = document.getElementById('otp-step');
+    const errorMsg = document.getElementById('error-msg');
+    const otpErrorMsg = document.getElementById('otp-error-msg');
+    const otpDisplay = document.getElementById('otp-target-display');
+    const verifyForm = document.getElementById('verify-otp-form');
+    
+    const loginPhoneField = document.getElementById('login-phone-field');
+    const loginEmailField = document.getElementById('login-email-field');
+    const toggleLoginMethodBtn = document.getElementById('toggle-login-method-btn');
+
+    // UI Helpers
+    function switchTab(isLogin) {
+      errorMsg.classList.add('hidden');
+      currentAction = isLogin ? 'login' : 'register';
+      
+      if (isLogin) {
+        tabLogin.classList.replace('text-secondary/60', 'text-primary');
+        tabLogin.classList.replace('font-medium', 'font-bold');
+        tabLogin.classList.replace('border-transparent', 'border-primary');
+        
+        tabRegister.classList.replace('text-primary', 'text-secondary/60');
+        tabRegister.classList.replace('font-bold', 'font-medium');
+        tabRegister.classList.replace('border-primary', 'border-transparent');
+        
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+      } else {
+        tabRegister.classList.replace('text-secondary/60', 'text-primary');
+        tabRegister.classList.replace('font-medium', 'font-bold');
+        tabRegister.classList.replace('border-transparent', 'border-primary');
+        
+        tabLogin.classList.replace('text-primary', 'text-secondary/60');
+        tabLogin.classList.replace('font-bold', 'font-medium');
+        tabLogin.classList.replace('border-primary', 'border-transparent');
+        
+        registerForm.classList.remove('hidden');
+        loginForm.classList.add('hidden');
+      }
+    }
+
+    tabLogin?.addEventListener('click', () => switchTab(true));
+    tabRegister?.addEventListener('click', () => switchTab(false));
+
+    toggleLoginMethodBtn?.addEventListener('click', () => {
+      if (currentLoginVia === 'phone') {
+        currentLoginVia = 'email';
+        loginPhoneField.classList.add('hidden');
+        loginEmailField.classList.remove('hidden');
+        toggleLoginMethodBtn.textContent = 'Use Phone instead';
+      } else {
+        currentLoginVia = 'phone';
+        loginEmailField.classList.add('hidden');
+        loginPhoneField.classList.remove('hidden');
+        toggleLoginMethodBtn.textContent = 'Use Email instead';
+      }
+    });
+
+    document.getElementById('back-btn')?.addEventListener('click', () => {
+      otpStep.classList.add('hidden');
+      detailsStep.classList.remove('hidden');
+      document.getElementById('otp-input').value = '';
+    });
+
+    // Send OTP Handler
+    async function handleSendOtp(formElement, btnElement, actionStr) {
+      const btnOrigText = btnElement.textContent;
+      btnElement.disabled = true;
+      btnElement.textContent = 'Sending OTP...';
+      errorMsg.classList.add('hidden');
+
+      const formData = new FormData(formElement);
+      const data = Object.fromEntries(formData);
+      
+      // Basic validation
+      if (actionStr === 'login') {
+        if (currentLoginVia === 'phone' && (!data.phone || data.phone.length !== 10)) {
+          errorMsg.textContent = 'Please enter a valid 10-digit phone number.';
+          errorMsg.classList.remove('hidden');
+          btnElement.disabled = false;
+          btnElement.textContent = btnOrigText;
+          return;
+        }
+        if (currentLoginVia === 'email' && (!data.email || !data.email.includes('@'))) {
+          errorMsg.textContent = 'Please enter a valid email address.';
+          errorMsg.classList.remove('hidden');
+          btnElement.disabled = false;
+          btnElement.textContent = btnOrigText;
+          return;
+        }
+      }
+
+      // We use the main storefront send-otp endpoint
+      // Registration defaults to phone, unless authMode is email_only
+      let sendVia;
+      if (actionStr === 'login') {
+        sendVia = currentLoginVia;
+      } else {
+        sendVia = authMode === 'email_only' ? 'email' : 'phone';
+      }
+      
+      const sendPayload = sendVia === 'phone' ? { phone: data.phone } : { email: data.email };
+
+      try {
+        const res = await fetch('/api/account/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sendPayload)
+        });
+
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.mock) alert(`MOCK MODE: Any ${otpLength}-digit OTP will work!`);
+          
+          pendingFormData = { ...data, action: actionStr, via: sendVia };
+          otpDisplay.textContent = sendVia === 'phone' ? '+91 ' + data.phone : data.email;
+          
+          detailsStep.classList.add('hidden');
+          otpStep.classList.remove('hidden');
+          document.getElementById('otp-input').focus();
+        } else {
+          const errBody = await res.json().catch(()=>({}));
+          errorMsg.textContent = errBody.error || 'Failed to send OTP. Please try again.';
+          errorMsg.classList.remove('hidden');
+        }
+      } catch (err) {
+        errorMsg.textContent = 'Network error. Check your connection.';
+        errorMsg.classList.remove('hidden');
+      } finally {
+        btnElement.disabled = false;
+        btnElement.textContent = btnOrigText;
+      }
+    }
+
+    loginForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleSendOtp(loginForm, document.getElementById('login-btn'), 'login');
+    });
+
+    registerForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleSendOtp(registerForm, document.getElementById('register-btn'), 'register');
+    });
+
+    // Verify OTP
+    verifyForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const otpInput = document.getElementById('otp-input');
+      const otp = otpInput.value.trim();
+      const btn = document.getElementById('verify-btn');
+      
+      if (!otp) return;
+      
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+      otpErrorMsg.classList.add('hidden');
+
+      try {
+        const payload = { ...pendingFormData, otp };
+        const res = await fetch('/api/affiliate/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+          window.location.href = '/affiliate/dashboard';
+        } else {
+          otpErrorMsg.textContent = data.error || 'Invalid OTP. Please try again.';
+          otpErrorMsg.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Verify & Continue';
+        }
+      } catch (err) {
+        otpErrorMsg.textContent = 'Something went wrong. Please try again.';
+        otpErrorMsg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Verify & Continue';
+      }
+    });
+  </script>
+</Layout>

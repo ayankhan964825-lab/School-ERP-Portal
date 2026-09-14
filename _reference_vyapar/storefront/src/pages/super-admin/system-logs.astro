@@ -1,0 +1,118 @@
+---
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+import { getPermissionContext } from '../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (ctx.adminRole !== 'super_admin') {
+  return Astro.redirect('/super-admin/login');
+}
+
+// Handle Mark as Resolved Action
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const errorId = formData.get('error_id')?.toString();
+  if (errorId) {
+    await supabaseAdmin.from('system_error_logs').update({ resolved: true }).eq('id', errorId);
+  }
+}
+
+// Fetch logs
+const { data: logs, error } = await supabaseAdmin
+  .from('system_error_logs')
+  .select(`
+    *,
+    stores ( name, custom_domain )
+  `)
+  .order('created_at', { ascending: false })
+  .limit(100);
+
+const unresolovedCount = logs?.filter(l => !l.resolved).length || 0;
+---
+
+<SuperAdminLayout title="System Error Logs">
+  <div class="px-4 sm:px-6 lg:px-8 py-8">
+    <div class="sm:flex sm:items-center">
+      <div class="sm:flex-auto">
+        <h1 class="text-2xl font-bold text-gray-900">System Error Logs</h1>
+        <p class="mt-2 text-sm text-gray-700">
+          A secure dashboard showing internal backend errors, failed background tasks, and unhandled exceptions. 
+          Normal users and store admins cannot see this.
+        </p>
+      </div>
+      <div class="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+        <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
+          {unresolovedCount} Unresolved
+        </span>
+      </div>
+    </div>
+    
+    <div class="mt-8 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+            <table class="min-w-full divide-y divide-gray-300">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Timestamp</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Store</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Error Type</th>
+                  <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Message</th>
+                  <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                    <span class="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                {error && (
+                  <tr>
+                    <td colspan="5" class="px-3 py-4 text-sm text-red-500 text-center">Failed to load logs: {error.message}</td>
+                  </tr>
+                )}
+                {logs?.length === 0 && (
+                  <tr>
+                    <td colspan="5" class="px-3 py-4 text-sm text-gray-500 text-center">System is healthy! No error logs found.</td>
+                  </tr>
+                )}
+                {logs?.map((log) => (
+                  <tr class={log.resolved ? "bg-gray-50 opacity-60" : "bg-white"}>
+                    <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-500 sm:pl-6">
+                      {new Date(log.created_at).toLocaleString()}
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      {log.stores ? log.stores.name : 'Platform Level'}
+                    </td>
+                    <td class="whitespace-nowrap px-3 py-4 text-sm">
+                      <span class={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${
+                        log.error_type === 'LOGGING_FAILURE' ? 'bg-orange-50 text-orange-700 ring-orange-600/20' : 
+                        'bg-red-50 text-red-700 ring-red-600/10'
+                      }`}>
+                        {log.error_type}
+                      </span>
+                    </td>
+                    <td class="px-3 py-4 text-sm text-gray-900 max-w-xs truncate cursor-pointer hover:whitespace-normal" title={log.stack_trace || log.error_message}>
+                      {log.error_message}
+                      {log.context && Object.keys(log.context).length > 0 && (
+                        <div class="mt-1 text-xs text-gray-400">Context: {JSON.stringify(log.context)}</div>
+                      )}
+                    </td>
+                    <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                      {!log.resolved && (
+                        <form method="POST" class="inline">
+                          <input type="hidden" name="error_id" value={log.id} />
+                          <button type="submit" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-200">
+                            Mark Resolved
+                          </button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</SuperAdminLayout>

@@ -1,0 +1,199 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+import { supabaseAdmin } from '../../lib/database';
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import type { Order, Wallet } from '../../lib/types/admin';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManageSection(ctx, "super_admin")) {
+  return Astro.redirect('/super-admin/login');
+}
+
+// Ensure Admin client exists
+if (!supabaseAdmin) {
+    return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+// State variables
+let storeCount = 0;
+let orderCount = 0;
+let recentOrders = [];
+let totalRevenue = 0;
+const storeMap: Record<string, string> = {};
+let negativeWallets = [];
+
+try {
+    // 1. Fetch Global Stats (Active Stores only)
+    const { count: sCount, error: sErr } = await supabaseAdmin.from('stores').select('*', { count: 'estimated', head: true }).eq('status', 'active');
+    if (sErr) throw sErr;
+    storeCount = sCount || 0;
+
+    const { count: oCount, error: oErr } = await supabaseAdmin.from('orders').select('*', { count: 'estimated', head: true });
+    if (oErr) throw oErr;
+    orderCount = oCount || 0;
+
+    // 2. Fetch Recent Orders
+    const { data: rOrders, error: rErr } = await supabaseAdmin
+        .from('orders')
+        .select('order_id, amount, status, created_at, store_id')
+        .order('created_at', { ascending: false })
+        .limit(10);
+    if (rErr) throw rErr;
+    recentOrders = rOrders || [];
+
+    // 3. Fetch Platform Revenue (Using DB SUM instead of fetching all records)
+    try {
+        const { data: revenueData, error: revenueError } = await supabaseAdmin.rpc('get_platform_total_revenue');
+        if (!revenueError) {
+            totalRevenue = revenueData || 0;
+        } else {
+            console.warn('Revenue RPC missing or failed:', revenueError.message);
+        }
+    } catch(e) {
+        console.warn('Revenue fetch failed:', e);
+    }
+
+    // Fetch store names only for the stores in recent orders
+    const orderStoreIds = [...new Set(recentOrders.map(o => o.store_id))];
+    if (orderStoreIds.length > 0) {
+        const { data: sList, error: sListErr } = await supabaseAdmin
+            .from('stores')
+            .select('id, name')
+            .in('id', orderStoreIds);
+        if (sListErr) throw sListErr;
+        sList?.forEach(s => storeMap[s.id] = s.name);
+    }
+
+    // 4. Fetch Stores with Negative Wallet Balance
+    const { data: nWallets, error: nErr } = await supabaseAdmin
+        .from('wallets')
+        .select('store_id, balance, stores(name, owner_phone, status)')
+        .lt('balance', 0)
+        .order('balance', { ascending: true });
+    if (nErr) throw nErr;
+    negativeWallets = nWallets || [];
+
+} catch (error) {
+    console.error("Dashboard Fetch Error:", error);
+}
+
+// CSS classes
+const statusStyle: { [key: string]: string } = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  confirmed: 'bg-blue-100 text-blue-800',
+  shipped: 'bg-purple-100 text-purple-800',
+  delivered: 'bg-green-100 text-green-800',
+  cancelled: 'bg-red-100 text-red-800',
+};
+---
+
+<SuperAdminLayout title="Global Platform | VyaparPe Super Admin">
+    <div class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Platform Overview</h1>
+            <p class="text-sm text-slate-500 mt-1">Aggregated metrics across all {storeCount} active tenants.</p>
+        </div>
+        <div class="flex gap-3">
+            <button class="px-4 py-2 bg-white border border-slate-200 rounded-md text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors">
+                Export Data
+            </button>
+        </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-5 flex flex-col gap-1">
+            <div class="text-[13px] font-medium text-slate-500 uppercase tracking-wider">Total Active Stores</div>
+            <div class="text-3xl font-semibold text-slate-900 mt-1">{storeCount || 0}</div>
+        </div>
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-5 flex flex-col gap-1">
+            <div class="text-[13px] font-medium text-slate-500 uppercase tracking-wider">Global Orders Processed</div>
+            <div class="text-3xl font-semibold text-slate-900 mt-1">{orderCount || 0}</div>
+        </div>
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-5 flex flex-col gap-1">
+            <div class="text-[13px] font-medium text-slate-500 uppercase tracking-wider">Gross Merchandise Value</div>
+            <div class="text-3xl font-semibold text-slate-900 mt-1">₹{totalRevenue.toLocaleString('en-IN')}</div>
+        </div>
+    </div>
+
+    <!-- Action Alerts: Negative Balances -->
+    {negativeWallets && negativeWallets.length > 0 && (
+        <div class="mb-8 bg-red-50 border border-red-200 rounded-lg p-5">
+            <h2 class="text-[15px] font-semibold text-red-900 mb-4 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                Action Required: Unpaid SaaS Fees / Negative Wallets
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {negativeWallets.map((wallet: Wallet) => {
+                    // Handle case where store might be null/deleted
+                    const storeData = Array.isArray(wallet.stores) ? wallet.stores[0] : wallet.stores;
+                    return (
+                    <div class="bg-white border border-red-100 rounded-md p-4 shadow-sm flex flex-col gap-2">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="font-semibold text-slate-900 text-sm">{storeData?.name || 'Unknown Store'}</div>
+                                <div class="text-xs text-slate-500 mt-0.5">{storeData?.owner_phone || 'N/A'}</div>
+                            </div>
+                            <span class={`text-[10px] uppercase px-2 py-0.5 rounded font-bold ${storeData?.status === 'suspended' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                {storeData?.status || 'unknown'}
+                            </span>
+                        </div>
+                        <div class="mt-2 text-xl font-bold text-red-600">
+                            ₹{wallet.balance.toLocaleString('en-IN')}
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-red-50 flex justify-end gap-2">
+                            <a href={`/super-admin/stores`} class="text-xs font-medium text-blue-600 hover:text-blue-800">View Store</a>
+                        </div>
+                    </div>
+                )})}
+            </div>
+        </div>
+    )}
+
+    <!-- Global Order Feed -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+            <h2 class="text-[15px] font-semibold text-slate-900">Live Platform Order Feed</h2>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                    <tr>
+                        <th class="px-6 py-3 font-medium">Store</th>
+                        <th class="px-6 py-3 font-medium">Order ID</th>
+                        <th class="px-6 py-3 font-medium">Amount</th>
+                        <th class="px-6 py-3 font-medium">Status</th>
+                        <th class="px-6 py-3 font-medium text-right">Time</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {recentOrders?.map((order: Order) => (
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-6 py-3 text-[13px] font-medium text-slate-900">
+                                {storeMap[order.store_id] || 'Unknown Store'}
+                            </td>
+                            <td class="px-6 py-3 text-[13px] font-mono text-slate-600">{order.order_id}</td>
+                            <td class="px-6 py-3 text-[13px] font-semibold text-slate-900">₹{(order.amount || 0).toLocaleString('en-IN')}</td>
+                            <td class="px-6 py-3">
+                                <span class={`text-[11px] capitalize font-medium px-2 py-0.5 rounded-full ${statusStyle[order.status] || 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                                    {order.status}
+                                </span>
+                            </td>
+                            <td class="px-6 py-3 text-[12px] text-slate-500 text-right">
+                                {new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </td>
+                        </tr>
+                    ))}
+                    {(!recentOrders || recentOrders.length === 0) && (
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">
+                                No recent orders found on the platform.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</SuperAdminLayout>

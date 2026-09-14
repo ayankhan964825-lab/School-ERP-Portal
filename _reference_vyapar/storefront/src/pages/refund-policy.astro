@@ -1,0 +1,47 @@
+---
+import PolicyLayout from '../layouts/PolicyLayout.astro';
+import { getSettings } from '../lib/database';
+
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : '';
+};
+const brandName = settings?.brand_name || '';
+---
+
+<PolicyLayout title="Refund Policy" lastUpdated="May 2026">
+  {s('page_refund_policy_0') && (
+  <div data-setting="page_refund_policy_0" data-setting-html><Fragment set:html={s('page_refund_policy_0')} /></div>
+)}
+
+  {s('page_refund_policy_1') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Refunds</h2>
+  <div data-setting="page_refund_policy_1" data-setting-html><Fragment set:html={s('page_refund_policy_1')} /></div>
+  </>
+)}
+
+  {s('page_refund_policy_2') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Delivery Costs</h2>
+  <div data-setting="page_refund_policy_2" data-setting-html><Fragment set:html={s('page_refund_policy_2')} /></div>
+  </>
+)}
+
+  {s('page_refund_policy_3') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Disclaimer</h2>
+  <div data-setting="page_refund_policy_3" data-setting-html><Fragment set:html={s('page_refund_policy_3')} /></div>
+  </>
+)}
+
+  {s('page_refund_policy_4') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">Contact Us</h2>
+  <div data-setting="page_refund_policy_4" data-setting-html><Fragment set:html={s('page_refund_policy_4')} /></div>
+  </>
+)}
+
+</PolicyLayout>

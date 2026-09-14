@@ -1,0 +1,1350 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getStaff, getSettings } from '../../lib/database';
+import { getPermissionContext } from '../../lib/permissions';
+
+const dbStaff = await getStaff();
+const currentSettings = await getSettings(Astro.locals?.storeId);
+let pc = currentSettings.pages_content;
+if (typeof pc === 'string') { try { pc = JSON.parse(pc); } catch {} }
+const customEmail = (pc && typeof pc === 'object' && pc.super_admin_custom_email) ? pc.super_admin_custom_email : null;
+const customName = (pc && typeof pc === 'object' && pc.super_admin_custom_name) ? pc.super_admin_custom_name : 'Super Admin';
+const adminEmail = (customEmail || import.meta.env.ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase();
+
+// Use centralized permission context
+const ctx = getPermissionContext(Astro.cookies);
+const callerHierarchy = ctx.hierarchyLevel;
+const isOriginalSuperAdmin = ctx.isOriginalSuperAdmin;
+const callerName = ctx.adminName;
+const callerRole = ctx.adminRole;
+const callerEmail = ctx.adminId ? '' : adminEmail;
+
+const callerPerms: Record<string, string> = isOriginalSuperAdmin ? {} : (ctx.permissions || {});
+function getCallerPerm(key: string): 'manage' | 'view' | 'none' {
+  if (isOriginalSuperAdmin) return 'manage';
+  const p = callerPerms[key];
+  return (p === 'manage' || p === 'view') ? p : 'none';
+}
+
+// Hierarchy levels display
+const HIERARCHY_LABELS: Record<number, string> = {
+  0: 'Original Super Admin',
+  1: 'Super Admin',
+  2: 'Admin',
+  3: 'Manager',
+  4: 'Moderator',
+  5: 'Staff',
+};
+
+// Build staff list — always include owner as first member
+const owner = {
+  id: 'staff-owner',
+  name: customName,
+  email: adminEmail,
+  role: 'super_admin',
+  hierarchy_level: 0,
+  lastLogin: 'Today',
+  status: 'active',
+  initials: customName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+  is_primary: true,
+};
+const otherStaff = dbStaff.filter((s: any) => s.id !== 'staff-owner').map((s: any) => ({
+  ...s,
+  initials: s.initials || (s.name || '').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+  lastLogin: s.lastLogin || (s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Never'),
+  status: s.is_active === false ? 'inactive' : (s.status || 'active'),
+  hierarchy_level: s.hierarchy_level ?? 5,
+}));
+
+// Only show staff below caller's level (Original SA sees all)
+const allStaff = [owner, ...otherStaff];
+const staffMembers = isOriginalSuperAdmin 
+  ? allStaff 
+  : allStaff.filter((s: any) => (s.hierarchy_level ?? 5) > callerHierarchy);
+
+const staffForAI = JSON.stringify(staffMembers.map((s: any) => ({
+  id: s.id,
+  name: s.name,
+  email: s.email,
+  role: s.role,
+  status: s.status,
+  lastLogin: s.lastLogin
+})));
+
+interface Permission {
+  label: string;
+  super_admin: boolean;
+  admin: boolean;
+  manager: boolean;
+  custom: string;
+}
+
+const permissions: Permission[] = [
+  { label: 'Reports',            super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Orders',             super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Batch Print',        super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Products',           super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Categories',         super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Flash Sales',        super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Bulk Upload',        super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Media',              super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Customers',          super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Reviews',            super_admin: true, admin: true,  manager: true,  custom: 'Variable' },
+  { label: 'Feedback & B2B',     super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Coupons',            super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Milestones',         super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Blog',               super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Hero Banner',        super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'SEO Settings',       super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Marketing',          super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Notifications',      super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Shipping Rates',     super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Finance',            super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Staff Accounts',     super_admin: true, admin: false, manager: false, custom: 'Variable' },
+  { label: 'Activity Logs',      super_admin: true, admin: false, manager: false, custom: 'Variable' },
+  { label: 'API Settings',       super_admin: true, admin: false, manager: false, custom: 'Variable' },
+  { label: 'Store Details',      super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'WhatsApp Auto',      super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+  { label: 'Website Config',     super_admin: true, admin: true,  manager: false, custom: 'Variable' },
+];
+
+const activityLogs: any[] = [
+  {
+    id: 'log-1',
+    user: 'Demo Staff',
+    role: 'super_admin',
+    action: 'Updated settings',
+    target: 'Razorpay API keys updated',
+    time: 'Today, 6:12 AM',
+    icon: 'settings',
+  },
+  {
+    id: 'log-2',
+    user: 'Riya Sharma',
+    role: 'admin',
+    action: 'Added product',
+    target: 'Mango Powder 500g listed',
+    time: 'Yesterday, 3:45 PM',
+    icon: 'product',
+  },
+  {
+    id: 'log-3',
+    user: 'Demo Staff',
+    role: 'super_admin',
+    action: 'Invited staff',
+    target: 'riya@yourstore.com invited as Admin',
+    time: 'May 18, 11:00 AM',
+    icon: 'invite',
+  },
+  {
+    id: 'log-4',
+    user: 'Mohd. Asif',
+    role: 'manager',
+    action: 'Edited order',
+    target: 'Order #ND-20451 marked as shipped',
+    time: 'May 17, 2:30 PM',
+    icon: 'order',
+  },
+  {
+    id: 'log-5',
+    user: 'Riya Sharma',
+    role: 'admin',
+    action: 'Published blog',
+    target: '"5 Benefits of Dried Mango" published',
+    time: 'May 15, 10:15 AM',
+    icon: 'blog',
+  },
+];
+
+const iconPaths: Record<string, string> = {
+  settings: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+  product:  'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+  invite:   'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z',
+  order:    'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z',
+  blog:     'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z',
+};
+
+const iconBgColors: Record<string, string> = {
+  settings: 'bg-gray-100 text-gray-500',
+  product:  'bg-orange-100 text-orange-600',
+  invite:   'bg-purple-100 text-purple-600',
+  order:    'bg-blue-100 text-blue-600',
+  blog:     'bg-green-100 text-green-600',
+};
+---
+
+<AdminLayout title="Staff Accounts | Admin Panel" description="Manage admin users and their permissions.">
+
+  <!-- Page Header -->
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Staff Accounts</h1>
+      <p class="text-sm text-secondary/60 mt-1">Manage admin users and their permissions</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/admin/bulk-upload/staff" class="btn-primary !bg-white !text-primary border border-primary hover:!bg-primary/5 flex items-center justify-center gap-2 shrink-0 py-2.5 px-4 shadow-sm text-sm rounded-xl font-semibold">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        BYO-AI Bulk Gen
+      </a>
+      <button
+        id="open-invite-modal"
+        class="flex items-center gap-2 bg-primary text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-primary/90 active:scale-95 transition-all shadow-sm"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Invite Staff
+      </button>
+    </div>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="staff"
+    title="Staff Assistant"
+    pageDataJson={staffForAI}
+    guideTitleEn="Staff Guide"
+    guideTitleHi="Staff Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Invite:</strong> Click "Invite Staff" to add new team members with specific roles.</li>
+      <li><strong>Roles:</strong> Super Admin has full access. Admin cannot manage settings/staff. Manager has restricted view access.</li>
+      <li><strong>Status:</strong> Toggle active/inactive status to temporarily suspend access.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Invite:</strong> Naye staff ko jodney ke liye "Invite Staff" par click karein.</li>
+      <li><strong>Roles:</strong> Super Admin ke paas full access hai. Admin settings/staff edit nahi kar sakte. Manager ke paas limited access hai.</li>
+      <li><strong>Status:</strong> Kisi ka access rokne ke liye "Active" se "Inactive" karden.</li>
+    </ul>`}
+    quickActions={[
+      { label: '➕ Invite Staff', query: 'naye staff ko invite karna hai' },
+      { label: '👥 Team', query: 'kaun kaun staff hain abhi' },
+      { label: '⚙️ Add Manager', query: 'john.doe@email.com ko as a manager invite form me fill karo' }
+    ]}
+  />
+
+  <!-- Logged-in user banner -->
+  <div class="mb-6 flex items-center gap-4 bg-gradient-to-r from-purple-50 to-violet-50 border border-purple-200 rounded-2xl px-6 py-4">
+    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-violet-600 text-white flex items-center justify-center font-bold text-base flex-shrink-0 shadow-md">
+      {callerName.slice(0,2).toUpperCase()}
+    </div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <p class="text-sm font-semibold text-secondary">{callerName}</p>
+        <span class="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-xs font-bold px-2.5 py-0.5 rounded-full border border-purple-200">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 1l2.928 5.927L19 7.927l-4.5 4.386L15.854 19 10 16.027 4.146 19l1.354-6.687L1 7.927l6.072-.9L10 1z" clip-rule="evenodd"/>
+          </svg>
+          {HIERARCHY_LABELS[callerHierarchy] || callerRole}
+        </span>
+        {isOriginalSuperAdmin && <span class="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">Root Authority</span>}
+      </div>
+      <p class="text-xs text-secondary/50 mt-0.5">You are logged in · Hierarchy Level {callerHierarchy}</p>
+    </div>
+    <div class="hidden sm:flex flex-col items-end text-right flex-shrink-0">
+      <span class="text-xs text-secondary/40">Your level</span>
+      <span class="text-xs font-bold text-primary">Level {callerHierarchy}</span>
+    </div>
+  </div>
+
+  <!-- Staff List -->
+  <div class="mb-8">
+    <h2 class="text-base font-semibold text-secondary mb-4 flex items-center gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-secondary/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+      </svg>
+      Team Members
+      <span class="ml-auto text-xs text-secondary/40 font-normal">{staffMembers.length} members</span>
+    </h2>
+
+    <div class="grid grid-cols-1 gap-4">
+      {staffMembers.map((member) => {
+        const roleColors = {
+          super_admin: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', avatar: 'from-purple-500 to-violet-600', dot: 'bg-purple-500', label: 'Super Admin' },
+          admin:       { bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-200',   avatar: 'from-blue-500 to-indigo-600',  dot: 'bg-blue-500',   label: 'Admin'       },
+          manager:     { bg: 'bg-green-100',  text: 'text-green-700',  border: 'border-green-200',  avatar: 'from-green-500 to-emerald-600', dot: 'bg-green-500',  label: 'Manager'     },
+          custom:      { bg: 'bg-gray-100',   text: 'text-gray-700',   border: 'border-gray-200',   avatar: 'from-gray-500 to-slate-600',   dot: 'bg-gray-500',   label: 'Staff'       },
+          viewer:      { bg: 'bg-gray-100',   text: 'text-gray-700',   border: 'border-gray-200',   avatar: 'from-gray-500 to-slate-600',   dot: 'bg-gray-500',   label: 'Staff'       },
+        };
+        const rc = roleColors[member.role] || roleColors.custom;
+        return (
+          <div class="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col sm:flex-row items-start sm:items-center gap-5">
+            <!-- Avatar -->
+            <div class={`relative w-14 h-14 rounded-2xl bg-gradient-to-br ${rc.avatar} text-white flex items-center justify-center font-bold text-base flex-shrink-0 shadow-md`}>
+              {member.initials}
+              <span class={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${member.status === 'active' ? 'bg-green-400' : 'bg-gray-300'}`}></span>
+            </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap mb-0.5">
+                <h3 class="text-sm font-semibold text-secondary">{member.name}</h3>
+                <span class={`inline-flex items-center gap-1 ${rc.bg} ${rc.text} text-xs font-bold px-2.5 py-0.5 rounded-full border ${rc.border}`}>
+                  {member.role === 'secondary_super_admin' ? 'Super Admin' : (roleColors[member.role] ? rc.label : (member.role.charAt(0).toUpperCase() + member.role.slice(1)))}
+                </span>
+                <span class="text-[10px] text-secondary/40 bg-gray-100 px-2 py-0.5 rounded-full font-medium">L{member.hierarchy_level ?? 5}</span>
+                {member.reset_requested && (
+                  <span class="inline-flex items-center gap-1 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-200 animate-pulse">
+                    Reset Requested
+                  </span>
+                )}
+              </div>
+              <p class="text-xs text-secondary/50 mb-2">{member.email}</p>
+              <div class="flex items-center gap-4 flex-wrap text-xs text-secondary/40">
+                <span class="flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Last login: {member.lastLogin}
+                </span>
+              </div>
+            </div>
+
+            <!-- Status Toggle & Edit -->
+            <div class="flex items-center gap-3 flex-shrink-0 self-end sm:self-center">
+              {member.reset_requested && (
+                <button
+                  class="flex items-center gap-1.5 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 px-3 py-2 rounded-lg transition-colors shadow-sm"
+                  data-staff-id={member.id}
+                  data-staff-name={member.name}
+                  onclick="openResetModal(this)"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4v-3.252l1.465-1.465A6 6 0 0117 9z" />
+                  </svg>
+                  Set New Password
+                </button>
+              )}
+              <!-- Status toggle -->
+              {!(member.id === 'staff-owner') && (
+                <div class="flex items-center gap-2">
+                  <span class={`text-xs font-medium ${member.status === 'active' ? 'text-green-600' : 'text-gray-400'}`}>
+                    {member.status === 'active' ? 'Active' : 'Inactive'}
+                  </span>
+                  <button
+                    class={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${member.status === 'active' ? 'bg-green-400' : 'bg-gray-200'}`}
+                    data-staff-id={member.id}
+                    data-status={member.status}
+                    aria-label="Toggle status"
+                    onclick="toggleStatus(this)"
+                  >
+                    <span class={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transform transition-transform ${member.status === 'active' ? 'translate-x-6' : 'translate-x-1'}`}></span>
+                  </button>
+                </div>
+              )}
+
+              <!-- Edit button -->
+              {!(member.id === 'staff-owner') && (
+                <button
+                  class="flex items-center gap-1.5 text-xs font-semibold text-secondary/60 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-lg transition-colors"
+                  data-staff-id={member.id}
+                  data-staff-name={member.name}
+                  data-staff-email={member.email}
+                  data-staff-status={member.status}
+                  data-staff-permissions={JSON.stringify(member.permissions || {})}
+                  data-staff-recovery={member.recovery_method}
+                  onclick="openEditModal(this)"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+
+  <!-- Roles & Permissions Matrix -->
+  <div class="mb-8">
+    <h2 class="text-base font-semibold text-secondary mb-4 flex items-center gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-secondary/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+      Roles & Permissions Matrix
+    </h2>
+
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-100 bg-gray-50/80">
+              <th class="px-6 py-4 text-left text-xs font-semibold text-secondary/60 uppercase tracking-wider w-2/5">Permission</th>
+              <th class="px-3 py-4 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-xs font-bold px-2 py-1 rounded-full border border-purple-200">
+                    Super Admin
+                  </span>
+                </div>
+              </th>
+              <th class="px-3 py-4 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full border border-blue-200">
+                    Admin
+                  </span>
+                </div>
+              </th>
+              <th class="px-3 py-4 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full border border-green-200">
+                    Manager
+                  </span>
+                </div>
+              </th>
+              <th class="px-3 py-4 text-center">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs font-bold px-2 py-1 rounded-full border border-gray-200">
+                    Staff
+                  </span>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {permissions.map((perm, i) => (
+              <tr class={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                <td class="px-6 py-3.5 font-medium text-secondary text-sm">{perm.label}</td>
+                <td class="px-3 py-3.5 text-center">
+                  {perm.super_admin ? (
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-100 text-purple-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                      </svg>
+                    </span>
+                  ) : (
+                    <span class="text-gray-300 text-lg font-light">—</span>
+                  )}
+                </td>
+                <td class="px-3 py-3.5 text-center">
+                  {perm.admin ? (
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                      </svg>
+                    </span>
+                  ) : (
+                    <span class="text-gray-300 text-lg font-light">—</span>
+                  )}
+                </td>
+                <td class="px-3 py-3.5 text-center">
+                  {perm.manager ? (
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                      </svg>
+                    </span>
+                  ) : (
+                    <span class="text-gray-300 text-lg font-light">—</span>
+                  )}
+                </td>
+                <td class="px-3 py-3.5 text-center">
+                  {perm.custom === 'Variable' ? (
+                    <span class="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Custom</span>
+                  ) : (
+                    <span class="text-gray-300 text-lg font-light">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity Log removed as there is no real logging system yet -->
+
+  <!-- ── Password Recovery Requests (visible to managers and above) ── -->
+  {callerHierarchy <= 3 && (
+    <div class="mb-8" id="recovery-requests-section">
+      <h2 class="text-base font-semibold text-secondary mb-4 flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        Password Recovery Requests
+        <span id="recovery-count-badge" class="ml-auto text-xs text-secondary/40 font-normal">Loading...</span>
+      </h2>
+
+      <div id="recovery-requests-list" class="space-y-3">
+        <div class="bg-white rounded-2xl border border-gray-100 p-6 text-center text-sm text-secondary/40">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-2 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          Loading requests...
+        </div>
+      </div>
+
+      <!-- Approve Modal -->
+      <div id="approve-modal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeApproveModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+          <h3 class="text-base font-semibold text-secondary">Reset Staff Password</h3>
+          <p class="text-xs text-secondary/60" id="approve-modal-desc">Set a new password for this staff member.</p>
+          <input type="hidden" id="approve-request-id" />
+          <input type="hidden" id="approve-staff-id" />
+          <input type="hidden" id="approve-staff-level" />
+          <div>
+            <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">New Password</label>
+            <input type="text" id="approve-new-password" placeholder="Enter new password (min 6 chars)"
+              class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition font-mono" />
+          </div>
+          <div class="flex gap-3">
+            <button type="button" onclick="closeApproveModal()" class="flex-1 px-4 py-2.5 text-sm font-medium text-secondary/60 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
+            <button type="button" onclick="submitApprove()" class="flex-1 px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 active:scale-95 transition-all">Reset Password</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+
+
+
+<!-- ======================== -->
+<!-- Invite Staff Modal       -->
+<!-- ======================== -->
+<div id="invite-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <!-- Backdrop -->
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="invite-backdrop"></div>
+  <!-- Panel -->
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-modal">
+    <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+      <div>
+        <h3 class="text-base font-semibold text-secondary">Add New Staff Member</h3>
+        <p class="text-xs text-secondary/50 mt-0.5">Set login credentials and section permissions</p>
+      </div>
+      <button id="close-invite-modal" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-secondary/40 hover:text-secondary transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <form id="invite-form" class="px-6 py-5 space-y-4 max-h-[80vh] overflow-y-auto" onsubmit="handleInvite(event)">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="invite-name" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Full Name</label>
+          <input type="text" id="invite-name" placeholder="e.g. Neha Gupta" required
+            class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+        </div>
+        <div>
+          <label for="invite-email" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Email</label>
+          <input type="email" id="invite-email" placeholder="neha@Your Brand.com" required
+            class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+        </div>
+      </div>
+
+      <div>
+        <label for="invite-password" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Login Password</label>
+        <input type="text" id="invite-password" placeholder="Set a temporary password (e.g. nutri2024)" required
+          class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition font-mono" />
+        <p class="text-xs text-secondary/40 mt-1">Share this password with them. Settings and Staff access will always be restricted.</p>
+      </div>
+
+      <!-- Hierarchy Level + Role Name -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="invite-hierarchy" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Hierarchy Level</label>
+          <select id="invite-hierarchy" class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition bg-white cursor-pointer">
+            {[
+              { level: 1, label: 'Secondary Super Admin' },
+              { level: 2, label: 'Admin' },
+              { level: 3, label: 'Manager' },
+              { level: 4, label: 'Moderator' },
+              { level: 5, label: 'Staff' },
+            ].filter(opt => isOriginalSuperAdmin || opt.level > callerHierarchy).map(opt => (
+              <option value={opt.level}>{`Level ${opt.level} — ${opt.label}`}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label for="invite-custom-role" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Custom Role Name</label>
+          <input type="text" id="invite-custom-role" placeholder="e.g. Support Executive"
+            class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wider">Section Permissions</label>
+        <div class="rounded-xl border border-gray-200 overflow-hidden">
+          <div class="grid grid-cols-4 bg-gray-50 border-b border-gray-200 px-3 py-2">
+            <span class="text-xs font-bold text-secondary/60 col-span-1">Section</span>
+            <span class="text-xs font-bold text-center text-gray-400">None</span>
+            <span class="text-xs font-bold text-center text-blue-500">View Only</span>
+            <span class="text-xs font-bold text-center text-green-600">Manage</span>
+          </div>
+          {[
+            { key: 'reports',       label: 'Reports' },
+            { key: 'orders_all',    label: 'All Orders' },
+            { key: 'orders_b2b',    label: 'B2B Orders' },
+            { key: 'orders_pos',    label: 'POS Billing' },
+            { key: 'orders_manual', label: 'Manual Bill' },
+            { key: 'orders_bulk',   label: 'Bulk Order' },
+            { key: 'batch_invoice', label: 'Batch Print' },
+            { key: 'orders_returns',label: 'Returns / Refunds' },
+            { key: 'orders_tracking',label: 'Order Tracking & NDR' },
+            { key: 'products',      label: 'Products' },
+            { key: 'inventory',     label: 'Inventory' },
+            { key: 'categories',    label: 'Categories' },
+            { key: 'flash_sales',   label: 'Flash Sales' },
+            { key: 'bulk_upload',   label: 'Bulk Upload' },
+            { key: 'media',         label: 'Media' },
+            { key: 'customers',     label: 'Customers' },
+            { key: 'reviews',       label: 'Reviews' },
+            { key: 'feedback',      label: 'Feedback & B2B' },
+            { key: 'coupons',       label: 'Coupons' },
+            { key: 'milestones',    label: 'Milestones' },
+            { key: 'affiliates',    label: 'Affiliates' },
+            { key: 'affiliate_offers',label: 'Affiliate Offers' },
+            { key: 'blog',          label: 'Blog' },
+            { key: 'hero',          label: 'Hero Banner' },
+            { key: 'seo',           label: 'SEO Settings' },
+            { key: 'marketing',     label: 'Marketing' },
+            { key: 'notifications', label: 'Notifications' },
+            { key: 'shipping_rates',label: 'Shipping Rates' },
+            { key: 'shipping_riders',label: 'Delivery Riders' },
+            { key: 'finance_wallet',label: 'Wallet & Earnings' },
+            { key: 'finance_health',label: 'Account Health' },
+            { key: 'finance_calculator',label: 'Profit Calculator' },
+            { key: 'finance_remittance',label: 'Remittance' },
+            { key: 'finance_expenses',label: 'Expense Ledger' },
+            { key: 'finance_pnl',   label: 'Profit & Loss' },
+            { key: 'staff',         label: 'Staff Accounts' },
+            { key: 'activity',      label: 'Activity Logs' },
+            { key: 'settings',      label: 'API Settings' },
+            { key: 'store_details', label: 'Store Details' },
+            { key: 'settings_domains',label: 'Custom Domains' },
+            { key: 'settings_mobile',label: 'Mobile App' },
+            { key: 'settings_locations',label: 'Locations & Fulfillments' },
+            { key: 'whatsapp',      label: 'WhatsApp Auto' },
+            { key: 'website_config',       label: 'Web Configuration' },
+            { key: 'website_themes',       label: 'Global Themes' },
+            { key: 'website_designs',      label: 'Global Designs' },
+            { key: 'website_videos',       label: 'Featured Videos' },
+            { key: 'website_navigation',   label: 'Navigation' },
+            { key: 'website_announcement', label: 'Announcement Bar' },
+            { key: 'custom_1',      label: 'Custom App 1' },
+            { key: 'custom_2',      label: 'Custom App 2' },
+            { key: 'custom_3',      label: 'Custom App 3' },
+          ].filter(sec => getCallerPerm(sec.key) !== 'none').map((section, i) => {
+            const maxPerm = getCallerPerm(section.key);
+            return (
+            <div class={`grid grid-cols-4 items-center px-3 py-2.5 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}`}>
+              <span class="text-xs font-medium text-secondary">{section.label}</span>
+              <div class="flex justify-center">
+                <input type="radio" name={`invite-perm-${section.key}`} value="none" defaultChecked
+                  class="w-4 h-4 accent-gray-400 cursor-pointer" />
+              </div>
+              <div class="flex justify-center">
+                <input type="radio" name={`invite-perm-${section.key}`} value="view"
+                  class="w-4 h-4 accent-blue-500 cursor-pointer" disabled={maxPerm === 'none'} />
+              </div>
+              <div class="flex justify-center">
+                <input type="radio" name={`invite-perm-${section.key}`} value="manage"
+                  class="w-4 h-4 accent-green-500 cursor-pointer" disabled={maxPerm !== 'manage'} />
+              </div>
+            </div>
+            );
+          })}
+        </div>
+        <p class="text-xs text-red-500/70 mt-1.5 flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+          API Settings and Staff section are always restricted to Super Admin only.
+        </p>
+      </div>
+      <div class="pt-1 flex gap-3">
+        <button type="button" onclick="closeInviteModal()" class="flex-1 px-4 py-2.5 text-sm font-medium text-secondary/60 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+          Cancel
+        </button>
+        <button type="submit" class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 active:scale-95 transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+          </svg>
+          Add Staff Member
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ======================== -->
+<!-- Edit Staff Modal         -->
+<!-- ======================== -->
+<div id="edit-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="edit-backdrop"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-modal">
+    <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+      <div>
+        <h3 class="text-base font-semibold text-secondary" id="edit-modal-title">Edit Staff Member</h3>
+        <p class="text-xs text-secondary/50 mt-0.5" id="edit-modal-subtitle">Modify role or account status</p>
+      </div>
+      <button id="close-edit-modal" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-secondary/40 hover:text-secondary transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <form id="edit-form" class="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto" onsubmit="handleEdit(event)">
+      <input type="hidden" id="edit-staff-id" />
+
+      <div class="space-y-4 mb-4 pb-4 border-b border-gray-100">
+        <div>
+          <label for="edit-email" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">Email (Login ID)</label>
+          <input type="email" id="edit-email" required
+            class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition" />
+        </div>
+        <div>
+          <label for="edit-password" class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">New Password</label>
+          <input type="text" id="edit-password" placeholder="Leave blank to keep current password"
+            class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition font-mono" />
+        </div>
+        
+      </div>
+
+      <div id="edit-permissions-container">
+        <label class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wider">Section Permissions</label>
+        <div class="rounded-xl border border-gray-200 overflow-hidden">
+          <div class="grid grid-cols-4 bg-gray-50 border-b border-gray-200 px-3 py-2">
+            <span class="text-xs font-bold text-secondary/60 col-span-1">Section</span>
+            <span class="text-xs font-bold text-center text-gray-400">None</span>
+            <span class="text-xs font-bold text-center text-blue-500">View Only</span>
+            <span class="text-xs font-bold text-center text-green-600">Manage</span>
+          </div>
+          {[
+            { key: 'reports',       label: 'Reports' },
+            { key: 'orders_all',    label: 'All Orders' },
+            { key: 'orders_b2b',    label: 'B2B Orders' },
+            { key: 'orders_pos',    label: 'POS Billing' },
+            { key: 'orders_manual', label: 'Manual Bill' },
+            { key: 'orders_bulk',   label: 'Bulk Order' },
+            { key: 'batch_invoice', label: 'Batch Print' },
+            { key: 'orders_returns',label: 'Returns / Refunds' },
+            { key: 'orders_tracking',label: 'Order Tracking & NDR' },
+            { key: 'products',      label: 'Products' },
+            { key: 'inventory',     label: 'Inventory' },
+            { key: 'categories',    label: 'Categories' },
+            { key: 'flash_sales',   label: 'Flash Sales' },
+            { key: 'bulk_upload',   label: 'Bulk Upload' },
+            { key: 'media',         label: 'Media' },
+            { key: 'customers',     label: 'Customers' },
+            { key: 'reviews',       label: 'Reviews' },
+            { key: 'feedback',      label: 'Feedback & B2B' },
+            { key: 'coupons',       label: 'Coupons' },
+            { key: 'milestones',    label: 'Milestones' },
+            { key: 'affiliates',    label: 'Affiliates' },
+            { key: 'affiliate_offers',label: 'Affiliate Offers' },
+            { key: 'blog',          label: 'Blog' },
+            { key: 'hero',          label: 'Hero Banner' },
+            { key: 'seo',           label: 'SEO Settings' },
+            { key: 'marketing',     label: 'Marketing' },
+            { key: 'notifications', label: 'Notifications' },
+            { key: 'shipping_rates',label: 'Shipping Rates' },
+            { key: 'shipping_riders',label: 'Delivery Riders' },
+            { key: 'finance_wallet',label: 'Wallet & Earnings' },
+            { key: 'finance_health',label: 'Account Health' },
+            { key: 'finance_calculator',label: 'Profit Calculator' },
+            { key: 'finance_remittance',label: 'Remittance' },
+            { key: 'finance_expenses',label: 'Expense Ledger' },
+            { key: 'finance_pnl',   label: 'Profit & Loss' },
+            { key: 'staff',         label: 'Staff Accounts' },
+            { key: 'activity',      label: 'Activity Logs' },
+            { key: 'settings',      label: 'API Settings' },
+            { key: 'store_details', label: 'Store Details' },
+            { key: 'settings_domains',label: 'Custom Domains' },
+            { key: 'settings_mobile',label: 'Mobile App' },
+            { key: 'settings_locations',label: 'Locations & Fulfillments' },
+            { key: 'whatsapp',      label: 'WhatsApp Auto' },
+            { key: 'website_config',       label: 'Web Configuration' },
+            { key: 'website_themes',       label: 'Global Themes' },
+            { key: 'website_designs',      label: 'Global Designs' },
+            { key: 'website_videos',       label: 'Featured Videos' },
+            { key: 'website_navigation',   label: 'Navigation' },
+            { key: 'website_announcement', label: 'Announcement Bar' },
+            { key: 'custom_1',      label: 'Custom App 1' },
+            { key: 'custom_2',      label: 'Custom App 2' },
+            { key: 'custom_3',      label: 'Custom App 3' },
+          ].filter(sec => getCallerPerm(sec.key) !== 'none').map((section, i) => {
+            const maxPerm = getCallerPerm(section.key);
+            return (
+            <div class={`grid grid-cols-4 items-center px-3 py-2.5 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}`}>
+              <span class="text-xs font-medium text-secondary">{section.label}</span>
+              <div class="flex justify-center">
+                <input type="radio" name={`edit-perm-${section.key}`} id={`edit-perm-${section.key}-none`} value="none"
+                  class="w-4 h-4 accent-gray-400 cursor-pointer" />
+              </div>
+              <div class="flex justify-center">
+                <input type="radio" name={`edit-perm-${section.key}`} id={`edit-perm-${section.key}-view`} value="view"
+                  class="w-4 h-4 accent-blue-500 cursor-pointer" disabled={maxPerm === 'none'} />
+              </div>
+              <div class="flex justify-center">
+                <input type="radio" name={`edit-perm-${section.key}`} id={`edit-perm-${section.key}-manage`} value="manage"
+                  class="w-4 h-4 accent-green-500 cursor-pointer" disabled={maxPerm !== 'manage'} />
+              </div>
+            </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div id="edit-status-container">
+        <label class="block text-xs font-semibold text-secondary/70 mb-2 uppercase tracking-wider">Account Status</label>
+        <div class="flex gap-3">
+          <label class="flex-1 flex items-center gap-3 px-4 py-3 border-2 rounded-xl cursor-pointer transition-all has-[:checked]:border-green-400 has-[:checked]:bg-green-50 border-gray-200">
+            <input type="radio" name="edit-status" value="active" id="edit-status-active" class="accent-green-500" />
+            <div>
+              <div class="text-sm font-semibold text-secondary">Active</div>
+              <div class="text-xs text-secondary/40">Can log in & use admin</div>
+            </div>
+          </label>
+          <label class="flex-1 flex items-center gap-3 px-4 py-3 border-2 rounded-xl cursor-pointer transition-all has-[:checked]:border-red-400 has-[:checked]:bg-red-50 border-gray-200">
+            <input type="radio" name="edit-status" value="inactive" id="edit-status-inactive" class="accent-red-500" />
+            <div>
+              <div class="text-sm font-semibold text-secondary">Deactivate</div>
+              <div class="text-xs text-secondary/40">Block admin access</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Danger zone -->
+      <div id="edit-danger-container" class="border border-red-100 bg-red-50/50 rounded-xl p-4">
+        <p class="text-xs font-semibold text-red-600 mb-1 flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+          </svg>
+          Danger Zone
+        </p>
+        <p class="text-xs text-red-500/80 mb-3">Deactivating this account will immediately revoke all admin access for this user.</p>
+        <div class="flex justify-end pt-2 border-t border-red-100">
+          <button type="button" onclick="handleDeleteStaff()" class="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors underline flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            Delete this staff member completely
+          </button>
+        </div>
+      </div>
+
+      <div class="pt-1 flex gap-3">
+        <button type="button" onclick="closeEditModal()" class="flex-1 px-4 py-2.5 text-sm font-medium text-secondary/60 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+          Cancel
+        </button>
+        <button type="submit" class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 active:scale-95 transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          Save Changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ======================== -->
+<!-- Reset Password Modal     -->
+<!-- ======================== -->
+<div id="reset-modal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeResetModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+    <h3 class="text-base font-semibold text-secondary" id="reset-modal-name">Reset Staff Password</h3>
+    <p class="text-xs text-secondary/60">Set a new password for this staff member. This will clear their reset request.</p>
+    <input type="hidden" id="reset-staff-id" />
+    <div>
+      <label class="block text-xs font-semibold text-secondary/70 mb-1.5 uppercase tracking-wider">New Password</label>
+      <input type="text" id="reset-new-password" placeholder="Enter new password (min 6 chars)"
+        class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition font-mono" />
+    </div>
+    <div class="flex gap-3 mt-4">
+      <button type="button" onclick="closeResetModal()" class="flex-1 px-4 py-2.5 text-sm font-medium text-secondary/60 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Cancel</button>
+      <button type="button" onclick="submitResetPassword()" class="flex-1 px-4 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 active:scale-95 transition-all">Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="fixed bottom-6 right-6 z-[60] hidden">
+  <div class="flex items-center gap-3 bg-secondary text-white text-sm font-medium px-5 py-3.5 rounded-2xl shadow-2xl">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+    </svg>
+    <span id="toast-message">Action completed</span>
+  </div>
+</div>
+
+<style>
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .animate-modal {
+    animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+</style>
+
+<script data-astro-rerun>
+  // ── Toast ──────────────────────────────────────────────
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-message');
+    toastMsg.textContent = msg;
+    toast.classList.remove('hidden');
+    toast.classList.add('flex');
+    setTimeout(() => {
+      toast.classList.add('hidden');
+      toast.classList.remove('flex');
+    }, 3500);
+  }
+
+  // -- Invite Modal
+  const PERM_SECTIONS = ['reports', 'orders_all', 'orders_b2b', 'orders_pos', 'orders_manual', 'orders_bulk', 'batch_invoice', 'orders_returns', 'orders_tracking', 'products', 'inventory', 'categories', 'flash_sales', 'bulk_upload', 'media', 'customers', 'reviews', 'feedback', 'coupons', 'milestones', 'affiliates', 'affiliate_offers', 'blog', 'hero', 'seo', 'marketing', 'notifications', 'shipping_rates', 'shipping_riders', 'finance_wallet', 'finance_health', 'finance_calculator', 'finance_remittance', 'finance_expenses', 'finance_pnl', 'staff', 'activity', 'settings', 'store_details', 'settings_domains', 'settings_mobile', 'settings_locations', 'whatsapp', 'website_config', 'website_themes', 'website_designs', 'website_videos', 'website_navigation', 'website_announcement', 'custom_1', 'custom_2', 'custom_3'];
+
+  const inviteModal    = document.getElementById('invite-modal');
+  const inviteBackdrop = document.getElementById('invite-backdrop');
+  const openInviteBtn  = document.getElementById('open-invite-modal');
+  const closeInviteBtn = document.getElementById('close-invite-modal');
+
+  function openInviteModal() {
+    inviteModal.classList.remove('hidden');
+    inviteModal.classList.add('flex');
+  }
+  window.openInviteModal = openInviteModal;
+
+  function closeInviteModal() {
+    inviteModal.classList.add('hidden');
+    inviteModal.classList.remove('flex');
+    document.getElementById('invite-form').reset();
+    document.getElementById('invite-custom-role').value = '';
+    PERM_SECTIONS.forEach(s => {
+      const el = document.querySelector('input[name="invite-perm-' + s + '"][value="none"]');
+      if (el) el.checked = true;
+    });
+  }
+
+  openInviteBtn.addEventListener('click', openInviteModal);
+  closeInviteBtn.addEventListener('click', closeInviteModal);
+  inviteBackdrop.addEventListener('click', closeInviteModal);
+
+  function getInvitePermissions() {
+    const perms = {};
+    PERM_SECTIONS.forEach(s => {
+      const checked = document.querySelector('input[name="invite-perm-' + s + '"]:checked');
+      perms[s] = checked ? checked.value : 'none';
+    });
+    return perms;
+  }
+
+  window.handleRoleSelect = function(role) {}; // Kept for compatibility
+
+  window.handleInvite = function handleInvite(e) {
+    e.preventDefault();
+    const name            = document.getElementById('invite-name').value;
+    const email           = document.getElementById('invite-email').value;
+    const password        = document.getElementById('invite-password').value;
+    const hierarchy_level = parseInt(document.getElementById('invite-hierarchy').value, 10);
+    const recoveryEl = document.getElementById('invite-recovery');
+    const recovery_method = recoveryEl ? recoveryEl.value : 'contact_admin';
+    const customRole      = document.getElementById('invite-custom-role').value.trim();
+    const role            = customRole || 'staff';
+    const permissions     = getInvitePermissions();
+
+    fetch('/api/admin/staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', name, email, password, role, permissions, hierarchy_level, recovery_method }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        closeInviteModal();
+        showToast('Staff member ' + name + ' added successfully!');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        alert('Error: ' + (data.error || 'Failed to add staff') + (data.details ? '\nDetails: ' + data.details : ''));
+      }
+    })
+    .catch(() => alert('Network error'));
+  }
+
+  // ── Edit Modal ─────────────────────────────────────────
+  const editModal    = document.getElementById('edit-modal');
+  const editBackdrop = document.getElementById('edit-backdrop');
+  const closeEditBtn = document.getElementById('close-edit-modal');
+
+  window.openEditModal = function openEditModal(btn) {
+    const name   = btn.dataset.staffName   || '';
+    const email  = btn.dataset.staffEmail  || '';
+    const status = btn.dataset.staffStatus || 'active';
+    const id     = btn.dataset.staffId     || '';
+    let perms = {};
+    try { perms = JSON.parse(btn.dataset.staffPermissions || '{}'); } catch(e) {}
+
+    document.getElementById('edit-modal-title').textContent = 'Edit - ' + name;
+    document.getElementById('edit-modal-subtitle').textContent = 'Modify permissions or account status for ' + name;
+    document.getElementById('edit-staff-id').value = id;
+    document.getElementById('edit-email').value = email;
+    document.getElementById('edit-password').value = '';
+    
+    const recoverySelect = document.getElementById('edit-recovery');
+    if (recoverySelect) {
+      recoverySelect.value = btn.dataset.staffRecovery || 'contact_super';
+    }
+
+    // Set permissions radio buttons
+    PERM_SECTIONS.forEach(s => {
+      const val = perms[s] || 'none';
+      const el = document.querySelector('input[name="edit-perm-' + s + '"][value="' + val + '"]');
+      if (el) el.checked = true;
+    });
+
+    if (status === 'active') {
+      document.getElementById('edit-status-active').checked = true;
+    } else {
+      document.getElementById('edit-status-inactive').checked = true;
+    }
+
+    if (id === 'staff-owner') {
+      document.getElementById('edit-permissions-container').classList.add('hidden');
+      document.getElementById('edit-status-container').classList.add('hidden');
+      document.getElementById('edit-danger-container').classList.add('hidden');
+    } else {
+      document.getElementById('edit-permissions-container').classList.remove('hidden');
+      document.getElementById('edit-status-container').classList.remove('hidden');
+      document.getElementById('edit-danger-container').classList.remove('hidden');
+    }
+
+    editModal.classList.remove('hidden');
+    editModal.classList.add('flex');
+  }
+
+  function closeEditModal() {
+    editModal.classList.add('hidden');
+    editModal.classList.remove('flex');
+  }
+  window.closeEditModal = closeEditModal;
+
+  closeEditBtn.addEventListener('click', closeEditModal);
+  editBackdrop.addEventListener('click', closeEditModal);
+
+  function getEditPermissions() {
+    const perms = {};
+    PERM_SECTIONS.forEach(s => {
+      const checked = document.querySelector('input[name="edit-perm-' + s + '"]:checked');
+      perms[s] = checked ? checked.value : 'none';
+    });
+    return perms;
+  }
+
+  window.handleEdit = function handleEdit(e) {
+    e.preventDefault();
+    const id       = document.getElementById('edit-staff-id').value;
+    const email    = document.getElementById('edit-email').value;
+    const password = document.getElementById('edit-password').value;
+    const status   = document.querySelector('input[name="edit-status"]:checked')?.value || 'active';
+    const title    = document.getElementById('edit-modal-title').textContent || '';
+    const name     = title.replace('Edit - ', '');
+    const permissions = getEditPermissions();
+    const recovery_method = document.getElementById('edit-recovery') ? document.getElementById('edit-recovery').value : 'contact_super';
+
+    const payload = { action: 'update', id, email, is_active: status === 'active', status, permissions, recovery_method };
+    if (password.trim() !== '') {
+      payload.password = password.trim();
+    }
+
+    fetch('/api/admin/staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        closeEditModal();
+        showToast(name + "'s permissions updated - " + status + '.');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        alert('Error: ' + (data.error || 'Failed to update'));
+      }
+    })
+    .catch(() => alert('Network error'));
+  }
+
+  window.handleDeleteStaff = function handleDeleteStaff() {
+    const id = document.getElementById('edit-staff-id').value;
+    const title = document.getElementById('edit-modal-title').textContent || '';
+    const name = title.replace('Edit - ', '');
+    
+    if (id === 'staff-owner') {
+      alert('You cannot delete the primary admin account.');
+      return;
+    }
+    
+    if (confirm(`Are you SURE you want to completely delete ${name}? This action cannot be undone.`)) {
+      fetch('/api/admin/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          closeEditModal();
+          showToast(name + ' deleted successfully.');
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          alert('Error: ' + data.error);
+        }
+      });
+    }
+  }
+
+  function toggleStatus(btn) {
+    const current = btn.dataset.status || 'active';
+    const next    = current === 'active' ? 'inactive' : 'active';
+    btn.dataset.status = next;
+
+    const dot  = btn.querySelector('span');
+    if (next === 'active') {
+      btn.classList.replace('bg-gray-200', 'bg-green-400');
+      dot.classList.replace('translate-x-1', 'translate-x-6');
+    } else {
+      btn.classList.replace('bg-green-400', 'bg-gray-200');
+      dot.classList.replace('translate-x-6', 'translate-x-1');
+    }
+
+    // Update status text sibling
+    const statusText = btn.previousElementSibling;
+    if (statusText) {
+      statusText.textContent = next === 'active' ? 'Active' : 'Inactive';
+      statusText.className = `text-xs font-medium ${next === 'active' ? 'text-green-600' : 'text-gray-400'}`;
+    }
+
+    // Update green dot on avatar
+    const card = btn.closest('.bg-white');
+    const avatarDot = card?.querySelector('.absolute.-bottom-1.-right-1');
+    if (avatarDot) {
+      if (next === 'active') {
+        avatarDot.classList.replace('bg-gray-300', 'bg-green-400');
+      } else {
+        avatarDot.classList.replace('bg-green-400', 'bg-gray-300');
+      }
+    }
+
+    // API call to persist toggle
+    const staffId = btn.dataset.staffId || '';
+    fetch('/api/admin/staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'toggle_status', id: staffId, is_active: next === 'active' }),
+    }).catch(err => console.error('Failed to toggle status:', err));
+
+    showToast(`Account ${next === 'active' ? 'activated' : 'deactivated'} successfully.`);
+  }
+
+    // ── Keyboard ESC ───────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!inviteModal.classList.contains('hidden')) closeInviteModal();
+        if (!editModal.classList.contains('hidden'))   closeEditModal();
+      }
+    });
+
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'open_invite_form') {
+        var btn = document.getElementById('open-invite-modal');
+        if (btn) btn.click();
+        
+        if (params.name) document.getElementById('invite-name').value = params.name;
+        if (params.email) document.getElementById('invite-email').value = params.email;
+        if (params.role) {
+          document.getElementById('invite-role').value = params.role;
+          document.getElementById('invite-role').dispatchEvent(new Event('change'));
+        }
+        
+        if (params.name || params.email || params.role) {
+           const submitBtn = document.querySelector('#invite-form button[type="submit"]');
+           if (submitBtn) {
+             const orig = submitBtn.innerHTML;
+             submitBtn.innerHTML = '✨ Review & Send Invite';
+             submitBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+             setTimeout(() => {
+               submitBtn.innerHTML = orig;
+               submitBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+             }, 4000);
+           }
+        }
+      }
+      else if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      }
+    });
+
+    // ── Password Recovery Requests JS ──
+    const callerHierarchy = parseInt(document.querySelector('meta[name="admin-hierarchy"]')?.getAttribute('content') || '5', 10);
+    if (callerHierarchy <= 3) {
+      loadRecoveryRequests();
+    }
+
+    async function loadRecoveryRequests() {
+      try {
+        const res = await fetch('/api/admin/password-recovery');
+        const data = await res.json();
+        const listEl = document.getElementById('recovery-requests-list');
+        const countBadge = document.getElementById('recovery-count-badge');
+        
+        if (!data.success) {
+          if (listEl) listEl.innerHTML = `<div class="p-4 text-red-500 text-sm">Failed to load requests: ${data.error}</div>`;
+          return;
+        }
+
+        const pending = data.requests.filter((r) => r.status === 'pending');
+        if (countBadge) countBadge.textContent = `${pending.length} pending`;
+
+        if (pending.length === 0) {
+          if (listEl) listEl.innerHTML = `
+            <div class="bg-white rounded-2xl border border-gray-100 p-6 text-center text-sm text-secondary/40">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-2 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              No pending recovery requests
+            </div>
+          `;
+          return;
+        }
+
+        if (listEl) {
+          listEl.innerHTML = pending.map((req) => `
+            <div class="bg-white rounded-2xl border border-orange-100 shadow-sm p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-sm font-semibold text-secondary">${req.requester_name}</span>
+                  <span class="text-[10px] bg-gray-100 px-2 py-0.5 rounded-full font-medium">Level ${req.requester_level}</span>
+                </div>
+                <p class="text-xs text-secondary/60 mb-2">${req.requester_email}</p>
+                ${req.message ? `<div class="text-xs bg-orange-50 text-orange-800 p-2 rounded-lg italic">"${req.message}"</div>` : ''}
+                <div class="text-[10px] text-secondary/40 mt-2">Requested via ${req.recovery_method.replace('_', ' ')} on ${new Date(req.created_at).toLocaleString()}</div>
+              </div>
+              <div class="flex items-center gap-2 w-full sm:w-auto">
+                <button onclick="openApproveModal('${req.id}', '${req.requester_id}', ${req.requester_level}, '${req.requester_name}')" class="flex-1 sm:flex-none px-3 py-1.5 text-xs font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">
+                  Change Password
+                </button>
+                <button onclick="rejectRequest('${req.id}', '${req.requester_id}')" class="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                  Dismiss Request
+                </button>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    window.openApproveModal = function(requestId, staffId, staffLevel, staffName) {
+      document.getElementById('approve-modal').classList.remove('hidden');
+      document.getElementById('approve-modal').classList.add('flex');
+      document.getElementById('approve-request-id').value = requestId;
+      document.getElementById('approve-staff-id').value = staffId;
+      document.getElementById('approve-staff-level').value = staffLevel;
+      document.getElementById('approve-modal-desc').textContent = `Set a new password for ${staffName}.`;
+      document.getElementById('approve-new-password').value = '';
+    }
+
+    function closeApproveModal() {
+      document.getElementById('approve-modal').classList.add('hidden');
+      document.getElementById('approve-modal').classList.remove('flex');
+    }
+    window.closeApproveModal = closeApproveModal;
+
+    window.submitApprove = async function() {
+      const requestId = document.getElementById('approve-request-id').value;
+      const staffId = document.getElementById('approve-staff-id').value;
+      const staffLevel = parseInt(document.getElementById('approve-staff-level').value, 10);
+      const newPassword = document.getElementById('approve-new-password').value;
+
+      if (!newPassword || newPassword.length < 6) {
+        alert('Password must be at least 6 characters.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/admin/password-recovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'approve', request_id: requestId, staff_id: staffId, staff_level: staffLevel, new_password: newPassword })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Password reset successfully!');
+          closeApproveModal();
+          loadRecoveryRequests();
+        } else {
+          alert('Error: ' + data.error);
+        }
+      } catch (e) {
+        alert('Network error');
+      }
+    }
+
+    window.rejectRequest = async function(requestId, staffId) {
+      if (!confirm('Are you sure you want to reject this request?')) return;
+      try {
+        const res = await fetch('/api/admin/password-recovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reject', request_id: requestId, staff_id: staffId, reason: 'Rejected by admin' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          loadRecoveryRequests();
+        } else {
+          alert('Error: ' + data.error);
+        }
+      } catch (e) {
+        alert('Network error');
+      }
+    }
+
+  
+    function openResetModal(btn) {
+      document.getElementById('reset-staff-id').value = btn.dataset.staffId;
+      document.getElementById('reset-modal-name').textContent = 'Reset Password for ' + btn.dataset.staffName;
+      document.getElementById('reset-new-password').value = '';
+      document.getElementById('reset-modal').classList.remove('hidden');
+      document.getElementById('reset-modal').classList.add('flex');
+    }
+    function closeResetModal() {
+      document.getElementById('reset-modal').classList.add('hidden');
+      document.getElementById('reset-modal').classList.remove('flex');
+    }
+    async function submitResetPassword() {
+      var id = document.getElementById('reset-staff-id').value;
+      var newPass = document.getElementById('reset-new-password').value;
+      if (newPass.length < 6) return alert("Password must be at least 6 characters.");
+      
+      try {
+        const res = await fetch('/api/admin/staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'admin_reset_password', id: id, new_password: newPass })
+        });
+        const result = await res.json();
+        if (result.success) {
+          window.location.reload();
+        } else {
+          alert(result.error || "Failed to reset password");
+        }
+      } catch(e) {
+        alert("Error resetting password");
+      }
+    }
+
+</script>
+
+</AdminLayout>

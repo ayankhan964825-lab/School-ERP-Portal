@@ -1,0 +1,973 @@
+---
+import { getSettings, getStorefrontProducts } from '../lib/database';
+import FeaturedVideoCard from './FeaturedVideoCard.astro';
+
+interface Product {
+  id: string;
+  name: string;
+  slug: string;
+  image?: string;
+  base_price: number;
+  compare_at_price: number;
+  [key: string]: any;
+}
+
+interface Video {
+  product_id: string;
+  video_url: string;
+  thumbnail_url: string;
+  views_text: string;
+  is_active: boolean;
+  sort_order: number;
+  [key: string]: any;
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+const products: Product[] = await getStorefrontProducts(Astro.locals?.storeId, Astro.cookies.get('delivery_pincode')?.value);
+
+const videos: Video[] = settings.featured_videos || [];
+const title: string = settings.featured_videos_title || 'Featured Videos';
+
+const featuredVideos = videos
+  .filter(v => v.is_active)
+  .sort((a, b) => a.sort_order - b.sort_order);
+
+if (featuredVideos.length === 0) {
+  return null;
+}
+
+const productMap = new Map<string, Product>(products.map(p => [String(p.id), p]));
+const sectionId = Math.random().toString(36).substring(2, 9);
+---
+
+<!-- Homepage Horizontal Card Row -->
+<section id="featured-videos" class="featured-videos-section py-12 bg-[#FDFBF7] overflow-hidden" aria-label={title} data-section-id={sectionId}>
+  <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 mb-6 flex items-center justify-between">
+    <h2 class="font-serif text-3xl font-bold text-[#4a5938]">{title}</h2>
+    <div class="flex gap-4 scroll-arrows-container">
+      <button aria-label="Scroll left" class="scroll-left-btn text-[#4a5938] hover:opacity-70 transition-opacity p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </button>
+      <button aria-label="Scroll right" class="scroll-right-btn text-[#4a5938] hover:opacity-70 transition-opacity p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+      </button>
+    </div>
+  </div>
+  
+  <div class="w-full relative">
+    <div class="reels-scroll-container flex overflow-x-auto gap-4 sm:gap-5 pb-8 pt-2 no-scrollbar snap-x snap-mandatory scroll-smooth px-6 sm:px-8 lg:px-12">
+      {featuredVideos.map((video: Video, index: number) => {
+        const product = productMap.get(String(video.product_id));
+        return <FeaturedVideoCard video={video} product={product} index={index} />
+      })}
+    </div>
+  </div>
+</section>
+
+<!-- Fullscreen Reels Modal Template (Will be moved to body automatically by JS to fix stacking contexts) -->
+<div id={`reels-modal-${sectionId}`} class="reels-modal fixed inset-0 bg-black/95 flex justify-center items-center backdrop-blur-sm transition-opacity duration-300 ease-out" style="z-index: -1; visibility: hidden; opacity: 0;" role="dialog" aria-modal="true" aria-label="Reels Video Player" tabindex="-1">
+  <!-- Close Button -->
+  <button class="close-reels-btn absolute z-50 w-11 h-11 bg-white/10 rounded-full flex items-center justify-center text-white backdrop-blur-md border border-white/20 hover:bg-white/20 transition-colors md:top-8 md:left-8" style="top: max(16px, env(safe-area-inset-top)); left: 16px;" aria-label="Close Reels">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+  </button>
+
+  <!-- Scrollable Reels Container — block layout, constrained on desktop like a phone -->
+  <div class="reels-container absolute inset-0 h-full w-full md:relative md:w-full md:max-w-[400px] md:h-[85vh] md:rounded-[2.5rem] md:border-[6px] md:border-gray-900 overflow-hidden no-scrollbar shadow-2xl bg-black block" style="overflow-y: scroll; scroll-snap-type: y mandatory;">
+    {featuredVideos.map((video: Video, index: number) => {
+      const product = productMap.get(String(video.product_id));
+      const variants = product?.variants || [];
+      const defaultVariant = variants.length > 0 ? variants[0] : null;
+      const basePrice = defaultVariant ? defaultVariant.price : (product?.price ?? product?.base_price ?? 0);
+      const comparePrice = defaultVariant ? defaultVariant.mrp : (product?.original_price ?? product?.compare_at_price ?? 0);
+      
+      return (
+        <div class="reel-slide relative bg-black w-full h-full" style="scroll-snap-align: start; scroll-snap-stop: always;" data-index={String(index)}>
+          
+          <!-- Progress Bar at Bottom (Uses transform instead of width for GPU acceleration) -->
+          <div class="reel-progress-bar absolute bottom-0 left-0 right-0 z-40 h-[3px] bg-white/20">
+            <div class="reel-progress-fill h-full bg-white/80 rounded-r-full origin-left" style="transform: scaleX(0); transition: none;"></div>
+          </div>
+
+          <!-- Loading Spinner -->
+          <div class="reel-loader absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+            <div class="w-10 h-10 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+          </div>
+
+          <!-- Video: use data-src for lazy loading, only poster loads initially -->
+          <video 
+            class="reel-video absolute inset-0 w-full h-full object-contain" 
+            loop playsinline muted 
+            preload="none" 
+            poster={video.thumbnail_url || ''} 
+            data-src={video.video_url}
+          ></video>
+          
+          <!-- Bottom Overlay (gradient pointer events none to avoid blocking taps) -->
+          <div class="absolute bottom-0 left-0 right-0 z-20 h-1/2 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none pb-[max(1rem,env(safe-area-inset-bottom))]"></div>
+
+          <!-- Right Sidebar Actions -->
+          <div class="absolute right-4 bottom-32 z-30 flex flex-col gap-4 items-center pointer-events-auto">
+            <!-- Wishlist Button -->
+            {product && (
+              <button aria-label="Add to Wishlist" class="reel-wishlist-btn w-11 h-11 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/10 shadow-lg hover:bg-black/60 transition-all group/heart"
+                data-product-id={product.id}
+                data-product-name={product.name}
+                data-product-slug={product.slug}
+                data-product-image={product.image ?? `/products/${product.slug}.webp`}
+                data-product-price={basePrice}
+                data-product-mrp={comparePrice}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="wishlist-icon group-hover/heart:fill-red-500 group-hover/heart:stroke-red-500 transition-colors"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            )}
+            
+            <!-- Share Button -->
+            <button aria-label="Share Video" class="reel-share-btn w-11 h-11 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/10 shadow-lg hover:bg-black/60 transition-all"
+              data-url={`/products/${product?.slug || ''}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+            </button>
+          </div>
+
+          <!-- Bottom Product Area -->
+          <div class="absolute bottom-6 left-4 right-16 z-30 flex flex-col gap-3 pointer-events-auto max-w-[320px]">
+             {product && (
+               <>
+                 <!-- Product Card -->
+                 <a href={`/products/${product.slug}`} class="flex items-center gap-3 bg-[#111111]/90 backdrop-blur-xl rounded-[14px] p-2.5 shadow-xl border border-white/10 group/card transition-transform active:scale-95">
+                   <div class="w-14 h-14 bg-white rounded-lg overflow-hidden shrink-0 p-0.5">
+                     <img src={product.image ?? `/products/${product.slug}.webp`} alt={product.name} class="w-full h-full object-contain mix-blend-multiply" loading="lazy" />
+                   </div>
+                   <div class="flex-1 min-w-0 pr-1">
+                     <h3 class="text-white font-medium text-[13px] leading-tight line-clamp-2 mb-1 opacity-90 group-hover/card:underline">{product.name}</h3>
+                     <div class="flex items-center gap-1.5">
+                       <span class="reel-price-display text-white font-bold text-[15px] tracking-tight">₹{basePrice}</span>
+                       <span class={`reel-mrp-display text-white/50 text-[11px] line-through font-medium ${comparePrice <= basePrice ? 'hidden' : ''}`}>₹{comparePrice}</span>
+                     </div>
+                   </div>
+                 </a>
+                 
+                 <!-- Success Banner (Hidden by default) -->
+                 <div class="reel-success-banner hidden bg-accent text-white rounded-[14px] p-3 shadow-lg items-center justify-between w-full mb-1 border border-white/20">
+                   <div class="flex items-center gap-2">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                     <span class="font-bold text-[13px] tracking-tight">Added To Cart</span>
+                   </div>
+                   <button class="reel-view-cart-btn bg-white text-accent font-extrabold text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-lg hover:scale-105 active:scale-95 transition-transform flex items-center gap-0.5 shadow-sm">
+                     View Cart <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                   </button>
+                 </div>
+
+                 <!-- Action Row (Qty, Variant, Add to Cart) -->
+                 {(() => {
+                   const variants = product.variants || [];
+                   const hasVariants = variants.length > 0;
+                   const defaultVariant = hasVariants ? variants[0] : null;
+                   const variantId = defaultVariant ? defaultVariant.id : '';
+                   const variantWeight = defaultVariant ? defaultVariant.weight : '';
+                   const variantPrice = defaultVariant ? defaultVariant.price : basePrice;
+                   const variantMrp = defaultVariant ? defaultVariant.mrp : comparePrice;
+                   
+                   return (
+                     <div class="flex gap-2 items-center reel-add-to-cart-container w-full" data-product-id={product.id}>
+                       <!-- Qty Selector -->
+                       <div class="flex items-center bg-accent rounded-[10px] shadow-lg overflow-hidden h-10 shrink-0 select-none">
+                         <button type="button" class="reel-qty-minus w-9 h-full flex items-center justify-center text-white font-bold text-lg hover:bg-black/10 transition-colors">-</button>
+                         <span class="reel-qty-val w-6 text-center text-white font-bold text-[13px]">1</span>
+                         <button type="button" class="reel-qty-plus w-9 h-full flex items-center justify-center text-white font-bold text-lg hover:bg-black/10 transition-colors">+</button>
+                       </div>
+
+                       <!-- Variant Selector (Native Select) -->
+                       {hasVariants && (
+                         <div class="relative h-10 flex-1 min-w-0">
+                           <select class="reel-variant-select appearance-none w-full h-full bg-[#111111]/90 backdrop-blur-xl text-white font-medium text-[13px] rounded-[10px] shadow-lg border border-white/10 pl-3 pr-7 outline-none focus:border-white/30 truncate">
+                             {variants.map((v: any) => (
+                               <option value={v.id} data-price={v.price} data-mrp={v.mrp} data-weight={v.weight}>{v.weight}</option>
+                             ))}
+                           </select>
+                           <div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/50">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                           </div>
+                         </div>
+                       )}
+
+                       <!-- Add to Cart Button -->
+                       <button 
+                         class="reel-add-to-cart-btn shrink-0 bg-[#111111]/90 backdrop-blur-xl text-white font-semibold text-[13px] h-10 px-3 rounded-[10px] shadow-lg border border-white/10 hover:bg-[#222222] transition-colors flex items-center justify-center"
+                         data-product-id={product.id}
+                         data-product-name={product.name}
+                         data-product-slug={product.slug}
+                         data-variant-id={variantId}
+                         data-variant-weight={variantWeight}
+                         data-price={variantPrice}
+                         data-mrp={variantMrp}
+                         data-image={product.image ?? `/products/${product.slug}.webp`}
+                       >
+                         Add
+                       </button>
+                     </div>
+                   );
+                 })()}
+               </>
+             )}
+          </div>
+
+          <!-- Play/Pause Overlay (No longer blocking double tap, now an invisible wrapper around the icon) -->
+          <div class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none w-full h-full">
+             <div class="pause-icon-overlay absolute w-20 h-20 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-xl pointer-events-none" style="transition: opacity 0.25s ease, transform 0.25s ease; opacity: 0; transform: scale(1.3);">
+               <svg class="icon-play" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>
+               <svg class="icon-pause hidden" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+             </div>
+          </div>
+
+          <!-- Mute/Unmute Toggle Button -->
+          <button aria-label="Toggle sound" class="mute-toggle-btn absolute z-30 w-11 h-11 bg-black/50 rounded-full flex items-center justify-center text-white backdrop-blur-md border border-white/20 hover:bg-black/60 transition-colors" style="top: max(16px, env(safe-area-inset-top)); right: 16px;">
+            <!-- Sound On Icon -->
+            <svg class="icon-sound-on" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+            <!-- Sound Off Icon -->
+            <svg class="icon-sound-off hidden" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          </button>
+        </div>
+      );
+    })}
+
+    <!-- End of Reels Slide -->
+    <div class="reel-slide relative bg-[#111] w-full h-full flex flex-col items-center justify-center text-center px-6" style="scroll-snap-align: start; scroll-snap-stop: always;" data-index={String(featuredVideos.length)}>
+      <div class="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center mb-6 animate-bounce shadow-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+      </div>
+      <h3 class="text-white text-2xl font-bold mb-2 tracking-tight">You're all caught up!</h3>
+      <p class="text-white/60 text-[15px] mb-8 max-w-[240px]">Scroll upward to re-watch or exit the player.</p>
+      <button class="end-slide-close-btn bg-white text-black font-bold py-3.5 px-10 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-transform text-[16px] pointer-events-auto">
+        Exit Player
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Spinner border-width fix */
+  .reel-loader .animate-spin {
+    border-width: 3px;
+  }
+  /* Hide loader when video is ready */
+  .reel-slide.video-ready .reel-loader {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+</style>
+
+<script>
+  let _reelsCleanups: (() => void)[] = [];
+
+  function initReels() {
+    // Clean up previous init safely
+    _reelsCleanups.forEach(cleanup => {
+      try { cleanup(); } catch (e) { console.error('Reels cleanup error:', e); }
+    });
+    _reelsCleanups = [];
+
+    const sections = document.querySelectorAll('.featured-videos-section');
+
+    sections.forEach(section => {
+      const sectionId = (section as HTMLElement).dataset.sectionId;
+      if (!sectionId) return;
+
+      const modalEl = document.getElementById(`reels-modal-${sectionId}`);
+      if (!modalEl) return;
+      
+      // Move modal to body to prevent z-index stacking context trapping.
+      // Clean up properly ensures no Zombie DOM nodes remain during View Transitions.
+      if (modalEl.parentElement !== document.body) {
+        document.body.appendChild(modalEl);
+      }
+
+      const containerEl = modalEl.querySelector('.reels-container') as HTMLElement;
+      const closeBtn = modalEl.querySelector('.close-reels-btn') as HTMLElement;
+      if (!containerEl || !closeBtn) return;
+
+      const slides = Array.from(containerEl.querySelectorAll('.reel-slide')) as HTMLElement[];
+      const allVideos = Array.from(containerEl.querySelectorAll('.reel-video')) as HTMLVideoElement[];
+
+      // --- State ---
+      let isGlobalMuted = true;
+      try {
+        const stored = localStorage.getItem('Store Name_reels_muted');
+        if (stored !== null) isGlobalMuted = stored === 'true';
+      } catch(e) {}
+      
+      let isOpen = false;
+      let activeSlideIndex = -1;
+      let progressRAF = 0;
+
+      // --- Shared Wishlist Toggle Logic ---
+      function toggleWishlist(productInfo: any) {
+        let wishlist: any[] = [];
+        try { wishlist = JSON.parse(localStorage.getItem(`vyaparpe-wishlist-${window.location.hostname}`) || '[]'); } catch(e) {}
+        
+        const existingIdx = wishlist.findIndex((i: any) => i.id === productInfo.id);
+        if (existingIdx !== -1) {
+          wishlist.splice(existingIdx, 1);
+        } else {
+          wishlist.push(productInfo);
+        }
+        
+        localStorage.setItem(`vyaparpe-wishlist-${window.location.hostname}`, JSON.stringify(wishlist));
+        window.dispatchEvent(new Event('wishlist-updated'));
+      }
+
+      // --- Helper: Update mute icons ---
+      function updateAllMuteIcons() {
+        modalEl!.querySelectorAll('.mute-toggle-btn').forEach(btn => {
+          const iconOn = btn.querySelector('.icon-sound-on');
+          const iconOff = btn.querySelector('.icon-sound-off');
+          if (isGlobalMuted) {
+            iconOn?.classList.add('hidden');
+            iconOff?.classList.remove('hidden');
+          } else {
+            iconOn?.classList.remove('hidden');
+            iconOff?.classList.add('hidden');
+          }
+        });
+        allVideos.forEach(v => {
+          v.muted = isGlobalMuted;
+        });
+      }
+
+      updateAllMuteIcons();
+
+      // --- Helper: Ensure video src is loaded ---
+      function ensureVideoLoaded(video: HTMLVideoElement): void {
+        const dataSrc = video.dataset.src;
+        if (!dataSrc) return;
+        if (!video.hasAttribute('src') || video.getAttribute('src') !== dataSrc) {
+          video.src = dataSrc;
+          // Note: NOT removing src later to prevent constant redownloading and bandwidth leaks.
+        }
+      }
+
+      // --- Helper: Update progress bar (Optimized for Battery) ---
+      function updateProgressBar() {
+        if (!isOpen || activeSlideIndex < 0) return;
+        const slide = slides[activeSlideIndex];
+        const video = slide?.querySelector('.reel-video') as HTMLVideoElement;
+        const fill = slide?.querySelector('.reel-progress-fill') as HTMLElement;
+        
+        if (video && fill && !video.paused && video.duration && isFinite(video.duration) && video.duration > 0) {
+          const pct = video.currentTime / video.duration;
+          fill.style.transform = `scaleX(${pct})`;
+          progressRAF = requestAnimationFrame(updateProgressBar);
+        }
+      }
+
+      // --- Helper: Play specific slide ---
+      let playTimeoutId: number | null = null;
+      function playSlide(index: number, isDirectClick = false) {
+        if (playTimeoutId) {
+           clearTimeout(playTimeoutId);
+           playTimeoutId = null;
+        }
+        
+        const executePlay = () => {
+          // Pause all other videos immediately
+          allVideos.forEach((v, i) => {
+            if (!v.paused && i !== index) {
+               v.pause();
+            }
+          });
+
+          if (progressRAF) {
+            cancelAnimationFrame(progressRAF);
+            progressRAF = 0;
+          }
+
+          const slide = slides[index];
+          if (!slide) return;
+
+          const video = slide.querySelector('.reel-video') as HTMLVideoElement;
+          if (!video) return;
+
+          ensureVideoLoaded(video);
+
+          activeSlideIndex = index;
+          video.muted = isGlobalMuted;
+
+          if (video.readyState > 0) {
+             video.currentTime = 0;
+          }
+
+          const fill = slide.querySelector('.reel-progress-fill') as HTMLElement;
+          if (fill) fill.style.transform = 'scaleX(0)';
+
+          slide.classList.remove('video-ready');
+
+          // Safe Promise Handling to avoid AbortErrors on rapid scroll
+          const p = video.play();
+          if (p !== undefined) {
+            p.then(() => {
+              if (progressRAF) cancelAnimationFrame(progressRAF);
+              progressRAF = requestAnimationFrame(updateProgressBar);
+            }).catch((e) => {
+              if (e.name === 'NotAllowedError') {
+                isGlobalMuted = true;
+                video.muted = true;
+                updateAllMuteIcons();
+                setTimeout(() => {
+                  video.play().then(() => {
+                    if (progressRAF) cancelAnimationFrame(progressRAF);
+                    progressRAF = requestAnimationFrame(updateProgressBar);
+                  }).catch(() => {});
+                }, 50);
+              }
+              // Ignore AbortError caused by rapid scrolling / pause()
+            });
+          }
+          
+          // Preload adjacent slides to ensure smooth experience
+          if (index + 1 < slides.length) {
+            const nextVid = slides[index + 1].querySelector('.reel-video') as HTMLVideoElement;
+            if (nextVid) ensureVideoLoaded(nextVid);
+          }
+          if (index - 1 >= 0) {
+            const prevVid = slides[index - 1].querySelector('.reel-video') as HTMLVideoElement;
+            if (prevVid) ensureVideoLoaded(prevVid);
+          }
+        };
+
+        if (isDirectClick) {
+          executePlay();
+        } else {
+          playTimeoutId = window.setTimeout(executePlay, 150);
+        }
+      }
+
+      // --- IntersectionObserver ---
+      const observer = new IntersectionObserver((entries) => {
+        if (!isOpen) return;
+        let maxRatio = 0;
+        let bestIndex = -1;
+        entries.forEach(entry => {
+          if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
+            maxRatio = entry.intersectionRatio;
+            bestIndex = Number((entry.target as HTMLElement).dataset.index);
+          }
+        });
+        
+        if (bestIndex !== -1 && bestIndex !== activeSlideIndex && !isNaN(bestIndex)) {
+          playSlide(bestIndex);
+        }
+      }, { root: containerEl, threshold: [0.5, 0.7, 0.9] });
+
+      slides.forEach(slide => observer.observe(slide));
+
+      // --- Handle Variant Selection ---
+      const handleVariantChange = (e: Event) => {
+        const select = e.target as HTMLSelectElement;
+        if (!select.classList.contains('reel-variant-select')) return;
+        
+        const option = select.options[select.selectedIndex];
+        const container = select.closest('.reel-add-to-cart-container');
+        if (!container) return;
+
+        const addBtn = container.querySelector('.reel-add-to-cart-btn') as HTMLButtonElement;
+        if (addBtn) {
+          addBtn.dataset.variantId = option.value;
+          addBtn.dataset.variantWeight = option.dataset.weight || '';
+          addBtn.dataset.price = option.dataset.price || '0';
+          addBtn.dataset.mrp = option.dataset.mrp || '0';
+        }
+
+        // Update Price UI
+        const wrapper = container.parentElement;
+        if (wrapper) {
+          const priceDisplay = wrapper.querySelector('.reel-price-display');
+          const mrpDisplay = wrapper.querySelector('.reel-mrp-display');
+          const newPrice = Number(option.dataset.price || 0);
+          const newMrp = Number(option.dataset.mrp || 0);
+          
+          if (priceDisplay && newPrice) {
+            priceDisplay.textContent = `₹${newPrice}`;
+          }
+          if (mrpDisplay) {
+            if (newMrp > newPrice) {
+              mrpDisplay.textContent = `₹${newMrp}`;
+              mrpDisplay.classList.remove('hidden');
+            } else {
+              mrpDisplay.classList.add('hidden');
+            }
+          }
+          
+          // Hide success banner and restore Add button if variant changes
+          const successBanner = wrapper.querySelector('.reel-success-banner') as HTMLElement;
+          if (successBanner) {
+             successBanner.classList.add('hidden');
+             successBanner.classList.remove('flex', 'animate-fade-in-up');
+             successBanner.dataset.addedOnce = 'false';
+             const btn = container.querySelector('.reel-add-to-cart-btn') as HTMLElement;
+             if (btn) btn.classList.remove('hidden');
+          }
+        }
+      };
+      
+      modalEl!.addEventListener('change', handleVariantChange);
+
+      // --- Wishlist Sync Logic ---
+      function updateWishlistUI() {
+        try {
+          const wishlist = JSON.parse(localStorage.getItem(`vyaparpe-wishlist-${window.location.hostname}`) || '[]');
+          
+          // Update modal buttons
+          modalEl!.querySelectorAll('.reel-wishlist-btn').forEach(btn => {
+            const id = (btn as HTMLElement).dataset.productId;
+            const icon = btn.querySelector('.wishlist-icon');
+            if (id && icon) {
+              if (wishlist.some((w: any) => w.id === id)) {
+                icon.classList.add('fill-red-500', 'stroke-red-500', 'text-red-500');
+              } else {
+                icon.classList.remove('fill-red-500', 'stroke-red-500', 'text-red-500');
+              }
+            }
+          });
+          
+          // Update section (horizontal card) buttons
+          section.querySelectorAll('.reel-wishlist-btn').forEach(btn => {
+            const id = (btn as HTMLElement).dataset.productId;
+            const icon = btn.querySelector('.wishlist-icon');
+            if (id && icon) {
+              if (wishlist.some((w: any) => w.id === id)) {
+                icon.classList.add('fill-red-500', 'stroke-red-500', 'text-red-500');
+              } else {
+                icon.classList.remove('fill-red-500', 'stroke-red-500', 'text-red-500');
+              }
+            }
+          });
+        } catch(e) {}
+      }
+      
+      updateWishlistUI();
+      window.addEventListener('wishlist-updated', updateWishlistUI);
+      _reelsCleanups.push(() => window.removeEventListener('wishlist-updated', updateWishlistUI));
+
+      // --- Scroll to a specific slide ---
+      function scrollToSlide(index: number) {
+        if (index < 0 || index >= slides.length) return;
+        const targetSlide = slides[index];
+        if (!targetSlide) return;
+        containerEl.scrollTo({ top: targetSlide.offsetTop, behavior: 'smooth' });
+      }
+
+      // --- Open Modal ---
+      function openReel(index: number) {
+        isOpen = true;
+        modalEl!.style.visibility = 'visible';
+        modalEl!.style.zIndex = '99999';
+        document.body.style.overflow = 'hidden';
+        
+        requestAnimationFrame(() => {
+          modalEl!.style.opacity = '1';
+          closeBtn.focus();
+        });
+
+        const header = document.getElementById('site-header');
+        const whatsapp = document.getElementById('whatsapp-widget');
+        if (header) header.style.display = 'none';
+        if (whatsapp) whatsapp.style.display = 'none';
+
+        const targetSlide = slides[index];
+        if (targetSlide) {
+          containerEl.scrollTo({ top: targetSlide.offsetTop, behavior: 'instant' as ScrollBehavior });
+        }
+        
+        updateWishlistUI();
+        playSlide(index, true);
+      }
+
+      // --- Close Modal ---
+      function closeReel() {
+        isOpen = false;
+        activeSlideIndex = -1;
+        if (playTimeoutId) clearTimeout(playTimeoutId);
+        if (progressRAF) {
+          cancelAnimationFrame(progressRAF);
+          progressRAF = 0;
+        }
+
+        // DEEP FIX: Simply pause videos. Do NOT remove src attribute to save user bandwidth and fix load lag.
+        allVideos.forEach(v => {
+          if (!v.paused) v.pause();
+        });
+
+        modalEl!.querySelectorAll('.reel-progress-fill').forEach(fill => {
+          (fill as HTMLElement).style.transform = 'scaleX(0)';
+        });
+
+        modalEl!.style.opacity = '0';
+        document.body.style.overflow = '';
+        
+        setTimeout(() => {
+          if (!isOpen) {
+            modalEl!.style.visibility = 'hidden';
+            modalEl!.style.zIndex = '-1';
+          }
+        }, 300);
+
+        const header = document.getElementById('site-header');
+        const whatsapp = document.getElementById('whatsapp-widget');
+        if (header) header.style.display = '';
+        if (whatsapp) whatsapp.style.display = '';
+      }
+
+      closeBtn.addEventListener('click', closeReel);
+
+      const backdropClick = (e: MouseEvent) => {
+        if (e.target === modalEl) closeReel();
+      };
+      modalEl.addEventListener('click', backdropClick);
+
+      // --- Keyboard ---
+      function handleKeydown(e: KeyboardEvent) {
+        if (!isOpen) return;
+        if (e.key === 'Escape') {
+          closeReel();
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (activeSlideIndex < slides.length - 1) scrollToSlide(activeSlideIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (activeSlideIndex > 0) scrollToSlide(activeSlideIndex - 1);
+        }
+      }
+      document.addEventListener('keydown', handleKeydown);
+
+      // --- Auto-open reel from URL parameter ---
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('play') === '1') {
+        setTimeout(() => {
+          openReel(0);
+          // Clean up the URL so it doesn't reopen on refresh
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }, 300);
+      }
+
+      // --- Listen for Custom Event from bottom navigation ---
+      const openReelHandler = ((e: CustomEvent) => {
+        openReel(e.detail?.index || 0);
+      }) as EventListener;
+      window.addEventListener('vyaparpe:open-reel', openReelHandler);
+      _reelsCleanups.push(() => window.removeEventListener('vyaparpe:open-reel', openReelHandler));
+
+      // --- Shared Event Handler for Modal Clicks ---
+      function handleInteractiveClicks(e: MouseEvent, context: 'modal' | 'section') {
+        const target = e.target as HTMLElement;
+
+        // Wishlist logic
+        const wishlistBtn = target.closest('.reel-wishlist-btn') as HTMLButtonElement;
+        if (wishlistBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const productId = wishlistBtn.dataset.productId;
+          if (!productId) return;
+          
+          const product = {
+            id: productId,
+            name: wishlistBtn.dataset.productName,
+            slug: wishlistBtn.dataset.productSlug,
+            image: wishlistBtn.dataset.productImage,
+            price: Number(wishlistBtn.dataset.productPrice),
+            mrp: Number(wishlistBtn.dataset.productMrp),
+            addedAt: new Date().toISOString()
+          };
+          
+          toggleWishlist(product);
+          return;
+        }
+
+        // Share Video Logic
+        const shareBtn = target.closest('.reel-share-btn') as HTMLButtonElement;
+        if (shareBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const url = window.location.origin + (shareBtn.dataset.url || '');
+          if (navigator.share) {
+            navigator.share({ title: 'Check this out!', url }).catch(() => {});
+          } else {
+            navigator.clipboard.writeText(url);
+            alert('Link copied to clipboard!');
+          }
+          return;
+        }
+
+        // Qty Minus Logic
+        const qtyMinusBtn = target.closest('.reel-qty-minus');
+        if (qtyMinusBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const qtySpan = qtyMinusBtn.nextElementSibling;
+          if (qtySpan) {
+            let val = parseInt(qtySpan.textContent || '1', 10);
+            if (val > 1) qtySpan.textContent = String(val - 1);
+          }
+          return;
+        }
+
+        // Qty Plus Logic
+        const qtyPlusBtn = target.closest('.reel-qty-plus');
+        if (qtyPlusBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const qtySpan = qtyPlusBtn.previousElementSibling;
+          if (qtySpan) {
+            let val = parseInt(qtySpan.textContent || '1', 10);
+            if (val < 10) qtySpan.textContent = String(val + 1);
+          }
+          return;
+        }
+
+        // View Cart Button Logic inside Banner
+        const viewCartBtn = target.closest('.reel-view-cart-btn') as HTMLButtonElement;
+        if (viewCartBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeReel();
+          
+          setTimeout(() => {
+            const globalCartBtn = document.getElementById('cart-btn');
+            if (globalCartBtn) {
+              globalCartBtn.click();
+            } else {
+              window.dispatchEvent(new CustomEvent('vyaparpe:open-cart'));
+            }
+          }, 50);
+          return;
+        }
+
+        // Add to Cart Logic
+        const addBtn = target.closest('.reel-add-to-cart-btn') as HTMLButtonElement;
+        if (addBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const container = addBtn.closest('.reel-add-to-cart-container');
+          const qtySpan = container?.querySelector('.reel-qty-val');
+          const qty = qtySpan ? parseInt(qtySpan.textContent || '1', 10) : 1;
+          const slug = addBtn.dataset.productSlug || addBtn.dataset.productId || '';
+          
+          const item = {
+            id: (addBtn.dataset.productId || '') + '-' + (addBtn.dataset.variantId || ''),
+            name: addBtn.dataset.productName || '',
+            price: Number(addBtn.dataset.price || 0),
+            mrp: Number(addBtn.dataset.mrp || addBtn.dataset.price || 0),
+            weight: addBtn.dataset.variantWeight || '',
+            image: addBtn.dataset.image || '/products/' + slug + '.webp',
+            quantity: qty
+          };
+
+          window.dispatchEvent(new CustomEvent('vyaparpe:add-to-cart', { detail: item }));
+          
+          // Visual Banner Feedback
+          const actionRow = container;
+          const successBanner = actionRow?.previousElementSibling as HTMLElement;
+          if (successBanner && successBanner.classList.contains('reel-success-banner')) {
+             // Handle Cart Updated state
+             const hasBeenAdded = successBanner.dataset.addedOnce === 'true';
+             const textSpan = successBanner.querySelector('span');
+             if (textSpan) {
+                textSpan.textContent = hasBeenAdded ? 'Cart Updated!' : 'Added To Cart';
+             }
+             successBanner.dataset.addedOnce = 'true';
+
+             // Hide Add button
+             addBtn.classList.add('hidden');
+             // Show banner
+             successBanner.classList.remove('hidden');
+             successBanner.classList.add('flex', 'animate-fade-in-up');
+             
+             // Hide banner and restore button after 3 seconds
+             if ((successBanner as any)._timeoutId) {
+                clearTimeout((successBanner as any)._timeoutId);
+             }
+             (successBanner as any)._timeoutId = setTimeout(() => {
+                successBanner.classList.add('hidden');
+                successBanner.classList.remove('flex', 'animate-fade-in-up');
+                addBtn.classList.remove('hidden');
+             }, 3000);
+          }
+          
+          return;
+        }
+
+        if (context === 'modal') {
+          if (target.closest('.end-slide-close-btn')) {
+            closeReel();
+            return;
+          }
+
+          if (target.closest('a') || target.closest('.close-reels-btn') || target.closest('.mute-toggle-btn') || target.closest('.reel-bottom-actions')) return;
+
+          // Play/Pause Video inside modal
+          const slide = target.closest('.reel-slide');
+          if (slide) {
+            const video = slide.querySelector('.reel-video') as HTMLVideoElement;
+            if (video) {
+              if (video.paused) {
+                const p = video.play();
+                if (p !== undefined) {
+                   p.catch(()=>{});
+                }
+              } else {
+                video.pause();
+              }
+            }
+          }
+        } else if (context === 'section') {
+          // Open Reel from horizontal card
+          const trigger = target.closest('.video-card-trigger');
+          if (trigger) {
+            const idx = trigger.getAttribute('data-index');
+            if (idx !== null) openReel(Number(idx));
+          }
+        }
+      }
+      
+      const modalClickHandler = (e: MouseEvent) => handleInteractiveClicks(e, 'modal');
+      const sectionClickHandler = (e: MouseEvent) => handleInteractiveClicks(e as MouseEvent, 'section');
+
+      modalEl.addEventListener('click', modalClickHandler);
+      section.addEventListener('click', sectionClickHandler);
+
+      // --- Mute click handler ---
+      const muteHandlers = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const muteBtn = target.closest('.mute-toggle-btn');
+        if (muteBtn) {
+          const video = slides[activeSlideIndex]?.querySelector('.reel-video') as HTMLVideoElement;
+          if (video) {
+            video.muted = !video.muted;
+            isGlobalMuted = video.muted;
+            try { localStorage.setItem('Store Name_reels_muted', String(isGlobalMuted)); } catch(e) {}
+            updateAllMuteIcons();
+          }
+        }
+      };
+      modalEl.addEventListener('click', muteHandlers);
+
+
+      // --- Pause/Play icon & optimization state ---
+      const videoListeners: { video: Element; type: string; fn: () => void }[] = [];
+      allVideos.forEach(video => {
+        const slide = video.closest('.reel-slide');
+        const overlay = slide?.querySelector('.pause-icon-overlay') as HTMLElement;
+        const iconPlay = overlay?.querySelector('.icon-play') as HTMLElement;
+        const iconPause = overlay?.querySelector('.icon-pause') as HTMLElement;
+        if (!overlay) return;
+
+        let overlayTimeout: number | null = null;
+
+        const onPause = () => {
+          if (overlayTimeout) clearTimeout(overlayTimeout);
+          if (iconPlay) iconPlay.classList.remove('hidden');
+          if (iconPause) iconPause.classList.add('hidden');
+          overlay.style.opacity = '1';
+          overlay.style.transform = 'scale(1)';
+          
+          // Stop animating progress when paused to save CPU
+          if (progressRAF) {
+            cancelAnimationFrame(progressRAF);
+            progressRAF = 0;
+          }
+        };
+
+        const onPlay = () => {
+          if (overlayTimeout) clearTimeout(overlayTimeout);
+          if (iconPlay) iconPlay.classList.add('hidden');
+          if (iconPause) iconPause.classList.remove('hidden');
+          overlay.style.opacity = '1';
+          overlay.style.transform = 'scale(1)';
+          overlayTimeout = window.setTimeout(() => {
+            overlay.style.opacity = '0';
+            overlay.style.transform = 'scale(1.3)';
+          }, 400);
+          
+          // Resume animating progress
+          if (progressRAF) cancelAnimationFrame(progressRAF);
+          progressRAF = requestAnimationFrame(updateProgressBar);
+        };
+
+        video.addEventListener('pause', onPause);
+        video.addEventListener('play', onPlay);
+        videoListeners.push({ video, type: 'pause', fn: onPause }, { video, type: 'play', fn: onPlay });
+
+        const onWaiting = () => slide?.classList.remove('video-ready');
+        const onPlaying = () => {
+           slide?.classList.add('video-ready');
+        };
+        video.addEventListener('waiting', onWaiting);
+        video.addEventListener('playing', onPlaying);
+        videoListeners.push({ video, type: 'waiting', fn: onWaiting }, { video, type: 'playing', fn: onPlaying });
+      });
+
+      // --- Section Scroll Arrows ---
+      const scrollContainer = section.querySelector('.reels-scroll-container') as HTMLElement | null;
+      const scrollLeftBtn = section.querySelector('.scroll-left-btn') as HTMLButtonElement | null;
+      const scrollRightBtn = section.querySelector('.scroll-right-btn') as HTMLButtonElement | null;
+
+      const toggleArrows = () => {
+        if (!scrollContainer) return;
+        const hasOverflow = scrollContainer.scrollWidth > scrollContainer.clientWidth;
+        const isAtStart = scrollContainer.scrollLeft <= 0;
+        const isAtEnd = Math.ceil(scrollContainer.scrollLeft + scrollContainer.clientWidth) >= scrollContainer.scrollWidth;
+        if (scrollLeftBtn) {
+          scrollLeftBtn.classList.toggle('hidden', !hasOverflow);
+          scrollLeftBtn.style.opacity = isAtStart ? '0.3' : '1';
+        }
+        if (scrollRightBtn) {
+          scrollRightBtn.classList.toggle('hidden', !hasOverflow);
+          scrollRightBtn.style.opacity = isAtEnd ? '0.3' : '1';
+        }
+      };
+      
+      const onLeftClick = () => scrollContainer?.scrollBy({ left: -300, behavior: 'smooth' });
+      const onRightClick = () => scrollContainer?.scrollBy({ left: 300, behavior: 'smooth' });
+
+      if (scrollContainer) {
+        scrollContainer.addEventListener('scroll', toggleArrows, { passive: true });
+        window.addEventListener('resize', toggleArrows);
+        setTimeout(toggleArrows, 200);
+        if (scrollLeftBtn) scrollLeftBtn.addEventListener('click', onLeftClick);
+        if (scrollRightBtn) scrollRightBtn.addEventListener('click', onRightClick);
+      }
+
+      // Add to cleanups
+      _reelsCleanups.push(() => {
+        observer.disconnect();
+        if (progressRAF) cancelAnimationFrame(progressRAF);
+        if (playTimeoutId) clearTimeout(playTimeoutId);
+        document.removeEventListener('keydown', handleKeydown);
+        modalEl!.removeEventListener('click', modalClickHandler);
+        modalEl!.removeEventListener('click', muteHandlers);
+        modalEl!.removeEventListener('click', backdropClick);
+        closeBtn.removeEventListener('click', closeReel);
+        section.removeEventListener('click', sectionClickHandler);
+        videoListeners.forEach(({ video, type, fn }) => video.removeEventListener(type, fn));
+        if (scrollContainer) {
+          scrollContainer.removeEventListener('scroll', toggleArrows);
+          window.removeEventListener('resize', toggleArrows);
+          if (scrollLeftBtn) scrollLeftBtn.removeEventListener('click', onLeftClick);
+          if (scrollRightBtn) scrollRightBtn.removeEventListener('click', onRightClick);
+        }
+        if (isOpen) closeReel();
+        
+        // Remove modal from body to clean up if section is unmounted (prevents zombie DOM nodes)
+        if (modalEl && modalEl.parentElement === document.body) {
+           document.body.removeChild(modalEl);
+        }
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initReels);
+  } else {
+    initReels();
+  }
+  document.addEventListener('astro:after-swap', initReels);
+</script>

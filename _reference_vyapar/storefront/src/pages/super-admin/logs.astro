@@ -1,0 +1,142 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (!canManageSection(ctx, "super_admin")) {
+  return Astro.redirect('/super-admin/login');
+}
+
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+
+if (!supabaseAdmin) {
+  return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+// Fetch real logs
+let logs: AdminActivityLog[] = [];
+try {
+  const { data: dbLogs, error } = await supabaseAdmin
+    .from('admin_activity_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  logs = dbLogs || [];
+} catch (error) {
+  console.error("Error fetching admin logs:", error);
+}
+
+interface AdminActivityLog {
+  id: string;
+  admin_name: string;
+  admin_role: string;
+  action: string;
+  details: string;
+  ip_address: string;
+  created_at: string;
+}
+
+const actionStyle: Record<string, string> = {
+  'Provisioned Store': 'bg-blue-100 text-blue-800',
+  'Assigned Store Manager': 'bg-indigo-100 text-indigo-800',
+  'Changed Store Status': 'bg-red-100 text-red-800',
+  'Created Plan': 'bg-blue-100 text-blue-800',
+  'Updated Plan': 'bg-purple-100 text-purple-800',
+  'Processed Payout': 'bg-green-100 text-green-800',
+  'Marketplace Listing Review': 'bg-yellow-100 text-yellow-800',
+  'Updated Service Request': 'bg-orange-100 text-orange-800',
+  'Created Role': 'bg-teal-100 text-teal-800',
+  'Updated Role': 'bg-teal-100 text-teal-800',
+  'Created Staff': 'bg-cyan-100 text-cyan-800',
+  'Updated Staff': 'bg-cyan-100 text-cyan-800',
+  'Updated Platform Settings': 'bg-gray-200 text-gray-800'
+};
+---
+
+<SuperAdminLayout title="Activity Logs | Platform">
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Activity Logs</h1>
+    <p class="text-sm text-gray-500 mt-1">Audit trail of all administrative actions across the platform.</p>
+  </div>
+
+  <!-- Filters Row -->
+  <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-wrap gap-4 items-end">
+    <div class="flex-1 min-w-[200px]">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Search Action / Target</label>
+      <input type="text" placeholder="Search..." class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 text-sm">
+    </div>
+    <div class="w-48">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Admin Role</label>
+      <select class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 text-sm cursor-pointer">
+        <option>All Roles</option>
+        <option>Super Admin</option>
+        <option>Finance Admin</option>
+        <option>Support Admin</option>
+        <option>Operations Admin</option>
+        <option>System</option>
+      </select>
+    </div>
+    <div class="w-48">
+      <label class="block text-xs font-bold text-gray-700 mb-1">Date Range</label>
+      <input type="date" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 text-sm">
+    </div>
+    <button class="bg-indigo-50 text-indigo-700 font-semibold py-2 px-6 rounded-lg hover:bg-indigo-100 transition-colors h-[38px]">
+      Filter
+    </button>
+  </div>
+
+  <!-- Logs Table -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="min-w-full text-left text-sm whitespace-nowrap">
+      <thead class="bg-gray-50 text-gray-600 font-semibold text-xs uppercase tracking-wider border-b border-gray-200">
+        <tr>
+          <th class="px-6 py-4">Timestamp</th>
+          <th class="px-6 py-4">Admin / Role</th>
+          <th class="px-6 py-4">Action</th>
+          <th class="px-6 py-4">Target Details</th>
+          <th class="px-6 py-4">IP Address</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {logs.length > 0 ? logs.map((log: AdminActivityLog) => (
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-4">
+              <div class="text-gray-900 font-medium">{new Date(log.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+              <div class="text-xs text-gray-500">{new Date(log.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+            </td>
+            <td class="px-6 py-4">
+              <div class="font-bold text-gray-900">{log.admin_name}</div>
+              <div class="text-xs text-gray-500">{log.admin_role}</div>
+            </td>
+            <td class="px-6 py-4">
+              <span class={`px-2.5 py-1 rounded-full text-xs font-bold ${actionStyle[log.action] || 'bg-gray-100 text-gray-800'}`}>
+                {log.action}
+              </span>
+            </td>
+            <td class="px-6 py-4 font-medium text-gray-800">
+              {log.target_details}
+            </td>
+            <td class="px-6 py-4 text-gray-500 font-mono text-xs">
+              {log.ip_address}
+            </td>
+          </tr>
+        )) : (
+          <tr>
+            <td colspan="5" class="px-6 py-8 text-center text-gray-500">No activity logs recorded yet.</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+    
+    <!-- Pagination -->
+    <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+      <span class="text-sm text-gray-600">Showing up to 100 recent logs</span>
+      <div class="flex gap-2">
+        <button class="px-3 py-1 border border-gray-300 rounded text-sm font-medium bg-white text-gray-400 cursor-not-allowed">Previous</button>
+        <button class="px-3 py-1 border border-gray-300 rounded text-sm font-medium bg-white text-gray-700 hover:bg-gray-50">Next</button>
+      </div>
+    </div>
+  </div>
+
+</SuperAdminLayout>

@@ -1,0 +1,40 @@
+---
+import PolicyLayout from '../layouts/PolicyLayout.astro';
+import { getSettings } from '../lib/database';
+
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : '';
+};
+const brandName = settings?.brand_name || '';
+---
+
+<PolicyLayout title="Delivery" lastUpdated="May 2026">
+  {s('page_delivery_0') && (
+  <div data-setting="page_delivery_0" data-setting-html><Fragment set:html={s('page_delivery_0')} /></div>
+)}
+
+  {s('page_delivery_1') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Eligibility for Return</h2>
+  <div data-setting="page_delivery_1" data-setting-html><Fragment set:html={s('page_delivery_1')} /></div>
+  </>
+)}
+
+  {s('page_delivery_2') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Ineligible Returns</h2>
+  <div data-setting="page_delivery_2" data-setting-html><Fragment set:html={s('page_delivery_2')} /></div>
+  </>
+)}
+
+  {s('page_delivery_3') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - How to Request a Return</h2>
+  <div data-setting="page_delivery_3" data-setting-html><Fragment set:html={s('page_delivery_3')} /></div>
+  </>
+)}
+
+</PolicyLayout>

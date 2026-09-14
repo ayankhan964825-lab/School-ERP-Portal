@@ -1,0 +1,17 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import AddressManager from '../../components/react/AddressManager';
+---
+
+<Layout title="My Profile">
+  <div class="pt-32 pb-20 bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 max-w-6xl">
+      <div class="mb-10 text-center">
+        <h1 class="text-4xl md:text-5xl font-serif font-bold text-secondary mb-4">My Account</h1>
+        <p class="text-secondary/60">Manage your saved addresses and profile</p>
+      </div>
+
+      <AddressManager client:load />
+    </div>
+  </div>
+</Layout>

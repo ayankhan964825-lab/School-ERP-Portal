@@ -1,0 +1,178 @@
+---
+import '../styles/global.css';
+
+import { getSettings } from '../lib/database';
+import { getPermissionContext } from '../lib/permissions';
+
+export interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+const currentPath = new URL(Astro.request.url).pathname;
+
+const ctx = getPermissionContext(Astro.cookies);
+const adminId = ctx.adminId || 'super_admin_root';
+const isAuthenticated = Astro.cookies.has('admin_auth');
+const isLoginPage = Astro.url.pathname === '/super-admin/login';
+
+const adminSettings = await getSettings();
+let pc = adminSettings?.pages_content;
+if (typeof pc === 'string') {
+  try { pc = JSON.parse(pc); } catch { pc = {}; }
+}
+if (!pc || typeof pc !== 'object') pc = {};
+
+let forceRedirect: string | null = null;
+// Single Active Session Verification
+if (isAuthenticated && !isLoginPage) {
+  const currentToken = Astro.cookies.get('admin_session_token')?.value;
+  const dbEntry = pc.active_sessions?.[adminId];
+  // active_sessions stores objects like { token: '...', timestamp: ... }
+  const dbToken = dbEntry && typeof dbEntry === 'object' ? dbEntry.token : dbEntry;
+  if (dbToken && currentToken !== dbToken) {
+    Astro.cookies.delete('admin_auth', { path: '/' });
+    Astro.cookies.delete('admin_role', { path: '/' });
+    Astro.cookies.delete('admin_id', { path: '/' });
+    Astro.cookies.delete('admin_signature', { path: '/' });
+    Astro.cookies.delete('admin_session_token', { path: '/' });
+    forceRedirect = '/super-admin/login?error=multidevice';
+  }
+}
+
+const navItems = [
+  { label: 'Platform Overview', path: '/super-admin', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
+  { label: 'Stores & Tenants', path: '/super-admin/stores', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
+  { label: 'Subscription Plans', path: '/super-admin/plans', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
+  { label: 'RBAC Management', path: '/super-admin/rbac', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+  { label: 'Marketplace Approvals', path: '/super-admin/kyc', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { label: 'Payouts & Billing', path: '/super-admin/payouts', icon: 'M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10' },
+  { label: 'Domain Manager', path: '/super-admin/domains', icon: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9' },
+  { label: 'Global Settings', path: '/super-admin/settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  { label: 'Activity Logs', path: '/super-admin/logs', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
+  { label: 'System Errors', path: '/super-admin/system-logs', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
+];
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {forceRedirect && <meta http-equiv="refresh" content={`0;url=${forceRedirect}`} />}
+  {forceRedirect && <script define:vars={{ forceRedirect }}>window.location.href = forceRedirect;</script>}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href={adminSettings?.admin_favicon_url || adminSettings?.brand_favicon || adminSettings?.logo_url || adminSettings?.brand_logo || '/favicon.ico'} />
+</head>
+<body class="bg-[#FAFAFA] min-h-screen text-[#09090B] font-['Inter',sans-serif] antialiased flex flex-col md:flex-row selection:bg-slate-200">
+
+  {Astro.url.searchParams.get('alert') === 'session_replaced' && (
+    <div id="session-alert" class="fixed top-4 right-4 z-50 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl shadow-sm flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+      <div class="text-sm font-medium">You are now logged in. We have automatically logged out your account from all other devices.</div>
+      <button onclick="document.getElementById('session-alert').remove()" class="text-green-600 hover:text-green-800 ml-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+      </button>
+    </div>
+    <script>
+      setTimeout(() => {
+        const alert = document.getElementById('session-alert');
+        if (alert) alert.remove();
+        const url = new URL(window.location.href);
+        url.searchParams.delete('alert');
+        window.history.replaceState({}, '', url);
+      }, 6000);
+    </script>
+  )}
+
+  <!-- Mobile Header -->
+  <header class="md:hidden bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-40">
+    <div class="font-bold text-lg tracking-tight">VyaparPe Super Admin</div>
+    <button id="mobile-menu-btn" class="p-2 -mr-2 text-slate-500 hover:text-slate-900">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12h18M3 6h18M3 18h18" />
+      </svg>
+    </button>
+  </header>
+
+  <!-- Sidebar (Minimal Light Theme) -->
+  <aside id="sidebar" class="fixed md:sticky top-0 left-0 h-screen w-[260px] bg-white text-slate-600 flex flex-col z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 border-r border-slate-200">
+    <div class="p-6 pb-4 border-b border-slate-100">
+      <div class="font-bold text-slate-900 text-xl tracking-tight mb-1">VyaparPe</div>
+      <div class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Super Admin Portal</div>
+    </div>
+
+    <nav class="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
+      {navItems.map(item => {
+        const isActive = currentPath === item.path || (item.path !== '/super-admin' && currentPath.startsWith(item.path));
+        return (
+          <a href={item.path} class={`flex items-center gap-3 px-3 py-2 rounded-md text-[14px] font-medium transition-all duration-200 ${isActive ? 'bg-slate-100 text-slate-900' : 'hover:bg-slate-50 hover:text-slate-900'}`}>
+            <svg xmlns="http://www.w3.org/2000/svg" class={`h-[18px] w-[18px] ${isActive ? 'text-slate-900' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
+            </svg>
+            {item.label}
+          </a>
+        );
+      })}
+    </nav>
+    <div class="p-4 border-t border-slate-100">
+      <form action="/api/super-admin/logout" method="POST" class="w-full">
+        <button type="submit" class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-[14px] font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px] text-slate-400 group-hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Logout
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- Mobile Overlay -->
+  <div id="mobile-overlay" class="fixed inset-0 bg-slate-900/20 z-40 hidden md:hidden backdrop-blur-sm transition-opacity"></div>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+    <!-- Topbar -->
+    <header class="bg-white border-b border-slate-200 px-8 py-3 sticky top-0 z-30 flex items-center justify-between hidden md:flex">
+      <div class="text-[13px] font-medium text-slate-500">Global Platform Control</div>
+      <div class="flex items-center gap-4">
+        <div class="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold text-xs">SA</div>
+      </div>
+    </header>
+
+    <div class="flex-1 p-4 md:p-8 max-w-[1200px] w-full">
+      <slot />
+    </div>
+  </main>
+
+  <script is:inline>
+    const btn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+
+    function toggleMenu() {
+      const isClosed = sidebar.classList.contains('-translate-x-full');
+      if (isClosed) {
+        sidebar.classList.remove('-translate-x-full');
+        overlay.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      } else {
+        sidebar.classList.add('-translate-x-full');
+        overlay.classList.add('hidden');
+        document.body.style.overflow = '';
+      }
+    }
+
+    if (btn) btn.addEventListener('click', toggleMenu);
+    if (overlay) overlay.addEventListener('click', toggleMenu);
+  </script>
+
+  <style is:global>
+    /* Override global.css to use sans-serif for dashboard headers */
+    h1, h2, h3, h4, h5, h6 {
+      font-family: 'Inter', sans-serif !important;
+    }
+  </style>
+</body>
+</html>

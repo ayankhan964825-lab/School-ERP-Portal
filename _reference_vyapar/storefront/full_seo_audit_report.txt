@@ -1,0 +1,136 @@
+==========================================================
+  FULL SEO AUDIT — The NutriDry
+  Senior SEO Specialist Report
+==========================================================
+
+[ STORE-LEVEL ISSUES ]
+  ❌ MISSING: seo_default_description in Settings
+  ❌ MISSING: seo_keywords in Settings (store-level)
+  ❌ MISSING: social_instagram (used in sameAs schema)
+  ❌ MISSING: social_facebook (used in sameAs schema)
+  ❌ MISSING: google_site_verification tag
+
+[ PRODUCT SUMMARY ]
+  Total Active Products: 31
+  ✅ Fully Optimized: 7
+  ⚠️  Products with Issues: 24
+
+[ ISSUE BREAKDOWN ]
+  Missing _seo_title: 0
+  _seo_title > 60 chars (Truncation Risk): 0
+  Missing _seo_description: 0
+  _seo_description > 160 chars: 0
+  Thin _seo_description < 80 chars: 0
+  Missing _seo_keywords: 0
+  Missing "How to Use" section: 0
+  Missing badges: 0
+  Fewer than 3 bullet points: 0
+  Missing product image: 0
+  Bad/Ugly URL slugs: 0
+
+[ PRODUCT-LEVEL DETAIL ]
+
+  Product: Mint (Pudina) Leaves (/mint-pudina-leaves)
+    Title length: 48 | Desc length: 119
+    ⚠️  3 variants missing gallery images
+
+  Product: Neem Leaves Powder (/neem-leaves-powder)
+    Title length: 46 | Desc length: 110
+    ⚠️  2 variants missing gallery images
+
+  Product: Karela Powder (/karela-powder)
+    Title length: 39 | Desc length: 147
+    ⚠️  3 variants missing gallery images
+
+  Product: Rose Powder (/rose-powder)
+    Title length: 37 | Desc length: 138
+    ⚠️  3 variants missing gallery images
+
+  Product: Spinach / Palak Powder (/spinach-palak-powder)
+    Title length: 40 | Desc length: 146
+    ⚠️  3 variants missing gallery images
+
+  Product: Tomato Powder (/tomato-powder)
+    Title length: 39 | Desc length: 133
+    ⚠️  3 variants missing gallery images
+
+  Product: Orange Peel Powder (/orange-peel-powder)
+    Title length: 45 | Desc length: 128
+    ⚠️  NO active variants
+
+  Product: Haldi Powder (/haldi-powder)
+    Title length: 38 | Desc length: 136
+    ⚠️  3 variants missing gallery images
+
+  Product: Red Onion Powder (/red-onion-powder)
+    Title length: 42 | Desc length: 133
+    ⚠️  3 variants missing gallery images
+
+  Product: Ginger Powder (/ginger-powder)
+    Title length: 39 | Desc length: 148
+    ⚠️  3 variants missing gallery images
+
+  Product: Pudina Powder (/pudina-powder)
+    Title length: 39 | Desc length: 142
+    ⚠️  3 variants missing gallery images
+
+  Product: Amchur Powder (/amchur-powder)
+    Title length: 40 | Desc length: 134
+    ⚠️  1 variants missing gallery images
+
+  Product: NutriBoost (/nutriboost)
+    Title length: 36 | Desc length: 143
+    ⚠️  3 variants missing gallery images
+
+  Product: Curry Leaves Powder (/curry-leaves-powder)
+    Title length: 45 | Desc length: 150
+    ⚠️  4 variants missing gallery images
+
+  Product: Lemon Powder (/lemon-powder)
+    Title length: 38 | Desc length: 143
+    ⚠️  4 variants missing gallery images
+
+  Product: Multani Mitti (/multani-mitti)
+    Title length: 41 | Desc length: 119
+    ⚠️  NO active variants
+
+  Product: Green Chilli Powder (/green-chilli-powder)
+    Title length: 45 | Desc length: 145
+    ⚠️  3 variants missing gallery images
+
+  Product: Garlic Powder (/garlic-powder)
+    Title length: 39 | Desc length: 138
+    ⚠️  3 variants missing gallery images
+
+  Product: Dhaniya Leaves Powder (/dhaniya-leaves-powder)
+    Title length: 47 | Desc length: 127
+    ⚠️  3 variants missing gallery images
+
+  Product: Moringa Powder (/moringa-powder)
+    Title length: 40 | Desc length: 142
+    ⚠️  1 variants missing gallery images
+
+  Product: Carrot Powder (/carrot-powder)
+    Title length: 39 | Desc length: 125
+    ⚠️  3 variants missing gallery images
+
+  Product: White Onion Powder (/white-onion-powder)
+    Title length: 47 | Desc length: 133
+    ⚠️  1 variants missing gallery images
+
+  Product: Red Onion Flakes (/red-onion-flakes)
+    Title length: 50 | Desc length: 133
+    ⚠️  NO active variants
+
+  Product: Jamun Seed Powder (/jamun-seed-powder)
+    Title length: 44 | Desc length: 124
+    ⚠️  NO active variants
+
+[ PERFECT PRODUCTS ]
+  ✅ Daily Wellness Superfood Combo
+  ✅ Radiant Glow Skincare Combo
+  ✅ Authentic Indian Tadka Combo
+  ✅ The Ultimate Kitchen Essentials Combo
+  ✅ Amla Powder
+  ✅ Beet Root Powder
+  ✅ Raw Banana Powder

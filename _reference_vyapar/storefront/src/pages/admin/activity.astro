@@ -1,0 +1,271 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "super_admin")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getStaff } from '../../lib/database';
+
+const adminId = Astro.cookies.get('admin_id')?.value || 'super_admin_root';
+const hierarchyLevel = parseInt(Astro.cookies.get('admin_hierarchy')?.value || '5', 10);
+const isOriginalSuperAdmin = hierarchyLevel === 0;
+
+// Pass the raw staff list to the client so it can build the tree
+const allStaff = await getStaff();
+---
+<AdminLayout title="Activity Logs">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-secondary">Activity Logs</h1>
+        <p class="text-sm text-secondary/60 mt-1">Audit trail of actions taken by you and your branch staff.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button
+          id="btn-clear-all"
+          class="text-xs font-medium text-secondary/50 border border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Clear Logs
+        </button>
+      </div>
+    </header>
+
+    <div class="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm">
+      <!-- Logs Container -->
+      <div id="logs-container" class="divide-y divide-gray-100 min-h-[400px] relative">
+        <div class="absolute inset-0 flex items-center justify-center" id="logs-loader">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+<script define:vars={{ adminId, allStaff }}>
+  // Helper to get role display name
+  function escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+  }
+
+  const roleDisplay = (role) => {
+    if (!role) return 'Staff';
+    if (role === 'super_admin') return 'Secondary Super Admin';
+    return role.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  };
+
+  // Helper to build the lineage string
+  // Returns: "Your Manager Neha's Staff Ravi"
+  function getLineageString(actorId) {
+    if (actorId === adminId) return 'You';
+    
+    // Find the actor
+    const actor = allStaff.find(s => s.id === actorId);
+    if (!actor) return 'Unknown User';
+
+    // Build the path backwards from actor to adminId
+    const path = [];
+    let current = actor;
+    
+    // Safety check to prevent infinite loops (max depth 10)
+    let depth = 0;
+    while (current && current.id !== adminId && depth < 10) {
+      path.unshift(current);
+      current = allStaff.find(s => s.id === current.created_by);
+      depth++;
+    }
+
+    // If we didn't reach the adminId (and adminId isn't root), it means they are outside the branch.
+    // However, the backend filters this out anyway, so this should rarely happen.
+    if (!current && adminId !== 'super_admin_root') {
+      return `${actor.name} (${roleDisplay(actor.role)})`; // Fallback
+    }
+
+    // Construct string: "Your [Role] [Name]'s [Role] [Name]..."
+    if (path.length === 1) {
+      return `Your ${roleDisplay(path[0].role)} ${path[0].name}`;
+    }
+
+    let str = 'Your ';
+    for (let i = 0; i < path.length; i++) {
+      const node = path[i];
+      if (i === path.length - 1) {
+        str += `${roleDisplay(node.role)} ${node.name}`;
+      } else {
+        str += `${roleDisplay(node.role)} ${node.name}'s `;
+      }
+    }
+    return str;
+  }
+
+  // Format short name fallback
+  function getShortName(actorId, actorName) {
+    if (actorId === adminId) return 'You';
+    const actor = allStaff.find(s => s.id === actorId);
+    return `${actorName} ${actor ? `(${roleDisplay(actor.role)})` : ''}`;
+  }
+
+  // Action to badge color
+  function getActionBadge(action) {
+    if (action.includes('Created')) return 'bg-green-100 text-green-700';
+    if (action.includes('Deleted') || action.includes('Deactivated') || action.includes('Rejected')) return 'bg-red-100 text-red-700';
+    if (action.includes('Updated') || action.includes('Changed')) return 'bg-blue-100 text-blue-700';
+    return 'bg-gray-100 text-gray-700';
+  }
+
+  // Format details into human-readable UI
+  function formatDetails(details) {
+    if (!details || Object.keys(details).length === 0) return '';
+    let html = '<ul class="space-y-1.5">';
+    for (const [key, value] of Object.entries(details)) {
+      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      let formattedValue = value;
+      if (typeof value === 'object' && value !== null) {
+        formattedValue = '<pre class="text-[10px] bg-white border border-gray-100 p-2 rounded mt-1 overflow-x-auto shadow-sm">' + escapeHTML(JSON.stringify(value, null, 2)) + '</pre>';
+      } else {
+        formattedValue = `<span class="font-medium text-gray-800">${escapeHTML(String(value))}</span>`;
+      }
+      html += `<li><span class="text-gray-500">${escapeHTML(formattedKey)}:</span> ${formattedValue}</li>`;
+    }
+    html += '</ul>';
+    return `<div class="mt-2 p-3 bg-gray-50 rounded-xl text-xs border border-gray-100/60 shadow-inner">
+      <div class="font-semibold text-gray-400 mb-2 uppercase text-[10px] tracking-wider">Activity Details</div>
+      ${html}
+    </div>`;
+  }
+
+  async function fetchLogs() {
+    try {
+      // Add a 15 second timeout to prevent infinite spinning
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
+      const res = await fetch('/api/admin/activity-logs', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      const data = await res.json();
+      const container = document.getElementById('logs-container');
+      if (!container) return; // Prevent errors if user navigated away
+      
+      if (!data.success) {
+        container.innerHTML = `<div class="p-8 text-center text-red-500">Failed to load logs: ${escapeHTML(data.error || 'Unknown error')}</div>`;
+        return;
+      }
+
+      const logs = data.logs || [];
+
+      if (logs.length === 0) {
+        container.innerHTML = `
+          <div class="p-12 text-center flex flex-col items-center text-secondary/40">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p>No activity logs found for your branch.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = logs.map((log, idx) => {
+        const shortName = escapeHTML(getShortName(log.actor_id, log.actor_name));
+        const longName = escapeHTML(getLineageString(log.actor_id));
+        const date = new Date(log.created_at || Date.now()).toLocaleString();
+        const actionText = log.action || 'Unknown Action';
+        
+        let detailsHtml = formatDetails(log.details);
+
+        return `
+          <div class="p-4 sm:p-6 hover:bg-gray-50/50 transition-colors">
+            <div class="flex items-start gap-4">
+              <div class="mt-1 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1">
+                  <span class="text-sm font-semibold text-secondary truncate">${shortName}</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full font-medium w-fit ${getActionBadge(actionText)}">${escapeHTML(actionText)}</span>
+                  <span class="text-xs text-secondary/40 sm:ml-auto whitespace-nowrap">${escapeHTML(date)}</span>
+                </div>
+                
+                <p class="text-sm text-secondary/70">
+                  Target: <span class="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">${escapeHTML(log.target_id) || 'System'}</span>
+                </p>
+                
+                <div class="mt-2">
+                  <button onclick="document.getElementById('details-${idx}').classList.toggle('hidden')" class="text-xs font-semibold text-primary hover:underline">
+                    View Lineage & Details
+                  </button>
+                  <div id="details-${idx}" class="hidden mt-2 pt-2 border-t border-gray-100">
+                    <p class="text-xs text-secondary/60 mb-2 font-medium bg-amber-50 p-2 rounded-lg text-amber-800 border border-amber-100">
+                      <span class="uppercase text-[10px] font-bold block mb-0.5 text-amber-600">Branch Lineage:</span>
+                      ${longName}
+                    </p>
+                    ${detailsHtml}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = html;
+    } catch (err) {
+      console.error('Fetch Logs Error:', err);
+      const container = document.getElementById('logs-container');
+      if (container) {
+        if (err.name === 'AbortError') {
+           container.innerHTML = `<div class="p-8 text-center text-red-500">Request timed out. Server is not responding.</div>`;
+        } else {
+           container.innerHTML = `<div class="p-8 text-center text-red-500">Network Error. Failed to load logs.</div>`;
+        }
+      }
+    }
+  }
+
+  function initActivityLogs() {
+    fetchLogs();
+    
+    const clearBtn = document.getElementById('btn-clear-all');
+    if (clearBtn && !clearBtn.dataset.bound) {
+      clearBtn.dataset.bound = 'true';
+      clearBtn.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to clear all activity logs? This action cannot be undone.')) return;
+        
+        document.getElementById('logs-container').innerHTML = `
+          <div class="p-12 text-center flex flex-col items-center text-secondary/40">
+            <div class="text-4xl mb-3">🧹</div>
+            <p>All logs cleared!</p>
+          </div>`;
+          
+        try {
+          await fetch('/api/admin/clear-activity-logs', { method: 'POST' });
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    }
+  }
+
+  // Ensure it runs on both initial load and view transitions
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initActivityLogs);
+  } else {
+    // If Astro is doing weird things, run immediately
+    setTimeout(initActivityLogs, 50);
+  }
+  document.addEventListener('astro:page-load', initActivityLogs);
+</script>
+
+</AdminLayout>

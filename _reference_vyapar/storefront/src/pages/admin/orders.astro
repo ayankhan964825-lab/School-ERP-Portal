@@ -1,0 +1,1002 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "orders_all")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getOrders, supabaseAdmin } from '../../lib/database';
+
+const allOrders = await getOrders(Astro.locals?.storeId);
+let orders = allOrders.filter((o: any) => !(o.is_b2b || (o.customer && o.customer.is_b2b)));
+orders.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+// Fetch Riders
+let activeRiders: any[] = [];
+if (supabaseAdmin && Astro.locals?.storeId) {
+  const { data } = await supabaseAdmin
+    .from('riders')
+    .select('id, name, is_online, vehicle_type')
+    .eq('store_id', Astro.locals.storeId)
+    .eq('status', 'active');
+  if (data) activeRiders = data;
+}
+
+const statusColors: { [key: string]: string } = {
+  pending:   'bg-yellow-100 text-yellow-800',
+  placed:    'bg-yellow-100 text-yellow-800',
+  confirmed: 'bg-blue-100 text-blue-800',
+  processing:'bg-blue-100 text-blue-800',
+  shipped:   'bg-purple-100 text-purple-800',
+  dispatched:'bg-purple-100 text-purple-800',
+  delivered: 'bg-green-100 text-green-800',
+  cancelled: 'bg-red-100 text-red-800',
+  returned:  'bg-red-100 text-red-800',
+  quotation: 'bg-blue-100 text-blue-900 border border-blue-200',
+};
+
+// Serialize for AI (last 100 orders, lightweight)
+const totalOrdersCount = orders.length;
+const page = parseInt(Astro.url.searchParams.get('page') || '1');
+const limit = 50;
+const totalPages = Math.max(1, Math.ceil(totalOrdersCount / limit));
+const paginatedOrders = orders.slice((page - 1) * limit, page * limit);
+
+const ordersForAI = JSON.stringify(paginatedOrders.slice(0, 100).map((o: any) => ({
+  id: o.id,
+  status: o.status,
+  date: o.createdAt,
+  customer: o.customerName || o.customer_name || '',
+  phone: o.phone || '',
+  total: o.total,
+  paymentMethod: o.paymentMethod || o.payment_method || '',
+  items: (o.items || []).map((i: any) => i.name || i.productName).join(', '),
+})));
+---
+
+<AdminLayout title="Orders | Admin Panel" description="Manage orders.">
+  <!-- Page Header -->
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Order Management</h1>
+      <p class="text-sm text-secondary/60 mt-1">Update status, print invoices, and add AWB tracking numbers.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-secondary/60 font-medium">{totalOrdersCount} total orders</span>
+    </div>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="orders"
+    title="Orders Assistant"
+    pageDataJson={ordersForAI}
+    guideTitleEn="Order Management Guide"
+    guideTitleHi="Order Management Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Status Update:</strong> Order row ke ✏️ icon se status change karein.</li>
+      <li><strong>AWB Number:</strong> Shipped orders mein tracking number add karein.</li>
+      <li><strong>Invoice Print:</strong> Order row mein 🖨️ button se individual invoice print karein.</li>
+      <li><strong>Filter:</strong> Upar ke buttons se status-wise filter karein.</li>
+      <li><strong>Bulk Print:</strong> Batch Print section mein multiple invoices ek saath print karein.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Status Update:</strong> Har order row mein ✏️ icon se status badlein — pending → confirmed → shipped → delivered.</li>
+      <li><strong>AWB Number:</strong> Jab order ship ho jaye, tracking number daalein taaki customer track kar sake.</li>
+      <li><strong>Invoice Print:</strong> Order row mein printer icon se invoice nikaalein.</li>
+      <li><strong>Filter:</strong> Upar ke colorful buttons se status ke hisaab se orders filter karein.</li>
+      <li><strong>Bulk Print:</strong> Batch Print section mein jaayein multiple invoices ek saath print karne ke liye.</li>
+    </ul>`}
+    quickActions={[
+      { label: '📦 Pending dikhao', query: 'pending orders dikhao' },
+      { label: '🚚 Shipped dikhao', query: 'shipped orders dikhao' },
+      { label: '✅ Delivered dikhao', query: 'delivered orders dikhao' },
+      { label: '📊 Kitne orders hain?', query: 'total orders kitne hain aur status breakdown batao' },
+      { label: '💰 Aaj ke orders', query: 'aaj ke orders kitne hain' },
+    ]}
+  />
+
+  <!-- Filters -->
+  <div class="flex flex-wrap gap-2 mb-6">
+    {['all','pending','confirmed','shipped','delivered','cancelled'].map(status => (
+      <button
+        class="filter-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors"
+        data-status={status}
+      >
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </button>
+    ))}
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+    {paginatedOrders.length === 0 ? (
+      <div class="p-16 text-center text-secondary/60">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+        <p>No orders found.</p>
+      </div>
+    ) : (
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full text-sm text-left">
+          <thead class="text-xs text-secondary/60 uppercase bg-gray-50/80 border-b border-gray-100">
+            <tr>
+              <th class="px-5 py-3.5 font-semibold">Order</th>
+              <th class="px-5 py-3.5 font-semibold">Customer</th>
+              <th class="px-5 py-3.5 font-semibold">Items & Amount</th>
+              <th class="px-5 py-3.5 font-semibold">Status</th>
+              <th class="px-5 py-3.5 font-semibold">AWB / Tracking</th>
+              <th class="px-5 py-3.5 font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            {paginatedOrders.map((order: any) => (
+              <tr class="order-row hover:bg-gray-50/40 transition-colors" data-status={order.status}>
+                <!-- Order ID + Date -->
+                <td class="px-5 py-4">
+                  <div class="font-bold text-secondary text-xs flex items-center gap-1 flex-wrap">
+                    {order.orderId}
+                    {order.items?.some((i: any) => i.is_q_commerce_only) && (
+                      <span class="bg-purple-100 text-purple-700 text-[9px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5" title="Q-Commerce / Hyperlocal Order">
+                        ⚡ QC
+                      </span>
+                    )}
+                    
+                  </div>
+                  <div class="text-xs text-secondary/50 mt-0.5">
+                    {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </div>
+                  <div class="mt-1">
+                    <span class="text-[10px] uppercase font-bold tracking-wide bg-gray-100 text-secondary/60 px-2 py-0.5 rounded">
+                      {order.paymentMethod || 'COD'}
+                    </span>
+                  </div>
+                </td>
+
+                <!-- Customer -->
+                <td class="px-5 py-4">
+                  <div class="font-semibold text-secondary text-sm">{order.customer?.name || 'Guest'}</div>
+                  <div class="text-xs text-secondary/50">{order.customer?.phone}</div>
+                  <div class="text-xs text-secondary/40 mt-0.5 line-clamp-1 max-w-[160px]">
+                    {order.customer?.addressLine || order.customer?.street_address || order.customer?.address}, {order.customer?.city}
+                  </div>
+                </td>
+
+                <!-- Items + Amount -->
+                <td class="px-5 py-4">
+                  <div class="font-bold text-secondary">₹{(order.amount || 0).toLocaleString('en-IN')}</div>
+                  <div class="mt-1 space-y-0.5">
+                    {(order.items || []).slice(0,2).map((item) => (
+                      <div class="text-xs text-secondary/60">
+                        <span class="font-medium">{item.quantity}×</span> {item.name} {item.weight ? `(${item.weight})` : (item.variant ? `(${item.variant})` : '')}
+                      </div>
+                    ))}
+                    {(order.items || []).length > 2 && (
+                      <div class="text-xs text-secondary/40">+{(order.items || []).length - 2} more</div>
+                    )}
+                  </div>
+                </td>
+
+                <!-- Status -->
+                <td class="px-5 py-4">
+                  <select
+                    aria-label="Order status"
+                    class="order-status-select w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none font-semibold transition-colors"
+                    data-order-id={order.orderId}
+                    style={`background-color: transparent`}
+                  >
+                    <option value="pending"   selected={['pending','placed'].includes(order.status)}>Pending</option>
+                    <option value="confirmed" selected={['confirmed','processing'].includes(order.status)}>Confirmed</option>
+                    <option value="shipped"   selected={['shipped','dispatched'].includes(order.status)}>Shipped</option>
+                    <option value="delivered" selected={order.status === 'delivered'}>Delivered</option>
+                    <option value="cancelled" selected={['cancelled','returned'].includes(order.status)}>Cancelled</option>
+                  </select>
+                  <span class={`inline-block mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[order.status] || 'bg-gray-100 text-gray-600'}`}>
+                    {order.status}
+                  </span>
+                </td>
+
+                <!-- AWB / Dispatch Details -->
+                <td class="px-3 py-3" style="min-width:220px">
+                  <!-- AWB Number -->
+                  <input
+                    aria-label="AWB / Docket Number"
+                    type="text"
+                    class="awb-input w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors mb-1.5"
+                    placeholder="AWB / Docket No."
+                    value={order.awb || ''}
+                    data-order-id={order.orderId}
+                  />
+                  <!-- Courier Name -->
+                  <select
+                    aria-label="Courier Partner"
+                    class="courier-select w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors mb-1.5 bg-white"
+                    data-order-id={order.orderId}
+                  >
+                    <option value="" disabled selected={!order.courierPartner}>Select Courier</option>
+                    {['Delhivery','Bluedart','Ekart','DTDC','India Post','Xpressbees','Shadowfax','iCarry Partner','Local Courier','Other'].map(c => (
+                      <option value={c} selected={order.courierPartner === c}>{c}</option>
+                    ))}
+                  </select>
+                  <!-- Routing Code -->
+                  <input
+                    aria-label="Routing Code"
+                    type="text"
+                    class="routing-input w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors mb-1.5"
+                    placeholder="Routing Code (e.g. LKO/DEL)"
+                    value={order.routingCode || ''}
+                    data-order-id={order.orderId}
+                  />
+                  <!-- Weight & Dimensions in one row -->
+                  <div class="flex gap-1.5 mb-1.5">
+                    <input
+                      aria-label="Package Weight"
+                      type="text"
+                      class="weight-input w-1/2 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+                      placeholder="Weight (KG)"
+                      value={order.packageWeight || '0.50 KG'}
+                      data-order-id={order.orderId}
+                    />
+                    <input
+                      aria-label="Package Dimensions"
+                      type="text"
+                      class="dimensions-input w-1/2 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+                      placeholder="Dimensions (CM)"
+                      value={order.packageDimensions || '13*13*13 CM'}
+                      data-order-id={order.orderId}
+                    />
+                  </div>
+
+                  <!-- Rider Assignment (Q-Commerce) -->
+                  <div class="flex gap-1.5 mb-1.5">
+                    <select
+                      aria-label="Assign Rider"
+                      class="rider-select w-full text-xs border border-purple-200 bg-purple-50 rounded-lg px-2 py-1.5 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-colors"
+                      data-order-id={order.orderId}
+                    >
+                      <option value="" selected={!order.rider_id}>No Rider Assigned</option>
+                      {activeRiders.map(r => (
+                        <option value={r.id} selected={order.rider_id === r.id}>
+                          {r.is_online ? '🟢' : '⚪'} {r.name} ({r.vehicle_type})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <!-- Action Buttons -->
+                  <div class="flex items-center gap-2">
+                    <button
+                      class="save-awb-btn flex-1 text-[10px] font-semibold text-white bg-primary rounded-lg px-2 py-1.5 hover:bg-primary/80 transition-colors"
+                      data-order-id={order.orderId}
+                    >
+                      💾 Save & Ship
+                    </button>
+                    <button
+                      class="generate-awb-btn text-[10px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 shrink-0"
+                      data-order-id={order.orderId}
+                      title="Auto-generate via iCarry API (requires API key in Settings)"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      Auto
+                    </button>
+                  </div>
+                </td>
+
+                <!-- Actions -->
+                <td class="px-5 py-4">
+                  <div class="flex flex-col gap-2">
+                    <!-- View Order Details -->
+                    <button
+                      class="view-order-btn w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-secondary/10 text-secondary rounded-lg hover:bg-secondary hover:text-white transition-colors"
+                      data-order={encodeURIComponent(JSON.stringify(order))}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                      View Details
+                    </button>
+                    <!-- Invoice -->
+                    <a
+                      href={`/admin/invoice/${order.orderId}`}
+                      target="_blank"
+                      class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-primary/10 text-primary rounded-lg hover:bg-primary hover:text-white transition-colors"
+                    >
+                      <svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' viewBox='0 0 24 24' stroke='currentColor' stroke-width='2' style='display:inline;vertical-align:middle'><path stroke-linecap='round' stroke-linejoin='round' d='M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z' /></svg> Print Invoice
+                    </a>
+                    {['manual_whatsapp', 'b2b_pos', 'quotation'].includes(order.customer?.source) && (
+                      <a
+                        href={`/admin/bulk-bill?edit=${order.orderId}`}
+                        class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit
+                      </a>
+                      <button
+                        class="delete-order-btn w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                        data-order-id={order.orderId}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Delete
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  {totalPages > 1 && (
+    <div class="flex items-center justify-between border-t border-gray-100 bg-white px-4 py-3 sm:px-6 rounded-2xl shadow-sm mb-6">
+      <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-gray-700">
+            Showing <span class="font-medium">{Math.min(1 + (page - 1) * limit, totalOrdersCount)}</span> to <span class="font-medium">{Math.min(page * limit, totalOrdersCount)}</span> of <span class="font-medium">{totalOrdersCount}</span> orders
+          </p>
+        </div>
+        <div>
+          <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <a href={`?page=${Math.max(1, page - 1)}`} class={`relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${1 >= page ? 'pointer-events-none opacity-50' : ''}`}>
+              <span class="sr-only">Previous</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" /></svg>
+            </a>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((num) => {
+              if (num === 1 || num === totalPages || (num >= page - 2 && page + 2 >= num)) {
+                return (
+                  <a href={`?page=${num}`} class={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${num === page ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}`}>
+                    {num}
+                  </a>
+                );
+              } else if (num === page - 3 || num === page + 3) {
+                return <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>;
+              }
+              return null;
+            })}
+            <a href={`?page=${Math.min(totalPages, page + 1)}`} class={`relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${page >= totalPages ? 'pointer-events-none opacity-50' : ''}`}>
+              <span class="sr-only">Next</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" /></svg>
+            </a>
+          </nav>
+        </div>
+      </div>
+    </div>
+  )}
+
+
+<!-- == ORDER DETAIL MODAL == -->
+<div id="order-detail-modal" class="fixed inset-0 bg-secondary/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col">
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+      <h2 class="text-lg font-bold text-secondary" id="modal-order-title">Order Details</h2>
+      <button id="close-order-modal" class="text-secondary/50 hover:text-secondary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div id="modal-order-body" class="p-6 overflow-y-auto flex-1 space-y-5 text-sm">
+      <!-- Filled by JS -->
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('astro:page-load', () => {
+  // == Status Update ==
+  document.querySelectorAll('.order-status-select').forEach(select => {
+    select.addEventListener('change', async (e) => {
+      const target = e.target;
+      const orderId = target.dataset.orderId;
+      const newStatus = target.value;
+      target.style.background = '#fef08a';
+      try {
+        const res = await fetch('/api/admin/update-order-status', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, status: newStatus })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Unknown API error');
+        }
+        target.style.background = '#bbf7d0';
+        // Update the status badge in same row
+        const row = target.closest('tr');
+        const badge = row?.querySelector('[class*="rounded-full"]');
+        if (badge) badge.textContent = newStatus;
+        setTimeout(() => { target.style.background = ''; }, 1000);
+      } catch (err) {
+        target.style.background = '#fecdd3';
+        setTimeout(() => { target.style.background = ''; }, 1000);
+        alert('Error: ' + err.message);
+      }
+    });
+  });
+
+  // == Save AWB (with all dispatch fields) ==
+  document.querySelectorAll('.save-awb-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const row = this.closest('tr');
+      const orderId   = this.dataset.orderId;
+      const awb       = row?.querySelector('.awb-input')?.value.trim();
+      const courier   = row?.querySelector('.courier-select')?.value.trim();
+      const routing   = row?.querySelector('.routing-input')?.value.trim();
+      const weight    = row?.querySelector('.weight-input')?.value.trim();
+      const dims      = row?.querySelector('.dimensions-input')?.value.trim();
+      const riderId   = row?.querySelector('.rider-select')?.value.trim();
+
+      if (!awb && !riderId) { alert('Please enter an AWB number or Assign a Rider.'); return; }
+      if (!courier && !riderId){ alert('Please select a Courier Partner or Assign a Rider.'); return; }
+
+      const originalHTML = this.innerHTML;
+      this.textContent = 'Saving...';
+      this.disabled = true;
+
+      try {
+        const res = await fetch('/api/admin/update-order-awb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            awb:                awb || null,
+            courier_partner:    courier || null,
+            routing_code:       routing  || null,
+            package_weight:     weight   || '0.50 KG',
+            package_dimensions: dims     || '13*13*13 CM',
+            rider_id:           riderId  || null,
+            mark_shipped: true,
+          })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Unknown API error');
+        }
+
+        this.innerHTML = '✅ Saved!';
+        // Update status badge to shipped
+        const statusSelect = row?.querySelector('.order-status-select');
+        if (statusSelect) {
+          statusSelect.value = 'shipped';
+          const badge = row?.querySelector('[class*="rounded-full"]');
+          if (badge) badge.textContent = 'shipped';
+        }
+        setTimeout(() => { this.innerHTML = originalHTML; this.disabled = false; }, 2000);
+      } catch (err) {
+        alert(err.message || "Failed to save dispatch details. Please try again.");
+        this.innerHTML = originalHTML;
+        this.disabled = false;
+      }
+    });
+  });
+
+  // == Auto-Generate Waybill (iCarry API) ==
+  document.querySelectorAll('.generate-awb-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const row     = this.closest('tr');
+      const orderId = this.dataset.orderId;
+      const originalHTML = this.innerHTML;
+      this.textContent = '...';
+
+      try {
+        const res  = await fetch('/api/admin/shipping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'generate_waybill', orderId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed');
+
+        // Auto-fill ALL fields from API response
+        const awbInput     = row?.querySelector('.awb-input');
+        const courierSel   = row?.querySelector('.courier-select');
+        const routingInput = row?.querySelector('.routing-input');
+        const weightInput  = row?.querySelector('.weight-input');
+
+        if (awbInput)     awbInput.value     = data.awb      || '';
+        if (routingInput) routingInput.value  = data.routing_code || '';
+        if (weightInput)  weightInput.value   = data.weight ? `${data.weight} KG` : '0.50 KG';
+        // Set courier dropdown — find matching option or fallback to first
+        if (courierSel && data.courier) {
+          const opts = Array.from(courierSel.options);
+          const match = opts.find(o => o.value.toLowerCase().includes(data.courier.toLowerCase()));
+          if (match) courierSel.value = match.value;
+          else {
+            // Add dynamic option if courier not in list
+            const opt = document.createElement('option');
+            opt.value = data.courier; opt.textContent = data.courier; opt.selected = true;
+            courierSel.appendChild(opt);
+          }
+        }
+
+        // Highlight filled fields
+        [awbInput, routingInput, weightInput].forEach(el => {
+          if (el) { el.classList.add('border-green-400','bg-green-50'); setTimeout(() => el.classList.remove('border-green-400','bg-green-50'), 2000); }
+        });
+
+        // Update status to shipped
+        const statusSelect = row?.querySelector('.order-status-select');
+        if (statusSelect) {
+          statusSelect.value = 'shipped';
+          const badge = row?.querySelector('[class*="rounded-full"]');
+          if (badge) badge.textContent = 'shipped';
+        }
+
+        this.innerHTML = '✅';
+        setTimeout(() => { this.innerHTML = originalHTML; }, 2000);
+
+        if (data.label_url && data.label_url !== '#') window.open(data.label_url, '_blank');
+
+      } catch (err) {
+        alert(err.message || 'Auto-generate failed. Check iCarry API key in Settings.');
+        this.innerHTML = originalHTML;
+      }
+    });
+  });
+
+  // == Status Filter ==
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.filter-btn').forEach(b => {
+        b.className = 'filter-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors border-gray-200 text-secondary/60 bg-white hover:border-primary hover:text-primary';
+      });
+      this.className = 'filter-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors border-primary bg-primary text-white';
+      const status = this.dataset.status;
+      document.querySelectorAll('.order-row').forEach(row => {
+        let rs = row.dataset.status;
+        if (rs === 'placed') rs = 'pending';
+        if (rs === 'processing') rs = 'confirmed';
+        if (rs === 'dispatched') rs = 'shipped';
+        if (rs === 'returned') rs = 'cancelled';
+        
+        if (status === 'all' || rs === status) {
+          (row).style.display = '';
+        } else {
+          (row).style.display = 'none';
+        }
+      });
+    });
+  });
+  // Set "All" active by default
+  (document.querySelector('.filter-btn[data-status="all"]'))?.click();
+
+  // == Order Detail Modal ==
+  const modal = document.getElementById('order-detail-modal');
+  const modalBody = document.getElementById('modal-order-body');
+  const modalTitle = document.getElementById('modal-order-title');
+
+  document.querySelectorAll('.view-order-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const order = JSON.parse(decodeURIComponent(this.dataset.order || '%7B%7D'));
+      if (modalTitle) modalTitle.textContent = `Order #${order.orderId}`;
+
+      const statusBadge = (s) => {
+        const c = { quotation:'bg-blue-100 text-blue-900 border border-blue-200', pending:'bg-yellow-100 text-yellow-800', confirmed:'bg-blue-100 text-blue-800', shipped:'bg-purple-100 text-purple-800', delivered:'bg-green-100 text-green-800', cancelled:'bg-red-100 text-red-800' };
+        return `<span class="text-xs font-bold px-2.5 py-1 rounded-full capitalize ${c[s] || 'bg-gray-100 text-gray-600'}">${s}</span>`;
+      };
+
+      if (modalBody) modalBody.innerHTML = `
+        <div class="flex items-center gap-3 pb-4 border-b border-gray-100">
+          ${statusBadge(order.status)}
+          <span class="text-xs text-secondary/50">${new Date(order.createdAt).toLocaleString('en-IN')}</span>
+          <span class="ml-auto font-bold text-secondary text-base">₹${(order.amount||0).toLocaleString('en-IN')}</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-1.5">Customer</p>
+            <p class="font-semibold text-secondary">${order.customer?.name || '—'}</p>
+            <p class="text-xs text-secondary/60 mt-0.5">${order.customer?.phone || ''}</p>
+            <p class="text-xs text-secondary/60">${order.customer?.email || ''}</p>
+          </div>
+          <div>
+            <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-1.5">Delivery Address</p>
+            <p class="text-xs text-secondary/70 leading-relaxed">${order.customer?.addressLine || order.customer?.street_address || order.customer?.address || '—'}, ${order.customer?.city || ''}, ${order.customer?.state || ''} — ${order.customer?.pincode || ''}</p>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-2">Order Items</p>
+          <div class="space-y-2 border border-gray-100 rounded-xl overflow-hidden">
+            ${(order.items||[]).map((item) => `
+              <div class="flex justify-between items-center px-4 py-2.5 border-b border-gray-50 last:border-0">
+                <div>
+                  <p class="font-medium text-secondary text-xs">${item.name}</p>
+                  <p class="text-xs text-secondary/40">${item.weight || item.variant || ''}</p>
+                  ${item.custom_data ? Object.entries(item.custom_data).map(([k, v]) => `
+                    <div class="mt-1 text-[10px] text-secondary/60 flex items-start gap-1">
+                      <span class="font-bold uppercase tracking-wider mt-0.5">${k}:</span> 
+                      ${String(v).startsWith('http') 
+                        ? `<a href="${v}" target="_blank" class="text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded transition-colors inline-block break-all max-w-[200px]">View Attachment</a>` 
+                        : `<span class="italic text-secondary">${String(v).replace(/</g, '&lt;')}</span>`}
+                    </div>
+                  `).join('') : ''}
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-secondary/60">${item.quantity}× ₹${item.price || 0}</p>
+                  <p class="font-bold text-secondary text-xs">₹${((item.price||0) * (item.quantity||1)).toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-gray-50 rounded-xl p-3">
+            <p class="text-xs text-secondary/40 font-bold uppercase tracking-wider mb-1">Payment</p>
+            <p class="text-sm font-semibold text-secondary capitalize">${order.paymentMethod || 'COD'}</p>
+            <p class="text-xs text-secondary/60">${order.paymentStatus || 'Pending'}</p>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-3">
+            <p class="text-xs text-secondary/40 font-bold uppercase tracking-wider mb-1">Global Status</p>
+            <p class="text-sm font-semibold text-secondary capitalize">${order.status}</p>
+          </div>
+        </div>
+
+        ${order.fulfillments && order.fulfillments.length > 0 ? `
+        <div>
+          <p class="text-xs font-bold text-secondary/40 uppercase tracking-wider mb-2 mt-4">Fulfillments / Shipments</p>
+          ${order.fulfillments.map((f, i) => `
+          <div class="mb-4 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <span class="font-bold text-secondary text-sm">Shipment #${i+1}</span>
+                <span class="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full ml-2 font-bold">${f.locations?.name || 'Warehouse'}</span>
+              </div>
+              <div>
+                <select class="text-xs border border-gray-300 rounded px-2 py-1 fulfillment-status-select font-semibold outline-none" data-fid="${f.id}" onchange="updateFulfillmentStatus('${f.id}', this.value)">
+                  <option value="pending" ${f.status==='pending'?'selected':''}>Pending</option>
+                  <option value="shipped" ${f.status==='shipped'?'selected':''}>Shipped</option>
+                  <option value="delivered" ${f.status==='delivered'?'selected':''}>Delivered</option>
+                  <option value="cancelled" ${f.status==='cancelled'?'selected':''}>Cancelled</option>
+                  <option value="rto" ${f.status==='rto'?'selected':''}>RTO</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="px-4 py-2 text-xs text-secondary/80 border-b border-gray-100 bg-white">
+              <span class="font-bold">Items:</span> ${(f.items||[]).map((it) => `${it.quantity}x ${it.product_name || it.variant || it.id}`).join(', ')}
+            </div>
+
+            <div class="p-4 bg-white grid grid-cols-2 gap-4">
+              <!-- Dispatch Details -->
+              <div>
+                <p class="text-[10px] font-bold text-secondary/50 uppercase mb-2">Courier Dispatch</p>
+                <div class="space-y-2">
+                  <input type="text" id="awb_${f.id}" class="w-full text-xs border border-gray-200 rounded p-1.5 focus:border-primary outline-none" placeholder="AWB Number" value="${f.awb_number || ''}">
+                  <input type="text" id="courier_${f.id}" class="w-full text-xs border border-gray-200 rounded p-1.5 focus:border-primary outline-none" placeholder="Courier Name (e.g. Delhivery)" value="${f.courier_name || ''}">
+                  <div class="flex gap-2">
+                    <button class="flex-1 bg-primary/10 text-primary hover:bg-primary hover:text-white text-[10px] font-bold py-1.5 rounded transition-colors" onclick="updateFulfillmentAwb('${f.id}')">💾 Save</button>
+                    <button class="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white text-[10px] font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1" onclick="autoGenerateAwb('${order.orderId}', '${f.id}')">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> Auto API
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Q-Commerce Local Rider -->
+              ${f.locations?.q_commerce_enabled ? `
+              <div class="bg-purple-50 rounded-lg p-3 border border-purple-100">
+                <p class="text-[10px] font-bold text-purple-700 uppercase mb-2">🛵 Local Rider / 3PL Assignment</p>
+                <div class="space-y-2">
+                  <input type="text" id="rider_name_${f.id}" class="w-full text-xs border border-purple-200 rounded p-1.5 focus:border-purple-500 outline-none" placeholder="Rider Name (Manual)" value="${f.rider_name || ''}">
+                  <input type="text" id="rider_phone_${f.id}" class="w-full text-xs border border-purple-200 rounded p-1.5 focus:border-purple-500 outline-none" placeholder="Rider Phone (Manual)" value="${f.rider_phone || ''}">
+                  <button class="w-full bg-purple-600 text-white text-[10px] font-bold py-1.5 rounded hover:bg-purple-700 transition-colors shadow-sm" onclick="assignRider('${f.id}')">Assign Manual Rider</button>
+                  
+                  <div class="flex items-center gap-2 my-1">
+                    <div class="h-px bg-purple-200 flex-1"></div>
+                    <span class="text-[9px] text-purple-400 font-bold uppercase tracking-wider">OR</span>
+                    <div class="h-px bg-purple-200 flex-1"></div>
+                  </div>
+                  
+                  <div class="grid grid-cols-2 gap-2">
+                    <button class="w-full bg-green-500 text-white text-[10px] font-bold py-1.5 rounded hover:bg-green-600 transition-colors shadow-sm" onclick="dispatch3PL('${order.orderId}', '${f.id}', 'dunzo')">Send via Dunzo</button>
+                    <button class="w-full bg-orange-500 text-white text-[10px] font-bold py-1.5 rounded hover:bg-orange-600 transition-colors shadow-sm" onclick="dispatch3PL('${order.orderId}', '${f.id}', 'shadowfax')">Send via Shadowfax</button>
+                  </div>
+                </div>
+              </div>
+              ` : `
+              <div class="bg-gray-50 flex items-center justify-center rounded-lg border border-gray-100 p-3">
+                <span class="text-[10px] text-gray-400 font-medium">Q-Commerce Disabled for this Hub</span>
+              </div>
+              `}
+            </div>
+          </div>
+          `).join('')}
+        </div>
+        ` : `
+        <div class="bg-yellow-50 text-yellow-800 p-3 rounded-xl text-xs">
+          Legacy Order (No multi-warehouse fulfillments). Use the main table rows to manage dispatch.
+        </div>
+        `}
+
+        <div class="flex gap-3 pt-2">
+          <a href="/admin/invoice/${order.orderId}" target="_blank"
+            class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg> Print Invoice
+          </a>
+        </div>
+      `;
+
+      modal?.classList.remove('hidden');
+      modal?.classList.add('flex');
+    });
+  });
+
+  document.getElementById('close-order-modal')?.addEventListener('click', () => {
+    modal?.classList.add('hidden');
+    modal?.classList.remove('flex');
+  });
+  modal?.addEventListener('click', (e) => { if (e.target === modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); } });
+  
+  }); // End of astro:page-load
+
+
+  // ── AI Command Bar Handlers ──────────────────────────────────────────
+  // Called directly (not inside DOMContentLoaded) since AiCommandBar defines
+  // window.registerAiHandlers synchronously before this script runs.
+  if (window.registerAiHandlers) {
+    window.registerAiHandlers({
+      context: 'Orders Management Page',
+      suggestions: [
+        'show pending orders',
+        'show shipped orders',
+        'show all orders',
+        'filter delivered orders',
+        'show cancelled orders',
+      ],
+      patterns: [
+        {
+          key: 'filter_status',
+          keywords: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled', 'all orders', 'show all'],
+          example: 'show pending orders',
+          extract: '(pending|confirmed|shipped|delivered|cancelled|all)',
+          match: (q) => {
+            const statuses = ['pending','confirmed','shipped','delivered','cancelled'];
+            const found = statuses.find(s => q.includes(s));
+            if (found) return found;
+            if (q.includes('all')) return 'all';
+            return false;
+          }
+        },
+      ],
+      actions: {
+        filter_status: (status) => {
+          const btn = document.querySelector(`.filter-btn[data-status="${status || 'all'}"]`);
+          if (btn) { btn.click(); return `Showing ${status || 'all'} orders ✓`; }
+          return 'Filter button not found';
+        }
+      }
+    });
+  }
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  window.assignRider = async function(fulfillmentId) {
+    try {
+      const btn = event.currentTarget;
+      const name = document.getElementById(`rider_name_${fulfillmentId}`)?.value;
+      const phone = document.getElementById(`rider_phone_${fulfillmentId}`)?.value;
+
+      if (!name || !phone) return alert('Please enter rider name and phone');
+      
+      btn.innerHTML = '...';
+      const res = await fetch(`/api/admin/fulfillments/${fulfillmentId}/assign-rider`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rider_name: name, rider_phone: phone })
+      });
+      
+      if (res.ok) {
+        btn.innerHTML = '✅ Assigned';
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to assign rider");
+        btn.innerHTML = 'Assign Manual Rider';
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred");
+      event.currentTarget.innerHTML = 'Assign Manual Rider';
+    }
+  };
+
+  window.dispatch3PL = async function(orderId, fulfillmentId, partner) {
+    try {
+      const btn = event.currentTarget;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '...';
+      
+      const res = await fetch(`/api/admin/fulfillments/${fulfillmentId}/dispatch-3pl`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId, partner })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Failed to dispatch via ${partner}`);
+      
+      btn.innerHTML = '✅ Dispatched';
+      setTimeout(() => window.location.reload(), 1500);
+      
+    } catch (err) {
+      alert(err.message || 'Dispatch failed.');
+      event.currentTarget.innerHTML = partner === 'dunzo' ? 'Send via Dunzo' : 'Send via Shadowfax';
+    }
+  };
+
+  window.updateFulfillmentAwb = async function(fulfillmentId) {
+    const awb = document.getElementById(`awb_${fulfillmentId}`)?.value;
+    const courier = document.getElementById(`courier_${fulfillmentId}`)?.value;
+    
+    if (!awb || !courier) {
+      alert("Please enter AWB and Courier name.");
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/admin/fulfillments/${fulfillmentId}/update-awb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ awb_number: awb, courier_name: courier })
+      });
+      if (res.ok) {
+        alert("Dispatch details saved!");
+        window.location.reload();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to save details");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred");
+    }
+  };
+
+  window.updateFulfillmentStatus = async function(fulfillmentId, status) {
+    try {
+      const res = await fetch(`/api/admin/fulfillments/${fulfillmentId}/update-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to update status");
+      } else {
+        // success
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred");
+    }
+  };
+
+  window.autoGenerateAwb = async function(orderId, fulfillmentId) {
+    try {
+      const btn = event.currentTarget;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '...';
+      
+      const res = await fetch('/api/admin/shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate_waybill', orderId, fulfillmentId })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || 'Failed to auto-generate');
+      
+      const awbInput = document.getElementById(`awb_${fulfillmentId}`);
+      const courierInput = document.getElementById(`courier_${fulfillmentId}`);
+      
+      if (awbInput) awbInput.value = data.awb || '';
+      if (courierInput) courierInput.value = data.courier || '';
+      
+      btn.innerHTML = '✅ Generated';
+      setTimeout(() => { btn.innerHTML = originalText; window.location.reload(); }, 2000);
+      
+      if (data.label_url && data.label_url !== '#') window.open(data.label_url, '_blank');
+      
+    } catch (err) {
+      alert(err.message || 'Auto-generate failed.');
+      btn.innerHTML = originalText;
+    }
+  };
+
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'filter_status') {
+      var status = params.status || 'all';
+      var btn = document.querySelector('.filter-btn[data-status="' + status + '"]');
+      if (btn) btn.click();
+    }
+    else if (action === 'filter_date') {
+      // Highlight rows matching the date
+      var dateStr = params.date || '';
+      var rows = document.querySelectorAll('.order-row');
+      rows.forEach(function(row) {
+        var rowDate = row.getAttribute('data-date') || '';
+        var match = rowDate.startsWith(dateStr);
+        row.style.display = match ? '' : 'none';
+      });
+    }
+    else if (action === 'search_order') {
+      var search = document.getElementById('order-search');
+      if (search) { search.value = params.query || ''; search.dispatchEvent(new Event('input')); }
+    }
+    else if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+    else if (action === 'update_awb') {
+      var input = document.querySelector('.awb-input[data-order-id="' + params.order_id + '"]');
+      var btn = document.querySelector('.save-awb-btn[data-order-id="' + params.order_id + '"]');
+      if (input && btn) {
+        input.value = params.awb;
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+        btn.innerHTML = '✨ Review & Save';
+        setTimeout(() => {
+          input.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+          btn.innerHTML = 'Save AWB';
+        }, 3000);
+      }
+    }
+    else if (action === 'update_status') {
+      var select = document.querySelector('.order-status-select[data-order-id="' + params.order_id + '"]');
+      if (select) {
+        select.value = params.status;
+        select.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        select.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+        
+        // Create a temporary save button since select auto-saves on change
+        var tempBtn = document.createElement('button');
+        tempBtn.innerHTML = '✨ Save Status';
+        tempBtn.className = 'ml-2 text-xs font-bold text-violet-600 bg-violet-50 px-2 py-1 rounded hover:bg-violet-100 transition-colors';
+        tempBtn.onclick = function() {
+          select.dispatchEvent(new Event('change'));
+          tempBtn.remove();
+        };
+        select.parentNode.insertBefore(tempBtn, select.nextSibling);
+
+        setTimeout(() => {
+          select.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+        }, 3000);
+      }
+    }
+    else if (action === 'bulk_print') {
+      window.location.href = '/admin/batch-invoice';
+    }
+  });
+
+  // Delete Order
+  document.querySelectorAll('.delete-order-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const orderId = (e.currentTarget as HTMLButtonElement).dataset.orderId;
+      if (!orderId) return;
+      const confirmation = prompt('WARNING: This order will be permanently deleted!\nType "delete" to confirm:');
+      if (confirmation && confirmation.trim().toLowerCase() === 'delete') {
+        try {
+          const res = await fetch('/api/admin/delete-order', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId })
+          });
+          if (res.ok) {
+            window.location.reload();
+          } else {
+            const data = await res.json().catch(() => ({}));
+            alert('Failed to delete: ' + (data.error || 'Unknown error'));
+          }
+        } catch (err: any) {
+          alert('Error: ' + err.message);
+        }
+      }
+    });
+  });
+</script>
+
+</AdminLayout>
+
+
+
+
+
+

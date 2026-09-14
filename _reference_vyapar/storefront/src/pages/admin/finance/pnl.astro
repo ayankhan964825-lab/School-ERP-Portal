@@ -1,0 +1,122 @@
+---
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "finance_pnl")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin, supabase, isSupabase, getProducts } from '../../../lib/database';
+
+let metrics = {
+  gross_revenue: 0,
+  total_cogs: 0,
+  shipping_expenses: 0,
+  ad_spend: 0,
+  platform_fees: 0,
+  rto_losses: 0
+};
+
+if (isSupabase) {
+  const client = supabaseAdmin || supabase;
+  if (client) {
+    const products = await getProducts(Astro.locals?.storeId);
+    const cogsMap: Record<string, number> = {};
+    products.forEach((p: any) => {
+      p.variants?.forEach((v: any) => {
+        if (v.id) cogsMap[v.id] = Number(v.cogs || 0);
+      });
+    });
+
+    const { data: orders } = await client.from('orders').select('*, order_items(*)').eq('store_id', Astro.locals.storeId);
+    if (orders) {
+      orders.forEach(o => {
+        if (o.order_status === 'delivered') {
+          metrics.gross_revenue += Number(o.total || 0);
+          o.order_items?.forEach((item: any) => {
+            const variantCogs = item.variant_id ? (cogsMap[item.variant_id] || 0) : 0;
+            metrics.total_cogs += variantCogs * Number(item.quantity || 1);
+          });
+        }
+        if (o.order_status === 'rto') {
+          metrics.rto_losses += 150; // estimated ₹150 forward+return cost
+        }
+      });
+    }
+
+    const { data: expenses } = await client.from('expenses').select('*').eq('store_id', Astro.locals.storeId);
+    if (expenses) {
+      expenses.forEach(e => {
+        if (e.category === 'shipping') metrics.shipping_expenses += Number(e.amount);
+        else if (e.category === 'ads') metrics.ad_spend += Number(e.amount);
+        else if (e.category === 'platform_fee') metrics.platform_fees += Number(e.amount);
+      });
+    }
+  }
+}
+
+const totalExpenses = metrics.shipping_expenses + metrics.ad_spend + metrics.platform_fees + metrics.rto_losses;
+const netProfit = metrics.gross_revenue - metrics.total_cogs - totalExpenses;
+const profitMargin = metrics.gross_revenue > 0 ? ((netProfit / metrics.gross_revenue) * 100).toFixed(1) : '0.0';
+---
+
+<AdminLayout title="Profit & Loss | Vyapaarpe Admin" description="Track your net profit margins.">
+  <!-- Page Header -->
+  <div class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Profit & Loss (PNL)</h1>
+      <p class="text-sm text-secondary/60 mt-1">Calculate accurate Net Profit based on Revenue, COGS, and Expenses.</p>
+    </div>
+    <select class="text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none">
+      <option value="this_month">This Month</option>
+      <option value="last_month">Last Month</option>
+      <option value="this_year">This Year</option>
+      <option value="all_time">All Time</option>
+    </select>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+      <p class="text-xs font-bold text-secondary/50 uppercase tracking-wider mb-2">Gross Revenue</p>
+      <p class="text-2xl font-bold text-secondary">₹{metrics.gross_revenue.toLocaleString('en-IN')}</p>
+    </div>
+    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+      <p class="text-xs font-bold text-secondary/50 uppercase tracking-wider mb-2">Cost of Goods (COGS)</p>
+      <p class="text-2xl font-bold text-orange-600">-₹{metrics.total_cogs.toLocaleString('en-IN')}</p>
+    </div>
+    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+      <p class="text-xs font-bold text-secondary/50 uppercase tracking-wider mb-2">Total Expenses</p>
+      <p class="text-2xl font-bold text-red-600">-₹{totalExpenses.toLocaleString('en-IN')}</p>
+    </div>
+    <div class="bg-green-50 p-5 rounded-2xl border border-green-100 shadow-sm">
+      <p class="text-xs font-bold text-green-800/60 uppercase tracking-wider mb-2">Net Profit</p>
+      <p class="text-2xl font-bold text-green-700">₹{netProfit.toLocaleString('en-IN')}</p>
+      <p class="text-sm font-semibold text-green-600 mt-1">{profitMargin}% Margin</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Expense Breakdown -->
+    <div class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+      <h2 class="font-bold text-secondary mb-4 border-b border-gray-100 pb-3">Expense Breakdown</h2>
+      <div class="space-y-4">
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-secondary/70">Ad Spend (Meta/Google)</span>
+          <span class="text-sm font-bold text-secondary">₹{metrics.ad_spend.toLocaleString('en-IN')}</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-secondary/70">Shipping Costs</span>
+          <span class="text-sm font-bold text-secondary">₹{metrics.shipping_expenses.toLocaleString('en-IN')}</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-secondary/70">Platform & Gateway Fees</span>
+          <span class="text-sm font-bold text-secondary">₹{metrics.platform_fees.toLocaleString('en-IN')}</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-secondary/70 flex items-center gap-1">RTO Losses <span class="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded">estimated</span></span>
+          <span class="text-sm font-bold text-secondary">₹{metrics.rto_losses.toLocaleString('en-IN')}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

@@ -1,0 +1,306 @@
+---
+// AiCommandBar.astro
+// Props: geminiApiKey (passed from layout via settings)
+export interface Props {
+  geminiApiKey?: string;
+}
+const { geminiApiKey = '' } = Astro.props;
+---
+
+<!-- ── AI Command Bar Trigger ─────────────────────────────── -->
+<div id="ai-bar-root">
+  <!-- Floating trigger button -->
+  <button
+    id="ai-bar-trigger"
+    class="fixed bottom-24 md:bottom-8 right-5 z-[90] flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-full shadow-lg shadow-indigo-500/30 text-sm font-semibold hover:scale-105 active:scale-95 transition-all duration-200 group"
+    title="Ask AI Assistant"
+    aria-label="Open AI Assistant"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 group-hover:rotate-12 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+    </svg>
+    <span>Ask AI</span>
+  </button>
+
+  <!-- AI Command Panel (slide up) -->
+  <div
+    id="ai-bar-panel"
+    class="fixed bottom-0 left-0 right-0 z-[95] md:left-64 transform translate-y-full transition-transform duration-300 ease-out"
+  >
+    <div class="bg-white border-t border-gray-200 shadow-2xl px-4 py-4 md:px-6">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+            </svg>
+          </div>
+          <span class="text-sm font-bold text-secondary">AI Assistant</span>
+          <span id="ai-bar-mode-badge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Smart Match</span>
+        </div>
+        <button id="ai-bar-close" class="text-secondary/40 hover:text-secondary transition-colors p-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Input Row -->
+      <div class="flex gap-2">
+        <div class="relative flex-1">
+          <input
+            id="ai-bar-input"
+            type="text"
+            placeholder="Type a command..."
+            class="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-gray-50/50 transition-all"
+            autocomplete="off"
+          />
+          <div id="ai-bar-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2">
+            <svg class="animate-spin h-4 w-4 text-violet-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 12 0 12 0 12 5.373 12 12 12h4a8 8 0 01-8 8V24C5.373 24 12 24 12 12z"></path>
+            </svg>
+          </div>
+        </div>
+        <button
+          id="ai-bar-submit"
+          class="px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 whitespace-nowrap"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+          Run
+        </button>
+      </div>
+
+      <!-- Result / Feedback -->
+      <div id="ai-bar-result" class="hidden mt-3 p-3 rounded-xl text-sm"></div>
+
+      <!-- Suggestions -->
+      <div id="ai-bar-suggestions" class="mt-3 flex flex-wrap gap-1.5"></div>
+    </div>
+  </div>
+</div>
+
+<script define:vars={{ geminiApiKey }}>
+  // ── State ──────────────────────────────────────────────────────────
+  const GEMINI_API_KEY = geminiApiKey;
+  let pageHandlers = {}; // Registered per-page by each page's own <script>
+
+  // ── Register API ────────────────────────────────────────────────────
+  // Pages call: window.registerAiHandlers({ patterns: [...], suggestions: [...] })
+  // Defined IMMEDIATELY (not inside DOMContentLoaded) so page scripts can call it at any time
+  window.registerAiHandlers = function(config) {
+    pageHandlers = config;
+    // Update badge based on whether Gemini key exists
+    if (badgeEl) {
+      if (GEMINI_API_KEY) {
+        badgeEl.textContent = 'Gemini';
+        badgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700';
+      } else {
+        badgeEl.textContent = 'Smart Match';
+        badgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+      }
+    }
+    renderSuggestions(config.suggestions || []);
+  };
+
+  // ── DOM Refs ────────────────────────────────────────────────────────
+  const trigger   = document.getElementById('ai-bar-trigger');
+  const panel     = document.getElementById('ai-bar-panel');
+  const closeBtn  = document.getElementById('ai-bar-close');
+  const input     = document.getElementById('ai-bar-input');
+  const submitBtn = document.getElementById('ai-bar-submit');
+  const spinner   = document.getElementById('ai-bar-spinner');
+  const resultEl  = document.getElementById('ai-bar-result');
+  const badgeEl   = document.getElementById('ai-bar-mode-badge');
+
+  // ── Panel Open/Close ────────────────────────────────────────────────
+  function openPanel() {
+    panel?.classList.remove('translate-y-full');
+    input?.focus();
+  }
+  function closePanel() {
+    panel?.classList.add('translate-y-full');
+  }
+
+  trigger?.addEventListener('click', openPanel);
+  closeBtn?.addEventListener('click', closePanel);
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runCommand();
+    if (e.key === 'Escape') closePanel();
+  });
+  submitBtn?.addEventListener('click', runCommand);
+
+  // ── Show Suggestions ────────────────────────────────────────────────
+  function renderSuggestions(suggestions) {
+    const el = document.getElementById('ai-bar-suggestions');
+    if (!el) return;
+    el.innerHTML = suggestions.map(s =>
+      `<button class="ai-suggestion px-3 py-1.5 text-xs bg-gray-100 hover:bg-violet-100 hover:text-violet-700 text-secondary/70 rounded-lg border border-transparent hover:border-violet-200 transition-all font-medium">${s}</button>`
+    ).join('');
+    el.querySelectorAll('.ai-suggestion').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (input) input.value = btn.textContent;
+        runCommand();
+      });
+    });
+  }
+
+  // ── Show Result ─────────────────────────────────────────────────────
+  function showResult(msg, type = 'success') {
+    if (!resultEl) return;
+    resultEl.className = `mt-3 p-3 rounded-xl text-sm flex items-start gap-2 ${
+      type === 'success' ? 'bg-green-50 text-green-800 border border-green-100' :
+      type === 'error'   ? 'bg-red-50 text-red-800 border border-red-100' :
+                           'bg-violet-50 text-violet-800 border border-violet-100'
+    }`;
+    const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : '✨';
+    resultEl.innerHTML = `<span class="font-bold text-base leading-none">${icon}</span><span>${msg}</span>`;
+    resultEl.classList.remove('hidden');
+    setTimeout(() => resultEl.classList.add('hidden'), 4000);
+  }
+
+  // ── Run Command ─────────────────────────────────────────────────────
+  async function runCommand() {
+    const query = input?.value?.trim();
+    if (!query) return;
+    
+    setLoading(true);
+
+    let handled = false;
+
+    // 1. Try Gemini API first (if key is available)
+    if (GEMINI_API_KEY) {
+      try {
+        handled = await tryGemini(query);
+        if (handled && badgeEl) {
+          badgeEl.textContent = 'Gemini ✦';
+          badgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700';
+        }
+      } catch(e) {
+        console.warn('[AI Bar] Gemini failed, falling back to pattern matching:', e);
+      }
+    }
+
+    // 2. Fallback to pattern matching
+    if (!handled) {
+      handled = tryPatterns(query);
+      if (handled && badgeEl) {
+        badgeEl.textContent = 'Smart Match';
+        badgeEl.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700';
+      }
+    }
+
+    if (!handled) {
+      showResult(`Sorry, I couldn't understand: "${query}". Try one of the suggestions below.`, 'error');
+    }
+
+    setLoading(false);
+    if (input) input.value = '';
+  }
+
+  function setLoading(loading) {
+    if (spinner) spinner.classList.toggle('hidden', !loading);
+    if (submitBtn) submitBtn.disabled = loading;
+  }
+
+  // ── Gemini API ──────────────────────────────────────────────────────
+  async function tryGemini(query) {
+    const pageContext = (pageHandlers.context || 'admin panel');
+    const patternList = (pageHandlers.patterns || [])
+      .map(p => `- "${p.example}" → action: ${p.key}`)
+      .join('\n');
+
+    const systemPrompt = `You are an admin assistant for an e-commerce admin panel. 
+Current page: ${pageContext}
+Available actions on this page:
+${patternList}
+
+The user typed: "${query}"
+
+Respond with ONLY a JSON object like: {"action": "<action_key>", "param": "<extracted_param_if_any>"}
+If no action matches, respond: {"action": "none"}`;
+
+    const modelsToTry = [
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite'
+    ];
+
+    let resp = null;
+    for (const model of modelsToTry) {
+      resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: systemPrompt }] }],
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 }
+          })
+        }
+      );
+      if (resp.ok) break;
+    }
+
+    if (!resp || !resp.ok) throw new Error('Gemini API error: ' + (resp ? resp.status : 'unknown'));
+
+    const data = await resp.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { return false; }
+
+    if (!parsed.action || parsed.action === 'none') return false;
+
+    return executeAction(parsed.action, parsed.param || '');
+  }
+
+  // ── Pattern Matching Fallback ───────────────────────────────────────
+  function tryPatterns(query) {
+    const lower = query.toLowerCase();
+    const patterns = pageHandlers.patterns || [];
+
+    for (const pattern of patterns) {
+      let matched = false;
+      let param = '';
+
+      if (typeof pattern.match === 'function') {
+        const result = pattern.match(lower);
+        if (result !== false && result !== null && result !== undefined) {
+          matched = true;
+          param = typeof result === 'string' ? result : '';
+        }
+      } else if (pattern.keywords) {
+        matched = pattern.keywords.some(kw => lower.includes(kw.toLowerCase()));
+        // Try to extract param after keyword
+        if (matched && pattern.extract) {
+          const regex = new RegExp(pattern.extract, 'i');
+          const m = query.match(regex);
+          param = m ? m[1] : '';
+        }
+      }
+
+      if (matched) {
+        return executeAction(pattern.key, param);
+      }
+    }
+    return false;
+  }
+
+  // ── Execute Action ─────────────────────────────────────────────────
+  function executeAction(actionKey, param) {
+    const handler = (pageHandlers.actions || {})[actionKey];
+    if (!handler) return false;
+    try {
+      const resultMsg = handler(param);
+      showResult(resultMsg || `Action "${actionKey}" executed!`, 'success');
+      return true;
+    } catch(e) {
+      showResult('Action failed: ' + e.message, 'error');
+      return false;
+    }
+  }
+</script>

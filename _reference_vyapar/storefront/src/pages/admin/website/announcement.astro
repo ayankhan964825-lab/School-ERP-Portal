@@ -1,0 +1,181 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!ctx.adminRole || ctx.adminRole === 'guest') {
+  return Astro.redirect('/admin/login');
+}
+if (!canViewSection(ctx, 'website_announcement')) {
+  return Astro.redirect('/admin');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+
+// Default values (if undefined, default to true for the boolean toggles)
+const showShipping = settings?.announcement_show_shipping !== 'false' && settings?.announcement_show_shipping !== false;
+const showMilestones = settings?.announcement_show_milestones !== 'false' && settings?.announcement_show_milestones !== false;
+const showCoupons = settings?.announcement_show_coupons !== 'false' && settings?.announcement_show_coupons !== false;
+const showFlashSales = settings?.announcement_show_flash_sales !== 'false' && settings?.announcement_show_flash_sales !== false;
+const showPrepaid = settings?.announcement_show_prepaid !== 'false' && settings?.announcement_show_prepaid !== false;
+
+const taglines = settings?.announcement_taglines || "";
+---
+
+<AdminLayout title="Announcement Bar | Admin Panel" description="Manage global announcement bar text and dynamic features.">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Announcement Bar</h1>
+      <p class="text-sm text-secondary/60 mt-1">Control the scrolling marquee at the very top of your website.</p>
+    </div>
+    <button id="save-config-btn" class="btn-primary !px-6 !py-2.5 !rounded-xl text-sm font-bold flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+      Save Changes
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-20">
+    
+    <!-- DYNAMIC FEATURES TOGGLES -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-fit">
+      <div class="p-5 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="font-bold text-secondary flex items-center gap-2">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          Dynamic Announcements
+        </h2>
+      </div>
+      <div class="p-6 space-y-6">
+        <p class="text-xs text-secondary/60 mb-2">Select which dynamic offers should automatically scroll in the announcement bar.</p>
+        
+        <!-- Toggle: Shipping -->
+        <label class="flex items-start gap-3 cursor-pointer group">
+          <div class="relative flex items-center justify-center mt-0.5">
+            <input type="checkbox" id="show_shipping" class="peer sr-only" checked={showShipping} />
+            <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+          </div>
+          <div>
+            <span class="text-sm font-medium text-secondary block">Free Shipping Status</span>
+            <span class="text-xs text-secondary/50 block mt-0.5">Show "Free Shipping on Orders Above ₹X" based on your settings.</span>
+          </div>
+        </label>
+
+        <!-- Toggle: Milestones -->
+        <label class="flex items-start gap-3 cursor-pointer group">
+          <div class="relative flex items-center justify-center mt-0.5">
+            <input type="checkbox" id="show_milestones" class="peer sr-only" checked={showMilestones} />
+            <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+          </div>
+          <div>
+            <span class="text-sm font-medium text-secondary block">Active Milestone Offers</span>
+            <span class="text-xs text-secondary/50 block mt-0.5">Announce active tier discounts (e.g. "Spend ₹1000 to get 10% OFF").</span>
+          </div>
+        </label>
+
+        <!-- Toggle: Coupons -->
+        <label class="flex items-start gap-3 cursor-pointer group">
+          <div class="relative flex items-center justify-center mt-0.5">
+            <input type="checkbox" id="show_coupons" class="peer sr-only" checked={showCoupons} />
+            <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+          </div>
+          <div>
+            <span class="text-sm font-medium text-secondary block">Public Coupons</span>
+            <span class="text-xs text-secondary/50 block mt-0.5">Show active public coupon codes (e.g. "Use Code SAVE20 for 20% OFF").</span>
+          </div>
+        </label>
+
+        <!-- Toggle: Flash Sales -->
+        <label class="flex items-start gap-3 cursor-pointer group">
+          <div class="relative flex items-center justify-center mt-0.5">
+            <input type="checkbox" id="show_flash_sales" class="peer sr-only" checked={showFlashSales} />
+            <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+          </div>
+          <div>
+            <span class="text-sm font-medium text-secondary block">Live Flash Sales</span>
+            <span class="text-xs text-secondary/50 block mt-0.5">Announce when a flash sale is currently active.</span>
+          </div>
+        </label>
+
+        <!-- Toggle: Prepaid Discounts -->
+        <label class="flex items-start gap-3 cursor-pointer group">
+          <div class="relative flex items-center justify-center mt-0.5">
+            <input type="checkbox" id="show_prepaid" class="peer sr-only" checked={showPrepaid} />
+            <div class="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+          </div>
+          <div>
+            <span class="text-sm font-medium text-secondary block">Prepaid Payment Discount</span>
+            <span class="text-xs text-secondary/50 block mt-0.5">Show additional discounts available for online/prepaid payments.</span>
+          </div>
+        </label>
+
+      </div>
+    </div>
+
+    <!-- MANUAL TEXT CONFIG -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-fit">
+      <div class="p-5 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="font-bold text-secondary flex items-center gap-2">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          Custom Text / Taglines
+        </h2>
+      </div>
+      <div class="p-6">
+        <label class="block text-sm font-medium text-secondary mb-2">Manual Announcements</label>
+        <p class="text-xs text-secondary/60 mb-3">Add custom phrases to scroll alongside dynamic offers. Put each announcement on a new line.</p>
+        <textarea 
+          id="taglines" 
+          rows="6"
+          placeholder="Premium Quality Dry Fruits&#10;100% Natural & Organic&#10;Trusted by thousands of customers" 
+          class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors resize-y"
+        >{taglines}</textarea>
+      </div>
+    </div>
+  </div>
+
+<script data-astro-rerun>
+  function initAnnouncement() {
+    const saveBtn = document.getElementById('save-config-btn') as HTMLButtonElement;
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        saveBtn.innerHTML = 'Saving...';
+        saveBtn.disabled = true;
+        
+        // Gather state
+        const updates = {
+          announcement_show_shipping: (document.getElementById('show_shipping') as HTMLInputElement)?.checked ?? true,
+          announcement_show_milestones: (document.getElementById('show_milestones') as HTMLInputElement)?.checked ?? true,
+          announcement_show_coupons: (document.getElementById('show_coupons') as HTMLInputElement)?.checked ?? true,
+          announcement_show_flash_sales: (document.getElementById('show_flash_sales') as HTMLInputElement)?.checked ?? true,
+          announcement_show_prepaid: (document.getElementById('show_prepaid') as HTMLInputElement)?.checked ?? true,
+          announcement_taglines: (document.getElementById('taglines') as HTMLTextAreaElement)?.value || '',
+        };
+
+        try {
+          const res = await fetch('/api/admin/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', settings: updates })
+          });
+          const data = await res.json();
+          if(data.success) {
+            alert('Announcement bar settings saved successfully!');
+          } else {
+            alert('Error saving settings: ' + data.error);
+          }
+        } catch(err) {
+          alert('Network error while saving.');
+        } finally {
+          saveBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg> Save Changes`; 
+          saveBtn.disabled = false; 
+        }
+      };
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', initAnnouncement);
+  document.addEventListener('astro:page-load', initAnnouncement);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initAnnouncement();
+  }
+</script>
+</AdminLayout>

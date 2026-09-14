@@ -1,0 +1,5 @@
+{
+  "global_inventory_tracking": true,
+  "bulk_order_inventory_tracking": false,
+  "website_theme": "{\"active_preset\":\"warpdeal\"}"
+}

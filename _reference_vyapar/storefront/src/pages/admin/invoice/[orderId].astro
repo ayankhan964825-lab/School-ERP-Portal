@@ -1,0 +1,1594 @@
+---
+import { getOrders, getSettings } from '../../../lib/database';
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManageSection(ctx, "orders_all")) {
+  return Astro.redirect('/admin/login');
+}
+
+const { orderId } = Astro.params;
+const [orders, settings] = await Promise.all([getOrders(), getSettings()]);
+const order = orders.find((o: any) => o.orderId === orderId);
+
+if (!order) return Astro.redirect('/admin/orders');
+
+const storeName = settings.store_name || 'Admin Panel';
+const brandName = settings.brand_name || settings.store_name || 'Your Brand';
+const rawLogo = settings.logo_url || `/logo-${brandName.replace(/\s+/g, '-').toLowerCase()}.webp`;
+const storeLogo = encodeURI(rawLogo);
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Invoice #{order.orderId}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { --text: #000; --border: #000; --muted: #333; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; }
+    body { background: #f3f4f6; color: #111; }
+    
+    #loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 20px; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: #f3f4f6; }
+    .spinner { width: 50px; height: 50px; border: 4px solid #e5e7eb; border-top-color: #10b981; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    #success-screen { display: none; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 20px; text-align: center; padding: 20px; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: #f3f4f6; }
+    .check-icon { width: 64px; height: 64px; background: #ecfdf5; color: #10b981; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    
+    .page-wrapper { position: relative; width: 800px; background: #fff; padding: 20px; margin: 0 auto; display: none; }
+  </style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <h2 style="font-size: 20px; font-weight: 600;">Generating Admin PDF (Shipping Label + Invoice)...</h2>
+  <p style="color: #666;">Please wait, downloading will start automatically.</p>
+</div>
+
+<div id="success-screen">
+  <div class="check-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+  </div>
+  <h2 style="font-size: 24px; font-weight: bold;">Download Started!</h2>
+  <p style="color: #666; margin-bottom: 20px;">Admin invoice PDF generated successfully.</p>
+  <a href="/admin/orders" style="padding: 12px 24px; background: #111; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 500;">Return to Orders</a>
+</div>
+
+<div class="page-wrapper" id="page-wrapper"></div>
+
+<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script is:inline src="/js/logo-b64.js"></script>
+<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+<script is:inline define:vars={{ order: order, storeLogo: storeLogo, settings: settings }}>
+    
+    function generateBarcodeBase64(value) {
+      if (!value) return '';
+      const canvas = document.createElement('canvas');
+      try {
+        JsBarcode(canvas, value, {
+          format: "CODE128",
+          displayValue: false,
+          height: 45,
+          width: 1.8,
+          margin: 0
+        });
+        return canvas.toDataURL("image/png");
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function numberToWords(n) {
+      if (n === 0) return 'Zero';
+      const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+      const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+      if (n < 20) return ones[n];
+      if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
+      if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' and ' + numberToWords(n%100) : '');
+      if (n < 100000) return numberToWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + numberToWords(n%1000) : '');
+      if (n < 10000000) return numberToWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + numberToWords(n%100000) : '');
+      return numberToWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + numberToWords(n%10000000) : '');
+    }
+
+    function esc(str) { return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    
+    const round2 = (num) => Math.round(num * 100) / 100;
+    
+    function buildB2CInvoiceHTML(order) {
+
+      const customer = order.customer || {};
+      const shipping = order.shipping || customer;
+      const custName = customer.name || order.customer_name || order.customerName || 'Customer';
+      const shipName = shipping.name || custName;
+      const shipAddr = shipping.address || shipping.street_address || shipping.street || '';
+      const shipCity = shipping.city || '';
+      const shipState = shipping.state || '';
+      const shipPincode = shipping.pincode || shipping.postal_code || '';
+      const shipPhone = shipping.phone || customer.phone || '';
+
+      const awb = order.awb || order.awb_number || null;
+      const routing = order.routingCode || order.routing_code || 'STD';
+      const courier = order.courierPartner || order.courier_partner || '';
+      const weight = order.packageWeight || order.package_weight || '0.50 KG';
+
+      const payMethod = (order.paymentMethod || order.payment_method || order.payment || 'cod').toLowerCase();
+      const isCOD = payMethod === 'cod';
+      const isPaid = (order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid';
+
+      
+      const items = order.items || [];
+      const subtotal = items.reduce((s, i) => s + ((i.price || 0) * (i.quantity || i.qty || 1)), 0);
+      const totalQty = items.reduce((s, i) => s + (i.quantity || i.qty || 1), 0);
+      const shipCost = subtotal >= (settings.free_shipping_threshold || 499) ? 0 : (settings.flat_shipping_rate || 60);
+      const totalOrderDiscount = order.discount || 0;
+      const grandTotal = subtotal + shipCost - totalOrderDiscount;
+
+      const orderId = order.orderId || order.order_id || order.id || '';
+      const orderNum = order.order_number || orderId;
+      const invoiceNumber = `IN-${orderId.replace(/[^0-9]/g, '').slice(-5)}`;
+      const createdAt = order.createdAt || order.created_at || order.date || Date.now();
+      
+      const invoiceDateRaw = new Date(createdAt);
+      const invoiceDate = invoiceDateRaw.toLocaleDateString('en-GB'); 
+      const topBarcodeSrc = generateBarcodeBase64(awb || orderNum);
+      const btmBarcodeSrc = generateBarcodeBase64(orderNum);
+      const _intPart1 = Math.floor(grandTotal);
+      const _decPart1 = Math.round((grandTotal - _intPart1) * 100);
+      const amountInWords = (typeof numberToWords === 'function') 
+        ? (_decPart1 > 0 
+            ? numberToWords(_intPart1) + ' Rupees and ' + numberToWords(_decPart1) + ' Paise Only' 
+            : numberToWords(_intPart1) + ' Rupees Only')
+        : (_decPart1 > 0 
+            ? `${_intPart1} Rupees and ${_decPart1} Paise Only` 
+            : `${_intPart1} Rupees Only`);
+
+      const storeName = settings.store_name || 'Admin Panel';
+      const storeAddr = settings.contact_address || '123 Demo Street, City, State, 123456';
+      const storeGst = settings.gst_number || '22AAAAA0000A1Z5';
+      const storeFssai = settings.fssai_number || '10000000000000';
+
+      let totalTaxAmount = 0;
+      const isIntraState = shipState.toLowerCase().includes('uttar pradesh') || shipState.toLowerCase() === 'up';
+
+      const invRowsHTML = items.map((item, idx) => {
+        const hsn = item.hsn_code || '0813';
+        const gstRate = item.gst_rate !== undefined && item.gst_rate !== null ? parseFloat(item.gst_rate) : 5;
+        const variantText = item.weight || item.variant || '';
+        const displayName = variantText ? `${esc(item.name)} - ${esc(variantText)}` : esc(item.name);
+        const skuText = item.sku ? `SKU: ${esc(item.sku)} | HSN: ${esc(hsn)}` : `HSN: ${esc(hsn)}`;
+        const qty = item.quantity || item.qty || 1;
+        
+        let customDataHtml = '';
+        if (item.custom_data) {
+           customDataHtml = Object.entries(item.custom_data).map(([k, v]) => {
+              const val = String(v).startsWith('http') ? `[Attachment viewable in Admin Panel]` : esc(String(v));
+              return `<div style="margin-top:2px;"><strong style="text-transform:uppercase;">${esc(k)}:</strong> <i>${val}</i></div>`;
+           }).join('');
+           customDataHtml = `<div style="font-size:10px; color:#555; margin-top:4px; padding-top:4px; border-top:1px dashed #eee;">${customDataHtml}</div>`;
+        }
+        
+        const lineGross = (item.price || 0) * qty;
+        
+        // Distribute discount proportionally based on item gross value
+        let itemDiscount = 0;
+        if (subtotal > 0 && totalOrderDiscount > 0) {
+            itemDiscount = (lineGross / subtotal) * totalOrderDiscount;
+        }
+        
+        const lineNetAfterDiscount = round2(lineGross - itemDiscount);
+        const baseRate = round2(lineNetAfterDiscount / (1 + (gstRate / 100)));
+        const taxAmount = round2(lineNetAfterDiscount - baseRate);
+        totalTaxAmount += taxAmount;
+        
+        let taxTypeStr = isIntraState ? `CGST/SGST` : `IGST`;
+        let taxRateStr = isIntraState ? `${gstRate/2}%` : `${gstRate}%`;
+        let taxAmtStr = `₹${taxAmount.toFixed(2)}`;
+
+        return `<tr style="border-bottom: 1px solid #ddd;">
+          <td style="padding: 6px; border-right: 1px solid #000;">${idx+1}</td>
+          <td style="padding: 6px; border-right: 1px solid #000; text-align: left;">
+            <div style="font-weight:600">${displayName}</div>
+            <div style="font-size:9px;color:#333;margin-top:2px;">${skuText}</div>
+            ${customDataHtml}
+          </td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${esc(hsn)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${qty}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${((item.price || 0)).toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${lineGross.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000; color: #16a34a;">-₹${itemDiscount.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${baseRate.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${taxTypeStr} (${taxRateStr})<br/>${taxAmtStr}</td>
+          <td style="padding: 6px; font-weight: bold;">₹${lineNetAfterDiscount.toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+
+      let shippingRow = '';
+      if (shipCost > 0) {
+        let taxTypeStr = isIntraState ? `CGST/SGST` : `IGST`;
+        let shipBase = round2(shipCost / 1.18);
+        let shipTax = round2(shipCost - shipBase);
+        totalTaxAmount += shipTax;
+        shippingRow = `<tr>
+          <td style="padding: 6px; border-right: 1px solid #000;">${items.length + 1}</td>
+          <td style="padding: 6px; border-right: 1px solid #000; text-align: left;"><div style="font-weight:600">Shipping Charges</div></td>
+          <td style="padding: 6px; border-right: 1px solid #000;">9968</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">1</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${shipCost.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${shipCost.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">-₹0.00</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">₹${shipBase.toFixed(2)}</td>
+          <td style="padding: 6px; border-right: 1px solid #000;">${taxTypeStr} (18%)<br/>₹${shipTax.toFixed(2)}</td>
+          <td style="padding: 6px; font-weight: bold;">₹${shipCost.toFixed(2)}</td>
+        </tr>`;
+      }
+    
+      // We remove page-break inside this wrapper to keep it single page.
+      const logoImg = `<img src="${storeLogo}" style="height:14px; filter:grayscale(100%); object-fit:contain; vertical-align:middle;" onerror="this.style.display='none'" />`;
+      return `
+      <div class="invoice-page" style="width: 100%; max-width: 800px; margin: 0 auto; border: 2px solid #000; font-family: 'Inter', sans-serif; background: white;">
+        
+        <!-- Row 0: Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #000; padding: 10px 15px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            ${storeLogo ? `<img src="${storeLogo}" style="height:40px; filter:grayscale(100%); object-fit:contain; image-rendering:-webkit-optimize-contrast;" onerror="this.style.display='none'" />` : ''}
+            <div style="font-size: 24px; font-weight: bold; font-family: serif;">${esc(storeName)}</div>
+          </div>
+          <div style="font-size: 14px; font-weight: bold;">${(order.source === 'quotation' || order.status === 'quotation') ? 'QUOTATION' : 'TAX INVOICE'}</div>
+        </div>
+        
+        <!-- Row 1: TO and AWB Barcode -->
+        <div style="display: flex; border-bottom: 2px solid #000;">
+          <!-- LEFT: TO Details -->
+          <div style="flex: 1; padding: 15px; border-right: 2px solid #000;">
+            <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;">To:</div>
+            <div style="font-size: 18px; font-weight: 800; text-transform: uppercase;">${esc(shipName)}</div>
+            <div style="font-size: 13px; line-height: 1.4; margin-top: 5px;">
+              ${esc(shipAddr)}<br/>
+              ${esc(shipCity)}, ${esc(shipState)}<br/>
+              <span style="font-weight: bold;">${esc(shipPincode)}</span><br/>
+              <span style="font-weight: bold; margin-top: 5px; display: inline-block;">Ph: ${esc(shipPhone)}</span>
+            </div>
+          </div>
+          
+          <!-- RIGHT: Barcode Details -->
+          <div style="width: 350px; padding: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <div style="font-size: 12px; margin-bottom: 5px;">AWB: ${esc(awb || 'Not Assigned')}</div>
+            <div style="padding: 5px 0;"><img src="${topBarcodeSrc}" style="height: 52px; width: auto;" /></div>
+            <div style="font-size: 12px; margin-top: 5px; font-weight: bold;">Routing Code: ${esc(routing)}</div>
+            <div style="font-size: 11px; margin-top: 10px; text-align: left; width: 100%; display: flex; justify-content: space-between;">
+              <span>Dimensions: 13*13*13 CM</span>
+              <span>Weight: ${esc(weight)}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: COD Info -->
+        <div style="display: flex; border-bottom: 2px solid #000; padding: 8px 15px; font-weight: bold; font-size: 13px; justify-content: space-between;">
+          <div>${isCOD ? (isPaid ? 'COD (PAID)' : 'COD') : 'PREPAID'} (Collectable Value: Rs. ${(isCOD && !isPaid) ? grandTotal.toFixed(2) : '0.00'})</div>
+          <div>${esc(courier)}</div>
+        </div>
+
+        <!-- Row 3: Order Stats -->
+        <div style="display: flex; border-bottom: 2px solid #000; padding: 8px 15px; font-weight: bold; font-size: 12px; justify-content: space-between;">
+          <div>Number of Skus: ${items.length}</div>
+          <div>Total Quantity: ${totalQty}</div>
+          <div>Order Id: ${esc(orderId)}</div>
+        </div>
+
+        <!-- Row 4: FROM Details & Order Barcode -->
+        <div style="display: flex; border-bottom: 2px solid #000;">
+          <!-- LEFT: FROM Details -->
+          <div style="flex: 1; padding: 15px; border-right: 2px solid #000;">
+            <div style="font-size: 12px; font-style: italic;">From:</div>
+            <div style="font-size: 16px; font-weight: bold; font-style: italic; margin-bottom: 5px;">${storeName}</div>
+            <div style="font-size: 11px; line-height: 1.4; color: #333;">
+              ${storeAddr}<br/>
+              <span style="font-weight:bold;">GSTIN:</span> ${storeGst}
+            </div>
+          </div>
+          
+          <!-- RIGHT: Invoice details -->
+          <div style="width: 350px; padding: 15px; display:flex; flex-direction:column; justify-content:center;">
+            <div style="font-size: 11px; margin-bottom: 5px; display: flex; justify-content: space-between;">
+              <span><span style="font-weight:bold;">${(order.source === 'quotation' || order.status === 'quotation') ? 'Quotation' : 'Invoice'} No:</span> ${invoiceNumber}</span>
+              <span><span style="font-weight:bold;">Date:</span> ${invoiceDate}</span>
+            </div>
+            <div style="text-align: center; margin-top: 5px; padding: 5px 0;"><img src="${btmBarcodeSrc}" style="height: 40px; width: auto;" /></div>
+            <div style="font-size: 11px; margin-top: 8px; text-align: center;"><span style="font-weight:bold;">Place of Supply:</span> <span style="font-weight:bold; text-transform:uppercase;">${esc(shipState)}</span></div>
+          </div>
+        </div>
+
+        <!-- Row 5: Product Table (Amazon Tax Style) -->
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: center;">
+          <thead>
+            <tr style="border-bottom: 2px solid #000; font-weight: bold;">
+              <th style="padding: 6px; border-right: 1px solid #000; width: 30px;">#</th>
+              <th style="padding: 6px; border-right: 1px solid #000; text-align: left;">Product Name</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">HSN</th>
+              <th style="padding: 6px; border-right: 1px solid #000; width: 35px;">Qty</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Unit<br/>Price</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Gross<br/>Amt</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Discount</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Taxable<br/>Amt</th>
+              <th style="padding: 6px; border-right: 1px solid #000;">Tax</th>
+              <th style="padding: 6px; width: 65px;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${invRowsHTML}
+            ${shippingRow}
+          </tbody>
+          <tfoot>
+            <tr style="border-top: 2px solid #000;">
+              <td colspan="8" style="padding: 8px; text-align: right; font-weight: bold; border-right: 1px solid #000;">GRAND TOTAL (Incl. GST):</td>
+              <td style="padding: 8px; font-weight: bold; border-right: 1px solid #000;">₹${totalTaxAmount.toFixed(2)}</td>
+              <td style="padding: 8px; font-weight: bold;">₹${grandTotal.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- Row 6: Footer -->
+        <div style="border-top: 2px solid #000; padding: 10px 15px;">
+          <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px;">Amount in Words: ${amountInWords}</div>
+          <div style="font-size: 10px; color: #333;">
+            <span style="font-weight: bold; color: #000;">NOTE:</span> If outer packaging/label is found tempered/damaged, do not accept parcel. All disputes are subject to Uttar Pradesh jurisdiction only.
+          </div>
+        </div>
+        <div style="border-top: 1px solid #000; padding: 8px 15px; display: flex; align-items: center; justify-content: space-between; font-size: 11px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight:bold;">Powered By:</span>
+            <img src="/logo-Your Brand.webp" style="height:18px; filter:grayscale(100%); object-fit:contain; image-rendering:-webkit-optimize-contrast;" />
+            <span style="font-weight:bold;">Admin Panel</span>
+          </div>
+          <div style="font-style: italic; color: #555;">Original for Recipient</div>
+        </div>
+
+      </div>`;
+    }
+
+    function buildB2BInvoiceHTML(order) {
+      const customer = order.customer || {};
+      const custName = customer.name || 'Customer';
+      const custAddr = customer.address || '';
+      const custCity = customer.city || '';
+      const custState = customer.state || '';
+      const custPincode = customer.pincode || '';
+      const custPhone = customer.phone || '';
+      const custGstin = customer.gstin || '';
+      
+      const isIntraState = custState.toLowerCase().includes('uttar pradesh') || custState.toLowerCase() === 'up';
+
+      const items = order.items || [];
+      const subtotal = items.reduce((s, i) => s + ((i.price || 0) * (i.quantity || i.qty || 1)), 0);
+      const totalQty = items.reduce((s, i) => s + (i.quantity || i.qty || 1), 0);
+      const shipCost = order.shipping || 0;
+      const totalOrderDiscount = order.discount || 0;
+      
+      const receivedAmount = order.customer?.amount_received || 0;
+      const actualGrandTotal = subtotal + shipCost - totalOrderDiscount;
+      const roundedGrandTotal = Math.round(actualGrandTotal);
+      
+      // FIX: Use the actual saved order amount if it exists, otherwise fallback to recalculation.
+      // The recalculation above forgets to add GST for B2B orders!
+      let grandTotal = parseFloat(order.amount || order.total || 0);
+      if (!grandTotal || grandTotal <= 0) {
+          grandTotal = roundedGrandTotal;
+      }
+      
+      const roundOffAmount = grandTotal - actualGrandTotal;
+      
+      const isPaid = (order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid';
+      let displayReceived = (typeof receivedAmount !== 'undefined' ? receivedAmount : 0);
+      let amountDue = grandTotal - displayReceived;
+
+      if (isPaid) {
+          amountDue = 0;
+          displayReceived = grandTotal;
+      }
+
+      const orderId = order.orderId || order.order_id || '';
+      const invoiceNumber = `IN-${orderId.replace(/[^0-9]/g, '').slice(-5)}`;
+      const createdAt = order.createdAt || order.created_at || Date.now();
+      const invoiceDateRaw = new Date(createdAt);
+      const invoiceDate = invoiceDateRaw.toLocaleDateString('en-GB'); 
+      const _intPart2 = Math.floor(grandTotal);
+      const _decPart2 = Math.round((grandTotal - _intPart2) * 100);
+      const amountInWords = (typeof numberToWords === 'function') 
+        ? (_decPart2 > 0 
+            ? numberToWords(_intPart2) + ' Rupees and ' + numberToWords(_decPart2) + ' Paise Only' 
+            : numberToWords(_intPart2) + ' Rupees Only')
+        : (_decPart2 > 0 
+            ? `${_intPart2} Rupees and ${_decPart2} Paise Only` 
+            : `${_intPart2} Rupees Only`);
+
+      const storeName = settings.store_name || 'Admin Panel';
+      const storeGst = settings.gst_number || '22AAAAA0000A1Z5';
+      
+      let originalGst = 0;
+      let originalGoodsTotal = 0;
+      items.forEach(item => {
+        const qty = item.quantity || item.qty || 1;
+        const lineTaxable = (item.price || 0) * qty;
+        const gstRate = parseFloat(item.gst_rate) || 5;
+        const lineGst = lineTaxable * (gstRate / 100);
+        originalGst += lineGst;
+        originalGoodsTotal += (lineTaxable + lineGst);
+      });
+
+      const targetGoodsTotal = Math.max(0, grandTotal - shipCost);
+      const discountFactor = originalGoodsTotal > 0 ? (targetGoodsTotal / originalGoodsTotal) : 1;
+
+      let totalTaxAmount = 0;
+      let totalTaxableValue = 0;
+      let totalDiscountAmount = 0;
+      
+      const gstBreakdown = {};
+
+      let runningLineTotal = 0;
+
+      const invRowsHTML = items.map((item, idx) => {
+        const hsn = item.hsn_code || '0813';
+        const gstRate = item.gst_rate !== undefined && item.gst_rate !== null ? parseFloat(item.gst_rate) : 5;
+        const variantText = item.weight || item.variant || '';
+        const displayName = variantText ? `${esc(item.name)} ${esc(variantText)}` : esc(item.name);
+        const qty = item.quantity || item.qty || 1;
+        
+        const originalTaxable = (item.price || 0) * qty;
+        const newUnitPrice = originalTaxable > 0 ? ((item.price || 0) * discountFactor) : 0;
+        const newTaxable = round2(originalTaxable * discountFactor);
+        const discountOnTaxable = round2(originalTaxable - newTaxable);
+        
+        let newGst = round2(newTaxable * (gstRate / 100));
+        let newLineTotal = round2(newTaxable + newGst);
+        
+        // Last item absorbs any fractional rounding difference to ensure perfect sum
+        if (idx === items.length - 1) {
+            const expectedTotalForThisItem = round2(targetGoodsTotal - runningLineTotal);
+            if (newLineTotal !== expectedTotalForThisItem) {
+                newLineTotal = expectedTotalForThisItem;
+                newGst = round2(newLineTotal - newTaxable);
+            }
+        }
+        
+        runningLineTotal += newLineTotal;
+        
+        totalDiscountAmount += discountOnTaxable;
+        totalTaxAmount += newGst;
+        totalTaxableValue += newTaxable;
+        
+        if(!gstBreakdown[hsn]) {
+            gstBreakdown[hsn] = { taxableValue: 0, taxAmount: 0, rate: gstRate };
+        }
+        gstBreakdown[hsn].taxableValue += newTaxable;
+        gstBreakdown[hsn].taxAmount += newGst;
+
+        return `<tr>
+          <td class="b2b-td b2b-center">${idx+1}</td>
+          <td class="b2b-td">${displayName}</td>
+          <td class="b2b-td b2b-center">${esc(hsn)}</td>
+          <td class="b2b-td b2b-center">${qty}</td>
+          <td class="b2b-td b2b-right">${((item.price || 0)).toFixed(2)}</td>
+          <td class="b2b-td b2b-right">${discountOnTaxable.toFixed(2)}</td>
+          <td class="b2b-td b2b-right">${newGst.toFixed(2)}<br/><span style="font-size:8px;">(${gstRate}%)</span></td>
+          <td class="b2b-td b2b-right b2b-bold">${newLineTotal.toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+      
+      let shippingRow = '';
+      if (shipCost > 0) {
+        shippingRow = `<tr>
+          <td class="b2b-td" colspan="7" style="text-align:right; font-weight:bold; font-style:italic;">Shipping & Handling</td>
+          <td class="b2b-td b2b-right b2b-bold">₹ ${shipCost.toFixed(2)}</td>
+        </tr>`;
+      }
+      
+      const breakdownHtml = Object.keys(gstBreakdown).map(hsn => {
+          const bd = gstBreakdown[hsn];
+          
+          if(isIntraState) {
+              const halfTax = bd.taxAmount / 2;
+              const halfRate = bd.rate / 2;
+              return `<tr>
+                <td class="b2b-td b2b-right">${hsn}</td>
+                <td class="b2b-td b2b-right">${bd.taxableValue.toFixed(2)}</td>
+                <td class="b2b-td b2b-right">${halfRate}%</td>
+                <td class="b2b-td b2b-right">${halfTax.toFixed(2)}</td>
+                <td class="b2b-td b2b-right">${halfRate}%</td>
+                <td class="b2b-td b2b-right">${halfTax.toFixed(2)}</td>
+                <td class="b2b-td b2b-right">₹ ${bd.taxAmount.toFixed(2)}</td>
+              </tr>`;
+          } else {
+              return `<tr>
+                <td class="b2b-td b2b-right">${hsn}</td>
+                <td class="b2b-td b2b-right">${bd.taxableValue.toFixed(2)}</td>
+                <td class="b2b-td b2b-right">${bd.rate}%</td>
+                <td class="b2b-td b2b-right">${bd.taxAmount.toFixed(2)}</td>
+                <td class="b2b-td b2b-right">₹ ${bd.taxAmount.toFixed(2)}</td>
+              </tr>`;
+          }
+      }).join('');
+      
+      const taxHeaders = isIntraState 
+        ? `<th class="b2b-th">Rate</th><th class="b2b-th">Amount</th><th class="b2b-th">Rate</th><th class="b2b-th">Amount</th>`
+        : `<th class="b2b-th">Rate</th><th class="b2b-th">Amount</th>`;
+        
+      const taxSuperHeaders = isIntraState 
+        ? `<th class="b2b-th" colspan="2" style="border-bottom: 1px solid #000;">CGST</th><th class="b2b-th" colspan="2" style="border-bottom: 1px solid #000;">SGST</th>`
+        : `<th class="b2b-th" colspan="2" style="border-bottom: 1px solid #000;">IGST</th>`;
+
+      return `
+      <div class="b2b-invoice-wrapper" style="width: 100%; max-width: 800px; margin: 0 auto; border: 1px solid #000; font-family: 'Inter', sans-serif; background: white; font-size: 11px; color: #000;">
+        
+        <!-- Header -->
+        <div style="display: flex; border-bottom: 1px solid #000;">
+          <div style="flex: 1; padding: 15px; border-right: 1px solid #000;">
+            ${settings.parent_company_name ? 
+              `<div style="font-size: 16px; font-weight: bold; margin-bottom: 2px;">${settings.parent_company_name}</div>
+               <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px;">(${settings.brand_name || settings.store_name || 'Your Brand'})</div>` :
+              `<div style="font-size: 18px; font-weight: bold; margin-bottom: 6px;">${settings.brand_name || settings.store_name || 'Your Brand'}</div>`
+            }
+            <div style="display: flex; gap: 8px;">
+                <img src="/logo-Your Brand.webp" style="width: 60px; height: 60px; object-fit: contain; filter: grayscale(100%);" />
+                <div style="line-height: 1.3;">
+                  ${(settings.contact_address || 'Bagh No.3, Demo Street, Demo Area Main Road, City, Uttar Pradesh, 226008').replace(/\\n/g, '<br/>')}
+                  <br/>
+                  <div style="display:flex; gap:10px; margin-top:4px;">
+                      <div><b>GSTIN:</b><br/>${storeGst}</div>
+                      <div><b>Mobile:</b><br/>${settings.contact_phone || '9876543211'}</div>
+                  </div>
+                  <div style="margin-top:2px;"><b>PAN Number:</b> ${settings.pan_number || 'ACHFA6676K'}</div>
+                  <div><b>Email:</b> ${settings.contact_email || 'sales.Your Brand@gmail.com'}</div>
+                  <div><b>Your Brand:</b> {Astro.url.host}</div>
+                </div>
+            </div>
+          </div>
+          
+          <div style="width: 320px; padding: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">
+            <div style="position: absolute; top: -25px; left: -100px; font-weight: bold; font-size: 14px; display: flex; gap: 10px;">
+                <span>${(order.source === 'quotation' || order.status === 'quotation') ? 'QUOTATION' : 'TAX INVOICE'}</span>
+                <span style="border: 1px solid #999; padding: 2px 5px; font-weight: normal; font-size: 10px; color: #666;">ORIGINAL FOR RECIPIENT</span>
+            </div>
+            
+            <div style="display:flex; width: 100%; justify-content: space-between; text-align: center; margin-top: 20px;">
+                <div>
+                    <div style="font-weight: bold;">${(order.source === 'quotation' || order.status === 'quotation') ? 'Quotation' : 'Invoice'} No.</div>
+                    <div style="margin-top:4px;">${orderId}</div>
+                </div>
+                <div>
+                    <div style="font-weight: bold;">${(order.source === 'quotation' || order.status === 'quotation') ? 'Quotation' : 'Invoice'} Date</div>
+                    <div style="margin-top:4px;">${invoiceDate}</div>
+                </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bill To / Ship To -->
+        <div style="display: flex; border-bottom: 1px solid #000;">
+          <div style="flex: 1; padding: 10px; border-right: 1px solid #000; line-height: 1.4;">
+            <div style="font-weight: bold; margin-bottom: 4px;">BILL TO</div>
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px; text-transform: uppercase;">${esc(custName)}</div>
+            <div>Address: ${esc(custAddr)}, ${esc(custCity)}, ${esc(custState)}, ${esc(custPincode)}</div>
+            <div>GSTIN: ${esc(custGstin)} &nbsp;&nbsp;&nbsp; Place of Supply: ${esc(custState)}</div>
+            <div>Mobile: ${esc(custPhone)}</div>
+          </div>
+          <div style="width: 320px; padding: 10px; line-height: 1.4;">
+            <div style="font-weight: bold; margin-bottom: 4px;">SHIP TO</div>
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px; text-transform: uppercase;">${esc(custName)}</div>
+            <div>Address: ${esc(custAddr)}, ${esc(custCity)}, ${esc(custState)}, ${esc(custPincode)}</div>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead style="background: #f8f8f8;">
+            <tr style="border-bottom: 1px solid #000;">
+              <th class="b2b-th w-[40px]">S.NO.</th>
+              <th class="b2b-th text-left">ITEMS</th>
+              <th class="b2b-th w-[70px]">HSN</th>
+              <th class="b2b-th w-[60px]">QTY.</th>
+              <th class="b2b-th w-[70px]">RATE</th>
+              <th class="b2b-th w-[80px]">DISCOUNT</th>
+              <th class="b2b-th w-[70px]">TAX</th>
+              <th class="b2b-th w-[90px]">AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${invRowsHTML}
+            ${shippingRow}
+            
+            <tr style="background: #f8f8f8; font-weight: bold; border-top: 1px solid #000; border-bottom: 1px solid #000;">
+              <td class="b2b-td" colspan="3" style="text-align:center;">TOTAL</td>
+              <td class="b2b-td b2b-center">${totalQty}</td>
+              <td class="b2b-td" colspan="3"></td>
+              <td class="b2b-td b2b-right">₹ ${grandTotal.toFixed(2)}</td>
+            </tr>
+            
+            ${displayReceived >= 0 ? `
+            <tr style="font-weight: bold; border-bottom: 1px solid #000;">
+              <td class="b2b-td" colspan="7" style="text-align:center;">RECEIVED AMOUNT</td>
+              <td class="b2b-td b2b-right">₹ ${displayReceived.toFixed(2)}</td>
+            </tr>` : ''}
+            
+            ${amountDue > 0 ? `
+            <tr style="font-weight: bold; border-bottom: 1px solid #000; color: #dc2626;">
+              <td class="b2b-td" colspan="7" style="text-align:center;">BALANCE DUE</td>
+              <td class="b2b-td b2b-right">₹ ${amountDue.toFixed(2)}</td>
+            </tr>` : ''}
+            
+          </tbody>
+        </table>
+
+        <!-- GST Breakdown Table -->
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead style="background: #f8f8f8; border-bottom: 1px solid #000;">
+            <tr>
+              <th class="b2b-th" rowspan="2">HSN/SAC</th>
+              <th class="b2b-th" rowspan="2">Taxable Value</th>
+              ${taxSuperHeaders}
+              <th class="b2b-th" rowspan="2">Total Tax Amount</th>
+            </tr>
+            <tr>
+              ${taxHeaders}
+            </tr>
+          </thead>
+          <tbody>
+            ${breakdownHtml}
+          </tbody>
+        </table>
+
+        <!-- Footer -->
+        <div style="border-top: 1px solid #000; padding: 6px 10px;">
+          <div style="font-weight: bold;">Total Amount (in words)</div>
+          <div>${amountInWords}</div>
+        </div>
+        
+        <div style="display: flex; border-top: 1px solid #000; min-height: 120px;">
+          <div style="flex: 1; padding: 10px; border-right: 1px solid #000;">
+            <div style="font-weight: bold; margin-bottom: 6px;">Bank Details</div>
+            <div style="display: grid; grid-template-columns: 80px 1fr; gap: 4px;">
+                <div style="color: #444;">Name:</div><div style="font-weight:500;">${settings.bank_account_name || 'Company Name'}</div>
+                <div style="color: #444;">IFSC Code:</div><div style="font-weight:500;">${settings.bank_ifsc || 'UTIB0004493'}</div>
+                <div style="color: #444;">Account No:</div><div style="font-weight:500;">${settings.bank_account || '925020026776363'}</div>
+                <div style="color: #444;">Bank:</div><div style="font-weight:500;">${settings.bank_name || 'Axis Bank, TRANSPORT NAGAR City'}</div>
+            </div>
+          </div>
+          <div style="flex: 1.2; padding: 10px; border-right: 1px solid #000;">
+            <div style="font-weight: bold; margin-bottom: 6px;">Terms and Conditions</div>
+            <ol style="margin: 0; padding-left: 14px; font-size: 9px; line-height: 1.3;">
+                ${(settings.b2b_terms || '1. Thanks for doing business with us.\\n2. Interest will be charged @24% if payment is not made within 30 days.\\n3. Goods once sold will not be taken back.\\n4. GST and other taxes as applicable.\\n5. All disputes are subject to City jurisdiction only.').split(/\\n|\n/).map((t) => '<li>' + esc(t.replace(/^\\d+\\.\\s*/, '')) + '</li>').join('')}
+            </ol>
+          </div>
+          <div style="width: 250px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; text-align: center;">
+            <div style="font-weight: bold; margin-bottom: 20px;">${settings.authorized_signatory || 'Company Name (Your Brand)'}</div>
+            ${settings.authorized_signatory_image ? `<div style="margin-bottom: 10px;"><img src="${settings.authorized_signatory_image}" style="max-height: 40px; max-width: 150px; margin: 0 auto; display: block;" /></div>` : ''}
+            <div>
+                <div>Authorised Signatory</div>
+                <div style="font-size: 8px; font-style: italic; color: #555; margin-top: 10px; line-height: 1.2;">This is a computer generated invoice and does not require a physical signature.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      `;
+    }
+
+    function buildInvoiceHTML(order) {
+        if (order.is_b2b || (order.customer && order.customer.is_b2b)) {
+            return buildB2BInvoiceHTML(order);
+        } else {
+            return buildB2CInvoiceHTML(order);
+        }
+    }
+
+
+
+
+
+
+
+
+
+window.addEventListener('DOMContentLoaded', () => {
+  const loadingEl = document.getElementById('loading-screen');
+  const actionEl = document.getElementById('action-screen');
+  const errorEl = document.getElementById('error-screen');
+  const wrapperEl = document.getElementById('page-wrapper');
+  const countLabel = document.getElementById('order-count-label');
+  const btnDownload = document.getElementById('btn-download');
+  
+  if(wrapperEl) wrapperEl.style.display = 'none';
+
+  function esc(str) { return String(str || ''); }
+  
+  const parseNum = (val, defaultVal = 0) => {
+      if (val === undefined || val === null || val === '') return defaultVal;
+      if (typeof val === 'number') return val;
+      const clean = String(val).replace(/,/g, '');
+      const num = parseFloat(clean);
+      return isNaN(num) ? defaultVal : num;
+  };
+
+  const parseQty = (item) => {
+      if (item.quantity !== undefined && item.quantity !== null && item.quantity !== '') return Number(item.quantity);
+      if (item.qty !== undefined && item.qty !== null && item.qty !== '') return Number(item.qty);
+      return 1;
+  };
+
+  const safeDate = (dateStr) => {
+      if (!dateStr) return new Date();
+      let d = new Date(dateStr);
+      return isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const round2 = (n) => Math.round(parseNum(n) * 100) / 100;
+  
+  function safeBarcode(val) {
+      if (!val) return {text: '', width: 0};
+      try {
+          return { image: generateBarcodeBase64(val), width: 140, alignment: 'center', margin:[0,5,0,5] };
+      } catch (e) {
+          console.warn("Barcode generation failed for", val, e);
+          return {text: '', width: 0};
+      }
+  }
+
+  function getB2CDefinition(order, storeSettings, logoB64, signatureB64) {
+      if(!order) return null;
+      const customer = order.customer || {};
+      const shipping = (order.shipping && typeof order.shipping === 'object') ? order.shipping : customer;
+      const custName = String(customer.name || order.customer_name || order.customerName || 'Customer');
+      const shipName = String(shipping.name || custName);
+      const shipAddr = String(shipping.address || shipping.street_address || shipping.street || '').replace(/<br\s*\/?>/gi, '\n');
+      const shipCity = String(shipping.city || '');
+      const shipState = String(shipping.state || '');
+      const shipPincode = String(shipping.pincode || shipping.postal_code || '');
+      const shipPhone = String(shipping.phone || customer.phone || '');
+
+      const awb = String(order.awb || order.awb_number || '');
+      const routing = String(order.routingCode || order.routing_code || 'STD');
+      const courier = String(order.courierPartner || order.courier_partner || '');
+      const weight = String(order.packageWeight || order.package_weight || '0.50 KG');
+
+      const payMethod = String(order.paymentMethod || order.payment_method || order.payment || 'cod').toLowerCase();
+      const isCOD = payMethod === 'cod';
+      const isPaid = String(order.paymentStatus || order.payment_status || '').toLowerCase() === 'paid';
+
+      const items = Array.isArray(order.items) ? order.items : [];
+      const subtotal = items.reduce((s, i) => s + (parseNum(i.price) * parseQty(i)), 0);
+      const totalQty = items.reduce((s, i) => s + parseQty(i), 0);
+      
+      const threshold = storeSettings.free_shipping_threshold !== undefined && storeSettings.free_shipping_threshold !== null && storeSettings.free_shipping_threshold !== '' ? parseNum(storeSettings.free_shipping_threshold) : 499;
+      const flatRate = storeSettings.flat_shipping_rate !== undefined && storeSettings.flat_shipping_rate !== null && storeSettings.flat_shipping_rate !== '' ? parseNum(storeSettings.flat_shipping_rate) : 60;
+      
+      const shipCost = subtotal >= threshold ? 0 : flatRate;
+      const totalOrderDiscount = parseNum(order.discount);
+      const grandTotal = subtotal + shipCost - totalOrderDiscount;
+
+      const orderIdSafe = String(order.orderId || order.order_number || order.id || Date.now());
+      const invoiceNumber = `IN-${String(orderIdSafe).replace(/[^0-9]/g, '').padStart(5, '0').slice(-5)}`;
+      
+      const invoiceDate = safeDate(order.createdAt || order.created_at || order.date).toLocaleDateString('en-GB'); 
+      const _intPart3 = Math.floor(grandTotal);
+      const _decPart3 = Math.round((grandTotal - _intPart3) * 100);
+      const amountInWords = (typeof numberToWords === 'function') 
+        ? (_decPart3 > 0 
+            ? numberToWords(_intPart3) + ' Rupees and ' + numberToWords(_decPart3) + ' Paise Only' 
+            : numberToWords(_intPart3) + ' Rupees Only')
+        : (_decPart3 > 0 
+            ? `${_intPart3} Rupees and ${_decPart3} Paise Only` 
+            : `${_intPart3} Rupees Only`);
+
+      const storeName = String(storeSettings.store_name || 'Admin Panel');
+      const storeAddr = String(storeSettings.store_address || '123 Demo Street, City, State, 123456').replace(/<br\s*\/?>/gi, '\n');
+      const storeGst = String(storeSettings.gst_number || '22AAAAA0000A1Z5');
+
+      let totalTaxAmount = 0;
+      const isIntraState = shipState.toLowerCase().includes('uttar pradesh') || shipState.toLowerCase() === 'up';
+
+      const tableBody = [
+        [{text:'#', bold:true, alignment:'center'}, {text:'Product Name', bold:true}, {text:'HSN', bold:true}, {text:'Qty', bold:true}, {text:'Unit Price', bold:true}, {text:'Gross Amt', bold:true}, {text:'Discount', bold:true}, {text:'Taxable Amt', bold:true}, {text:'Tax', bold:true}, {text:'Total', bold:true}]
+      ];
+
+      items.forEach((item, idx) => {
+        const hsn = String(item.hsn_code || '0813');
+        const gstRate = item.gst_rate !== undefined && item.gst_rate !== null && item.gst_rate !== '' ? parseNum(item.gst_rate) : 5;
+        const variantText = String(item.weight || item.variant || '');
+        const displayName = variantText ? `${esc(item.name)} - ${esc(variantText)}` : esc(item.name);
+        const skuText = item.sku ? `SKU: ${esc(item.sku)} | HSN: ${esc(hsn)}` : `HSN: ${esc(hsn)}`;
+        const qty = parseQty(item);
+        
+        const lineGross = parseNum(item.price) * qty;
+        let itemDiscount = 0;
+        if (subtotal > 0 && totalOrderDiscount > 0) {
+            itemDiscount = (lineGross / subtotal) * totalOrderDiscount;
+        }
+        
+        const lineNetAfterDiscount = round2(lineGross - itemDiscount);
+        const baseRate = round2(lineNetAfterDiscount / (1 + (gstRate / 100)));
+        const taxAmount = round2(lineNetAfterDiscount - baseRate);
+        totalTaxAmount += taxAmount;
+        
+        let taxTypeStr = isIntraState ? `CGST/SGST` : `IGST`;
+        let taxRateStr = isIntraState ? `${round2(gstRate/2)}%` : `${gstRate}%`;
+
+        tableBody.push([
+            {text: (idx+1).toString(), alignment:'center'},
+            {stack: [{text: displayName, bold: true}, {text: skuText, fontSize: 8, color: '#333'}]},
+            {text: esc(hsn)},
+            {text: qty.toString()},
+            {text: `₹${parseNum(item.price).toFixed(2)}`},
+            {text: `₹${lineGross.toFixed(2)}`},
+            {text: `-₹${itemDiscount.toFixed(2)}`, color: '#16a34a'},
+            {text: `₹${baseRate.toFixed(2)}`},
+            {text: `${taxTypeStr} (${taxRateStr})\n₹${taxAmount.toFixed(2)}`},
+            {text: `₹${lineNetAfterDiscount.toFixed(2)}`, bold:true}
+        ]);
+      });
+
+      if (shipCost > 0) {
+        let taxTypeStr = isIntraState ? `CGST/SGST` : `IGST`;
+        let shipBase = round2(shipCost / 1.18);
+        let shipTax = round2(shipCost - shipBase);
+        totalTaxAmount += shipTax;
+        tableBody.push([
+            {text: (items.length + 1).toString(), alignment:'center'},
+            {text: 'Shipping Charges', bold: true},
+            {text: '9968'},
+            {text: '1'},
+            {text: `₹${shipCost.toFixed(2)}`},
+            {text: `₹${shipCost.toFixed(2)}`},
+            {text: `-₹0.00`},
+            {text: `₹${shipBase.toFixed(2)}`},
+            {text: `${taxTypeStr} (18%)\n₹${shipTax.toFixed(2)}`},
+            {text: `₹${shipCost.toFixed(2)}`, bold:true}
+        ]);
+      }
+
+      const topBarcodeSrc = awb ? safeBarcode(awb) : safeBarcode(orderIdSafe);
+      const btmBarcodeSrc = safeBarcode(orderIdSafe);
+
+      const codText = isCOD ? (isPaid ? 'COD (PAID)' : 'COD') : 'PREPAID';
+      const codVal = (isCOD && !isPaid) ? grandTotal.toFixed(2) : '0.00';
+
+      return {
+          content: [
+              // Header
+              {
+                  table: {
+                      widths: ['*', 'auto'],
+                      body: [
+                          [
+                              {
+                                  columns: [
+                                      logoB64 ? { image: logoB64, width: 40, margin: [0,0,10,0] } : {text: '', width: 0},
+                                      { text: storeName, fontSize: 24, bold: true, margin: [0, 5, 0, 0] }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              { text: (order.source === 'quotation' || order.status === 'quotation') ? 'QUOTATION' : 'TAX INVOICE', bold: true, fontSize: 16, margin: [10, 20, 10, 10], alignment: 'right' }
+                          ]
+                      ]
+                  },
+                  layout: { hLineWidth: i => i===0?2:0, vLineWidth: i => (i===0||i===2)?2:0, paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0 }
+              },
+              
+              // Row 1: TO and Barcode
+              {
+                  table: {
+                      widths: ['*', 250],
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      { text: 'To:', fontSize: 14, bold: true, margin: [0,0,0,5] },
+                                      { text: shipName.toUpperCase(), fontSize: 18, bold: true },
+                                      { text: `${shipAddr}\n${shipCity}, ${shipState}`, margin: [0,5,0,5], fontSize: 13, lineHeight: 1.2 },
+                                      { text: shipPincode, bold: true, fontSize: 13 },
+                                      { text: `Ph: ${shipPhone}`, bold: true, fontSize: 13, margin: [0,5,0,0] }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              {
+                                  stack: [
+                                      { text: `AWB: ${awb || 'Not Assigned'}`, alignment: 'center', fontSize: 12, margin: [0,0,0,5] },
+                                      topBarcodeSrc,
+                                      { text: `Routing Code: ${routing}`, alignment: 'center', bold: true, fontSize: 12, margin: [0,5,0,10] },
+                                      {
+                                          columns: [
+                                              { text: 'Dimensions: 13*13*13 CM', fontSize: 11 },
+                                              { text: `Weight: ${weight}`, fontSize: 11, alignment: 'right' }
+                                          ]
+                                      }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              }
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: i => i===0?2:0,
+                      vLineWidth: i => i===0?2 : i===1?2 : i===2?2:0,
+                      paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0
+                  }
+              },
+              
+              // Row 2: COD Info
+              {
+                  table: {
+                      widths: ['*', 'auto'],
+                      body: [
+                          [
+                              { text: `${codText} (Collectable Value: ₹${codVal})`, bold: true, fontSize: 13, margin: [10, 8, 10, 8] },
+                              { text: courier, bold: true, fontSize: 13, alignment: 'right', margin: [10, 8, 10, 8] }
+                          ]
+                      ]
+                  },
+                  layout: { hLineWidth: i => i===0?2:0, vLineWidth: i => (i===0||i===2)?2:0, paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0 }
+              },
+
+              // Row 3: Order Stats
+              {
+                  table: {
+                      widths: ['*', '*', '*'],
+                      body: [
+                          [
+                              { text: `Number of Skus: ${items.length}`, bold: true, fontSize: 12, margin: [10, 8, 10, 8] },
+                              { text: `Total Quantity: ${totalQty}`, bold: true, fontSize: 12, alignment: 'center', margin: [10, 8, 10, 8] },
+                              { text: `Order Id: ${orderIdSafe}`, bold: true, fontSize: 12, alignment: 'right', margin: [10, 8, 10, 8] }
+                          ]
+                      ]
+                  },
+                  layout: { hLineWidth: i => i===0?2:0, vLineWidth: i => (i===0||i===3)?2:0, paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0 }
+              },
+
+              // Row 4: FROM and Invoice Info
+              {
+                  table: {
+                      widths: ['*', 250],
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      { text: 'From:', fontSize: 12, italics: true },
+                                      { text: storeName, fontSize: 16, bold: true, italics: true, margin: [0,0,0,5] },
+                                      { text: storeAddr, fontSize: 11, color: '#333' },
+                                      { text: [{text:'GSTIN: ', bold:true}, storeGst], fontSize: 11, margin:[0,5,0,0] }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              {
+                                  stack: [
+                                      {
+                                          columns: [
+                                              { text: [{text: ((order.source === 'quotation' || order.status === 'quotation') ? 'Quotation' : 'Invoice') + ' No: ', bold:true}, invoiceNumber], fontSize: 11 },
+                                              { text: [{text:'Date: ', bold:true}, invoiceDate], fontSize: 11, alignment: 'right' }
+                                          ],
+                                          margin: [0,0,0,10]
+                                      },
+                                      btmBarcodeSrc,
+                                      { text: [{text:'Place of Supply: ', bold:true}, {text: shipState.toUpperCase(), bold:true}], fontSize: 11, alignment: 'center' }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              }
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: i => i===0?2:0,
+                      vLineWidth: i => i===0?2 : i===1?2 : i===2?2:0,
+                      paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0
+                  }
+              },
+              
+              // Product Table
+              {
+                  table: {
+                      headerRows: 1,
+                      widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                      dontBreakRows: true,
+                      body: tableBody
+                  },
+                  layout: {
+                      hLineWidth: function (i, node) { return (i === 0) ? 2 : (i === 1) ? 2 : 1; },
+                      vLineWidth: function (i, node) { return (i === 0 || i === node.table.widths.length) ? 2 : 1; },
+                      paddingLeft: function(i, node) { return 6; },
+                      paddingRight: function(i, node) { return 6; },
+                      paddingTop: function(i, node) { return 6; },
+                      paddingBottom: function(i, node) { return 6; },
+                  },
+                  fontSize: 9
+              },
+              
+              // Totals
+              {
+                  table: {
+                      widths: ['*', 'auto', 'auto'],
+                      body: [
+                          [
+                              {text: 'GRAND TOTAL (Incl. GST):', bold: true, alignment: 'right', margin: [0, 5, 0, 5]},
+                              {text: `₹${totalTaxAmount.toFixed(2)}`, bold: true, margin: [6, 5, 6, 5]},
+                              {text: `₹${grandTotal.toFixed(2)}`, bold: true, margin: [6, 5, 6, 5]}
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: function (i, node) { return (i === 0) ? 2 : 0; },
+                      vLineWidth: function (i, node) { return (i === 0 || i === 3) ? 2 : 1; },
+                      paddingLeft: function(i, node) { return 0; },
+                      paddingRight: function(i, node) { return 0; },
+                      paddingTop: function(i, node) { return 0; },
+                      paddingBottom: function(i, node) { return 0; },
+                  },
+                  fontSize: 10
+              },
+
+              // Footer
+              {
+                  table: {
+                      widths: ['*'],
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      { text: `Amount in Words: ${amountInWords}`, bold: true, fontSize: 11, margin: [0,0,0,5] },
+                                      { text: [{text:'NOTE: ', bold:true, color:'black'}, `If outer packaging/label is found tempered/damaged, do not accept parcel. All disputes are subject to ${storeSettings.jurisdiction || 'Uttar Pradesh'} jurisdiction only.`], fontSize: 10, color: '#333' }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              }
+                          ],
+                          [
+                              {
+                                  columns: [
+                                      {
+                                          columns: [
+                                              { text: 'Powered By: ', bold: true, width: 'auto', margin: [0,2,5,0] },
+                                              logoB64 ? { image: logoB64, width: 20, margin: [0,0,5,0] } : {text: '', width: 0},
+                                              { text: storeName, bold: true, width: 'auto', margin: [0,2,0,0] }
+                                          ]
+                                      },
+                                      { text: 'Original for Recipient', italics: true, color: '#555', alignment: 'right', margin: [0,2,0,0] }
+                                  ],
+                                  margin: [10, 8, 10, 8],
+                                  fontSize: 10
+                              }
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: function (i, node) { return (i === 0) ? 2 : (i === 1) ? 1 : (i === 2) ? 2 : 0; },
+                      vLineWidth: function (i, node) { return (i === 0 || i === 1) ? 2 : 0; },
+                      paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0
+                  }
+              }
+          ],
+          styles: {
+              defaultStyle: { font: 'Roboto' }
+          },
+          pageMargins: [20, 20, 20, 20],
+          defaultStyle: {
+              columnGap: 20
+          }
+      };
+  }
+
+  function getB2BDefinition(order, storeSettings, logoB64, signatureB64) {
+      if(!order) return null;
+      const termsStr = String(storeSettings.b2b_terms || `1. Thanks for doing business with us.\n2. Interest will be charged @24% if payment is not made within 30 days.\n3. Goods once sold will not be taken back.\n4. GST and other taxes as applicable.\n5. All disputes are subject to City jurisdiction only.`);
+      
+      let termsArray = termsStr.split(/\n/).map(t => t.replace(/^\d+\.\s*/, '').trim()).filter(t => t);
+      if(termsArray.length === 0) termsArray = ["Thanks for doing business with us."];
+
+      const customer = order.customer || {};
+      const shipping = (order.shipping && typeof order.shipping === 'object') ? order.shipping : customer;
+
+      const custName = String(customer.name || order.customer_name || order.customerName || 'Customer');
+      const custAddr = String(customer.address || customer.street_address || customer.street || '').replace(/<br\s*\/?>/gi, '\n');
+      const custCity = String(customer.city || '');
+      const custState = String(customer.state || '');
+      const custPincode = String(customer.pincode || customer.postal_code || '');
+      const custPhone = String(customer.phone || order.phone || '');
+      const custGstin = String(customer.gstin || '');
+      
+      const shipName = String(shipping.name || custName);
+      const shipAddr = String(shipping.address || shipping.street_address || shipping.street || custAddr).replace(/<br\s*\/?>/gi, '\n');
+      const shipCity = String(shipping.city || custCity);
+      const shipState = String(shipping.state || custState);
+      const shipPincode = String(shipping.pincode || shipping.postal_code || custPincode);
+
+      const isIntraState = shipState.toLowerCase().includes('uttar pradesh') || shipState.toLowerCase() === 'up';
+      const items = Array.isArray(order.items) ? order.items : [];
+      const subtotal = items.reduce((s, i) => s + (parseNum(i.price) * parseQty(i)), 0);
+      const totalQty = items.reduce((s, i) => s + parseQty(i), 0);
+      
+      const shipCostObj = order.shipping !== undefined && order.shipping !== null && typeof order.shipping !== 'object' ? order.shipping : order.shipping_cost;
+      const shipCost = parseNum(shipCostObj);
+      
+      const receivedAmountObj = order.customer?.amount_received !== undefined ? order.customer.amount_received : order.amount_received;
+      const receivedAmount = parseNum(receivedAmountObj);
+      const storeGst = String(storeSettings.gst_number || '22AAAAA0000A1Z5');
+      let grandTotal = parseNum(order.amount !== undefined ? order.amount : order.total);
+      
+      const originalGoodsTotal = items.reduce((s, item) => {
+        const qty = parseQty(item);
+        const lineTaxable = parseNum(item.price) * qty;
+        const gstRate = item.gst_rate !== undefined && item.gst_rate !== null && item.gst_rate !== '' ? parseNum(item.gst_rate) : 5;
+        return s + lineTaxable + lineTaxable * (gstRate / 100);
+      }, 0);
+      
+      const targetGoodsTotal = Math.max(0, grandTotal - shipCost);
+      const discountFactor = originalGoodsTotal > 0 ? (targetGoodsTotal / originalGoodsTotal) : 1;
+      let totalTaxAmount = 0, totalTaxableValue = 0, runningLineTotal = 0;
+      const gstBreakdown = {};
+
+      const tableBody = [
+        [{text:'S.NO.', bold:true, alignment:'center'}, {text:'ITEMS', bold:true}, {text:'HSN', bold:true, alignment:'center'}, {text:'QTY.', bold:true, alignment:'center'}, {text:'RATE', bold:true, alignment:'center'}, {text:'DISCOUNT', bold:true, alignment:'center'}, {text:'TAX', bold:true, alignment:'center'}, {text:'AMOUNT', bold:true, alignment:'center'}]
+      ];
+
+      items.forEach((item, idx) => {
+        const hsn = String(item.hsn_code || '0813');
+        const gstRate = item.gst_rate !== undefined && item.gst_rate !== null && item.gst_rate !== '' ? parseNum(item.gst_rate) : 5;
+        const variantText = String(item.weight || item.variant || '');
+        const displayName = variantText ? `${esc(item.name)} ${esc(variantText)}` : esc(item.name);
+        const qty = parseQty(item);
+        
+        const originalTaxable = parseNum(item.price) * qty;
+        const newTaxable = round2(originalTaxable * discountFactor);
+        const discountOnTaxable = round2(originalTaxable - newTaxable);
+        let newGst = round2(newTaxable * (gstRate / 100));
+        let newLineTotal = round2(newTaxable + newGst);
+        
+        if (idx === items.length - 1) {
+          const expectedTotal = round2(targetGoodsTotal - runningLineTotal);
+          if (newLineTotal !== expectedTotal) { 
+              newLineTotal = expectedTotal; 
+              newGst = round2(newLineTotal - newTaxable); 
+          }
+        }
+        
+        runningLineTotal += newLineTotal;
+        totalTaxAmount += newGst; 
+        totalTaxableValue += newTaxable;
+        
+        if (!gstBreakdown[hsn]) gstBreakdown[hsn] = { taxableValue: 0, taxAmount: 0, rate: gstRate };
+        gstBreakdown[hsn].taxableValue += newTaxable;
+        gstBreakdown[hsn].taxAmount += newGst;
+        
+        tableBody.push([
+            {text: (idx+1).toString(), alignment: 'center'},
+            {text: displayName},
+            {text: esc(hsn), alignment: 'center'},
+            {text: qty.toString(), alignment: 'center'},
+            {text: parseNum(item.price).toFixed(2), alignment: 'right'},
+            {text: discountOnTaxable.toFixed(2), alignment: 'right'},
+            {stack: [{text: newGst.toFixed(2), alignment: 'right'}, {text: `(${gstRate}%)`, fontSize: 7, alignment: 'right'}]},
+            {text: newLineTotal.toFixed(2), alignment: 'right', bold: true}
+        ]);
+      });
+
+      if (shipCost > 0) {
+          tableBody.push([
+              {text: 'Shipping & Handling', colSpan: 7, alignment: 'right', bold: true, italics: true},
+              {},{},{},{},{},{},
+              {text: `₹${shipCost.toFixed(2)}`, alignment: 'right', bold: true}
+          ]);
+      }
+      
+      tableBody.push([
+          {text: 'TOTAL', colSpan: 3, alignment: 'center', bold: true},
+          {},{},
+          {text: totalQty.toString(), alignment: 'center', bold: true},
+          {text: '', colSpan: 3},{},{},
+          {text: `₹${grandTotal.toFixed(2)}`, alignment: 'right', bold: true}
+      ]);
+      
+      if (receivedAmount > 0) {
+          tableBody.push([
+              {text: 'RECEIVED AMOUNT', colSpan: 7, alignment: 'center', bold: true},
+              {},{},{},{},{},{},
+              {text: `₹${receivedAmount.toFixed(2)}`, alignment: 'right', bold: true}
+          ]);
+      }
+      
+      const amountDue = grandTotal - receivedAmount;
+      if (amountDue > 0) {
+          tableBody.push([
+              {text: 'BALANCE DUE', colSpan: 7, alignment: 'center', bold: true, color: '#dc2626'},
+              {},{},{},{},{},{},
+              {text: `₹${amountDue.toFixed(2)}`, alignment: 'right', bold: true, color: '#dc2626'}
+          ]);
+      }
+
+      const breakdownBody = [];
+      if (isIntraState) {
+          breakdownBody.push([
+              {text: 'HSN/SAC', rowSpan: 2, bold: true, alignment: 'center'},
+              {text: 'Taxable Value', rowSpan: 2, bold: true, alignment: 'center'},
+              {text: 'CGST', colSpan: 2, bold: true, alignment: 'center'},
+              {},
+              {text: 'SGST', colSpan: 2, bold: true, alignment: 'center'},
+              {},
+              {text: 'Total Tax Amount', rowSpan: 2, bold: true, alignment: 'center'}
+          ]);
+          breakdownBody.push([
+              {}, {},
+              {text: 'Rate', bold: true, alignment: 'center'}, {text: 'Amount', bold: true, alignment: 'center'},
+              {text: 'Rate', bold: true, alignment: 'center'}, {text: 'Amount', bold: true, alignment: 'center'},
+              {}
+          ]);
+          
+          Object.keys(gstBreakdown).forEach(hsn => {
+            const bd = gstBreakdown[hsn];
+            const h = bd.taxAmount / 2, r = bd.rate / 2;
+            breakdownBody.push([
+                {text: hsn, alignment: 'center'},
+                {text: bd.taxableValue.toFixed(2), alignment: 'right'},
+                {text: `${r}%`, alignment: 'right'},
+                {text: h.toFixed(2), alignment: 'right'},
+                {text: `${r}%`, alignment: 'right'},
+                {text: h.toFixed(2), alignment: 'right'},
+                {text: `₹${bd.taxAmount.toFixed(2)}`, alignment: 'right'}
+            ]);
+          });
+      } else {
+          breakdownBody.push([
+              {text: 'HSN/SAC', rowSpan: 2, bold: true, alignment: 'center'},
+              {text: 'Taxable Value', rowSpan: 2, bold: true, alignment: 'center'},
+              {text: 'IGST', colSpan: 2, bold: true, alignment: 'center'},
+              {},
+              {text: 'Total Tax Amount', rowSpan: 2, bold: true, alignment: 'center'}
+          ]);
+          breakdownBody.push([
+              {}, {},
+              {text: 'Rate', bold: true, alignment: 'center'}, {text: 'Amount', bold: true, alignment: 'center'},
+              {}
+          ]);
+          
+          Object.keys(gstBreakdown).forEach(hsn => {
+            const bd = gstBreakdown[hsn];
+            breakdownBody.push([
+                {text: hsn, alignment: 'center'},
+                {text: bd.taxableValue.toFixed(2), alignment: 'right'},
+                {text: `${bd.rate}%`, alignment: 'right'},
+                {text: bd.taxAmount.toFixed(2), alignment: 'right'},
+                {text: `₹${bd.taxAmount.toFixed(2)}`, alignment: 'right'}
+            ]);
+          });
+      }
+
+      const _intPart4 = Math.floor(grandTotal);
+      const _decPart4 = Math.round((grandTotal - _intPart4) * 100);
+      const amountInWords = (typeof numberToWords === 'function') 
+        ? (_decPart4 > 0 
+            ? numberToWords(_intPart4) + ' Rupees and ' + numberToWords(_decPart4) + ' Paise Only' 
+            : numberToWords(_intPart4) + ' Rupees Only')
+        : (_decPart4 > 0 
+            ? `${_intPart4} Rupees and ${_decPart4} Paise Only` 
+            : `${_intPart4} Rupees Only`);
+      const orderIdObj = String(order.orderId || order.order_number || order.id || Date.now());
+      const invoiceDate = safeDate(order.createdAt || order.created_at || Date.now()).toLocaleDateString('en-GB');
+
+      return {
+          content: [
+              // Header Row
+              {
+                  table: {
+                      widths: ['*', 250],
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      ...(storeSettings.parent_company_name 
+                                        ? [
+                                            {text: String(storeSettings.parent_company_name), fontSize: 18, bold: true},
+                                            {text: `(${String(storeSettings.brand_name || storeSettings.store_name || 'Your Brand')})`, fontSize: 14, bold: true, margin: [0,0,0,4]}
+                                          ]
+                                        : [
+                                            {text: String(storeSettings.brand_name || storeSettings.store_name || 'Your Brand'), fontSize: 18, bold: true, margin: [0,0,0,4]}
+                                          ]),
+                                      {
+                                          columns: [
+                                              logoB64 ? { image: logoB64, width: 60, margin: [0,0,10,0] } : {text: '', width: 0},
+                                              {
+                                                  stack: [
+                                                      {text: String(storeSettings.contact_address || 'Bagh No.3, Demo Street, Demo Area Main Road, City, Uttar Pradesh, 226008').replace(/\\n/g,'\n'), fontSize: 10},
+                                                      {text: `GSTIN: ${storeGst} | Mobile: ${String(storeSettings.contact_phone || '9876543211')}`, fontSize: 10, bold: true, margin: [0,4,0,0]},
+                                                      {text: `PAN: ${String(storeSettings.pan_number || 'ACHFA6676K')} | Email: ${String(storeSettings.contact_email || 'sales.Your Brand@gmail.com')}`, fontSize: 10}
+                                                  ]
+                                              }
+                                          ]
+                                      }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              {
+                                  stack: [
+                                      {text: (order.source === 'quotation' || order.status === 'quotation') ? 'QUOTATION' : 'TAX INVOICE', bold: true, fontSize: 16},
+                                      {text: 'ORIGINAL FOR RECIPIENT', fontSize: 10, margin: [0,4,0,10]},
+                                      {
+                                          columns: [
+                                              {stack: [{text: (order.source === 'quotation' || order.status === 'quotation') ? 'Quotation No.' : 'Invoice No.', bold: true}, {text: orderIdObj, margin: [0,4,0,0]}]},
+                                              {stack: [{text: (order.source === 'quotation' || order.status === 'quotation') ? 'Quotation Date' : 'Invoice Date', bold: true}, {text: invoiceDate, margin: [0,4,0,0]}]}
+                                          ]
+                                      }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              }
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: i => i===0 ? 1 : 0,
+                      vLineWidth: i => (i===0 || i===2) ? 1 : i===1 ? 1 : 0,
+                      paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0
+                  }
+              },
+              
+              // Bill To / Ship To
+              {
+                  table: {
+                      widths: ['*', 250],
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      {text: 'BILL TO', bold: true, margin: [0,0,0,6]},
+                                      {text: custName.toUpperCase(), bold: true, fontSize: 12},
+                                      {text: `Address: ${custAddr}\n${custCity}, ${custState}, ${custPincode}`, margin: [0,2,0,2]},
+                                      {text: `GSTIN: ${custGstin}     Place of Supply: ${shipState}`},
+                                      {text: `Mobile: ${custPhone}`, margin: [0,2,0,0]}
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              {
+                                  stack: [
+                                      {text: 'SHIP TO', bold: true, margin: [0,0,0,6]},
+                                      {text: shipName.toUpperCase(), bold: true, fontSize: 12},
+                                      {text: `Address: ${shipAddr}\n${shipCity}, ${shipState}, ${shipPincode}`, margin: [0,2,0,2]}
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              }
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: i => i===0 ? 1 : 0,
+                      vLineWidth: i => (i===0 || i===2) ? 1 : i===1 ? 1 : 0,
+                      paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0
+                  },
+                  fontSize: 11
+              },
+              
+              // Items Table
+              {
+                  table: {
+                      headerRows: 1,
+                      widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+                      dontBreakRows: true,
+                      body: tableBody
+                  },
+                  layout: {
+                      hLineWidth: function (i, node) { return 1; },
+                      vLineWidth: function (i, node) { return 1; },
+                      paddingLeft: function(i, node) { return 6; },
+                      paddingRight: function(i, node) { return 6; },
+                      paddingTop: function(i, node) { return 6; },
+                      paddingBottom: function(i, node) { return 6; },
+                  },
+                  fontSize: 9
+              },
+              
+              // Tax Breakdown Table
+              {
+                  table: {
+                      headerRows: 2,
+                      widths: isIntraState ? ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['auto', '*', 'auto', 'auto', 'auto'],
+                      dontBreakRows: true,
+                      body: breakdownBody
+                  },
+                  layout: {
+                      hLineWidth: function (i, node) { return 1; },
+                      vLineWidth: function (i, node) { return 1; },
+                      paddingLeft: function(i, node) { return 6; },
+                      paddingRight: function(i, node) { return 6; },
+                      paddingTop: function(i, node) { return 6; },
+                      paddingBottom: function(i, node) { return 6; },
+                  },
+                  fontSize: 9
+              },
+              
+              // Amount in Words
+              {
+                  table: {
+                      widths: ['*'],
+                      dontBreakRows: true,
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      {text: 'Total Amount (in words)', bold: true},
+                                      {text: amountInWords}
+                                  ],
+                                  margin: [10, 8, 10, 8]
+                              }
+                          ]
+                      ]
+                  },
+                  layout: { hLineWidth: i => i===0 ? 1 : 0, vLineWidth: i => (i===0||i===1) ? 1 : 0, paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0 },
+                  fontSize: 11
+              },
+              
+              // Footer
+              {
+                  table: {
+                      widths: ['*', '*', 150],
+                      dontBreakRows: true,
+                      body: [
+                          [
+                              {
+                                  stack: [
+                                      {text: 'Bank Details', bold: true, margin: [0,0,0,6]},
+                                      { columns: [ {text: 'Name:', width: 60, color: '#444'}, {text: String(storeSettings.bank_account_name || 'Company Name')} ], margin: [0,3,0,0] },
+                                      { columns: [ {text: 'IFSC Code:', width: 60, color: '#444'}, {text: String(storeSettings.bank_ifsc || 'UTIB0004493')} ], margin: [0,3,0,0] },
+                                      { columns: [ {text: 'Account No:', width: 60, color: '#444'}, {text: String(storeSettings.bank_account || '925020026776363')} ], margin: [0,3,0,0] },
+                                      { columns: [ {text: 'Bank:', width: 60, color: '#444'}, {text: String(storeSettings.bank_name || 'Axis Bank, TRANSPORT NAGAR City')} ], margin: [0,3,0,0] }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              {
+                                  stack: [
+                                      {text: 'Terms and Conditions', bold: true, margin: [0,0,0,6]},
+                                      { ol: termsArray, fontSize: 9 }
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              },
+                              {
+                                  stack: [
+                                      {text: String(storeSettings.authorized_signatory || 'Company Name'), alignment: 'center', bold: true},
+                                      signatureB64 ? { image: signatureB64, width: 80, alignment: 'center', margin: [0,5,0,5] } : {text: '', margin: [0, 40, 0, 0]},
+                                      {text: 'Authorised Signatory', alignment: 'center'},
+                                      {text: 'This is a computer generated invoice and does not require a physical signature.', fontSize: 7, alignment: 'center', margin: [0, 8, 0, 0], italics: true, color: '#555'}
+                                  ],
+                                  margin: [10, 10, 10, 10]
+                              }
+                          ]
+                      ]
+                  },
+                  layout: {
+                      hLineWidth: i => i===0 ? 1 : i===1 ? 1 : 0,
+                      vLineWidth: i => i===0 ? 1 : i===1 ? 1 : i===2 ? 1 : i===3 ? 1 : 0,
+                      paddingLeft: ()=>0, paddingRight: ()=>0, paddingTop: ()=>0, paddingBottom: ()=>0
+                  },
+                  fontSize: 10
+              }
+          ],
+          styles: {
+              defaultStyle: { font: 'Roboto' }
+          },
+          pageMargins: [20, 20, 20, 20],
+          defaultStyle: {
+              columnGap: 20
+          }
+      };
+  }
+
+  async function fetchLogoAsBase64(url) {
+      if (!url) return null;
+      try {
+          const resp = await fetch(url);
+          if (!resp.ok) return null;
+          const blob = await resp.blob();
+          return await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+          });
+      } catch (e) {
+          return null;
+      }
+  }
+
+  async function generatePdf(orders, isBatch = false) {
+      const docDefinitions = [];
+      let logoB64 = window.LOGO_BASE64 || null; 
+      let signatureB64 = null;
+
+      if (typeof storeLogo !== 'undefined' && storeLogo) {
+          const dynamicLogo = await fetchLogoAsBase64(storeLogo);
+          if (dynamicLogo) {
+              logoB64 = dynamicLogo;
+          }
+      }
+      
+      if (typeof settings.authorized_signatory_image !== 'undefined' && settings.authorized_signatory_image) {
+          const dynamicSig = await fetchLogoAsBase64(settings.authorized_signatory_image);
+          if (dynamicSig) {
+              signatureB64 = dynamicSig;
+          }
+      }
+
+      orders.forEach(order => {
+          if(!order) return;
+          if (order.is_b2b || (order.customer && order.customer.is_b2b)) {
+              const def = getB2BDefinition(order, settings, logoB64, signatureB64);
+              if(def) docDefinitions.push(def);
+          } else {
+              const def = getB2CDefinition(order, settings, logoB64, signatureB64);
+              if(def) docDefinitions.push(def);
+          }
+      });
+
+      const finalDoc = {
+          content: [],
+          pageMargins: [20,20,20,20],
+          defaultStyle: { font: 'Roboto' }
+      };
+
+      docDefinitions.forEach((def, index) => {
+          if (index > 0 && def.content[0]) {
+              def.content[0].pageBreak = 'before';
+          }
+          finalDoc.content.push(...def.content);
+      });
+
+      const firstOrder = orders.find(o => o);
+      const brandName = settings.brand_name || settings.store_name || 'Invoice';
+      const filename = isBatch 
+          ? `${brandName}_Batch_Invoices_${new Date().toISOString().slice(0,10)}.pdf`
+          : `${brandName}_Invoice_${firstOrder ? (firstOrder.orderId || firstOrder.order_number || Date.now()) : Date.now()}.pdf`;
+
+      pdfMake.createPdf(finalDoc).download(filename, () => {
+          const btn = document.getElementById('btn-download');
+          if(btn) {
+            btn.innerHTML = btn.dataset.origHtml || 'Download PDF';
+            btn.disabled = false;
+          }
+          if(loadingEl) loadingEl.style.display = 'none';
+          
+          const successEl = document.getElementById('success-screen');
+          if(successEl) successEl.style.display = 'flex';
+          else if(actionEl) actionEl.style.display = 'flex'; 
+      });
+  }
+
+  if (countLabel) {
+      try {
+        const raw = localStorage.getItem('Your Brand-batch-print-orders');
+        if (!raw) throw new Error('No data');
+        const orders = JSON.parse(raw);
+        if (!orders || orders.length === 0) throw new Error('Empty');
+
+        countLabel.textContent = `${orders.length} orders processed successfully`;
+        if(loadingEl) loadingEl.style.display = 'none';
+        if(actionEl) actionEl.style.display = 'flex';
+
+        if(btnDownload) {
+            btnDownload.addEventListener('click', () => {
+                btnDownload.dataset.origHtml = btnDownload.innerHTML;
+                btnDownload.disabled = true;
+                btnDownload.innerHTML = 'Generating PDF... (Please Wait)';
+                generatePdf(orders, true);
+            });
+        }
+      } catch(err) {
+          console.error(err);
+          if(loadingEl) loadingEl.style.display = 'none';
+          if(errorEl) errorEl.style.display = 'flex';
+      }
+  } 
+  else {
+      if (typeof order !== 'undefined') {
+          generatePdf([order], false);
+      } else {
+          alert('Error: Order data not found.');
+      }
+  }
+});
+
+</script>
+</body>
+</html>

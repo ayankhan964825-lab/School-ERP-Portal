@@ -1,0 +1,55 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "settings")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+<AdminLayout title="Clearing Cache...">
+  <div class="flex flex-col items-center justify-center h-64 text-center">
+    <div class="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+    <h1 class="text-2xl font-bold text-secondary mb-2">Clearing Admin Cache</h1>
+    <p class="text-secondary/60">Please wait while we update your admin panel to the latest version...</p>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    async function clearAllCaches() {
+      try {
+        // 1. Unregister all service workers
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (let reg of registrations) {
+            await reg.unregister();
+            console.log('Unregistered SW:', reg);
+          }
+        }
+
+        // 2. Delete all Cache Storage
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (let key of keys) {
+            await caches.delete(key);
+            console.log('Deleted cache:', key);
+          }
+        }
+
+        // 3. Clear sessionStorage / localStorage
+        sessionStorage.clear();
+        
+        // 4. Redirect back to settings with a cache-busting timestamp
+        setTimeout(() => {
+          window.location.href = '/admin/settings?cleared=' + Date.now();
+        }, 1500);
+
+      } catch (err) {
+        console.error('Error clearing cache:', err);
+        alert('Failed to clear cache automatically. Please open Chrome DevTools > Application > Storage and click "Clear site data".');
+      }
+    }
+
+    // Run immediately
+    clearAllCaches();
+  </script>
+</AdminLayout>

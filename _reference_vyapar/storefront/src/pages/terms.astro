@@ -1,0 +1,89 @@
+---
+import PolicyLayout from '../layouts/PolicyLayout.astro';
+import { getSettings } from '../lib/database';
+
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : '';
+};
+const brandName = settings?.brand_name || '';
+---
+
+<PolicyLayout title="Terms & Conditions" lastUpdated="May 2026">
+  {s('page_terms_0') && (
+  <div data-setting="page_terms_0" data-setting-html><Fragment set:html={s('page_terms_0')} /></div>
+)}
+
+  {s('page_terms_1') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Acceptance of Terms</h2>
+  <div data-setting="page_terms_1" data-setting-html><Fragment set:html={s('page_terms_1')} /></div>
+  </>
+)}
+
+  {s('page_terms_2') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Information about You and Your Visits to the Website</h2>
+  <div data-setting="page_terms_2" data-setting-html><Fragment set:html={s('page_terms_2')} /></div>
+  </>
+)}
+
+  {s('page_terms_3') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Modification of Website</h2>
+  <div data-setting="page_terms_3" data-setting-html><Fragment set:html={s('page_terms_3')} /></div>
+  </>
+)}
+
+  {s('page_terms_4') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - User Contributions</h2>
+  <div data-setting="page_terms_4" data-setting-html><Fragment set:html={s('page_terms_4')} /></div>
+  </>
+)}
+
+  {s('page_terms_5') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Monitoring and Enforcement</h2>
+  <div data-setting="page_terms_5" data-setting-html><Fragment set:html={s('page_terms_5')} /></div>
+  </>
+)}
+
+  {s('page_terms_6') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Disclaimer of Warranties</h2>
+  <div data-setting="page_terms_6" data-setting-html><Fragment set:html={s('page_terms_6')} /></div>
+  </>
+)}
+
+  {s('page_terms_7') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Limitation on Liability</h2>
+  <div data-setting="page_terms_7" data-setting-html><Fragment set:html={s('page_terms_7')} /></div>
+  </>
+)}
+
+  {s('page_terms_8') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Indemnification</h2>
+  <div data-setting="page_terms_8" data-setting-html><Fragment set:html={s('page_terms_8')} /></div>
+  </>
+)}
+
+  {s('page_terms_9') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Entire Agreement</h2>
+  <div data-setting="page_terms_9" data-setting-html><Fragment set:html={s('page_terms_9')} /></div>
+  </>
+)}
+
+  {s('page_terms_10') && (
+  <>
+    <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">Contact Information</h2>
+  <div data-setting="page_terms_10" data-setting-html><Fragment set:html={s('page_terms_10')} /></div>
+  </>
+)}
+
+</PolicyLayout>

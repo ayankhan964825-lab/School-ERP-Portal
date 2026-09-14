@@ -1,0 +1,89 @@
+---
+import PolicyLayout from '../layouts/PolicyLayout.astro';
+import { getSettings } from '../lib/database';
+
+const rawSettings = await getSettings();
+const settings = rawSettings || {};
+const s = (key: string, fallback?: string) => {
+  const val = settings[key];
+  return (val !== undefined && val !== null && val !== '') ? val : '';
+};
+const brandName = settings?.brand_name || '';
+---
+
+<PolicyLayout title="Privacy Policy" lastUpdated="May 2026">
+  {s('page_privacy_policy_0') && (
+    <div data-setting="page_privacy_policy_0" data-setting-html><Fragment set:html={s('page_privacy_policy_0')} /></div>
+  )}
+
+  {s('page_privacy_policy_1') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Information We Collect</h2>
+      <div data-setting="page_privacy_policy_1" data-setting-html><Fragment set:html={s('page_privacy_policy_1')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_2') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - How We Use Your Information</h2>
+      <div data-setting="page_privacy_policy_2" data-setting-html><Fragment set:html={s('page_privacy_policy_2')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_3') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Sharing Your Information</h2>
+      <div data-setting="page_privacy_policy_3" data-setting-html><Fragment set:html={s('page_privacy_policy_3')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_4') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Security of Your Information</h2>
+      <div data-setting="page_privacy_policy_4" data-setting-html><Fragment set:html={s('page_privacy_policy_4')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_5') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Cookies and Tracking Technologies</h2>
+      <div data-setting="page_privacy_policy_5" data-setting-html><Fragment set:html={s('page_privacy_policy_5')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_6') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Your Rights</h2>
+      <div data-setting="page_privacy_policy_6" data-setting-html><Fragment set:html={s('page_privacy_policy_6')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_7') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Third-party Links</h2>
+      <div data-setting="page_privacy_policy_7" data-setting-html><Fragment set:html={s('page_privacy_policy_7')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_8') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Changes to this Privacy Policy</h2>
+      <div data-setting="page_privacy_policy_8" data-setting-html><Fragment set:html={s('page_privacy_policy_8')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_9') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">{brandName} - Children’s Privacy</h2>
+      <div data-setting="page_privacy_policy_9" data-setting-html><Fragment set:html={s('page_privacy_policy_9')} /></div>
+    </>
+  )}
+
+  {s('page_privacy_policy_10') && (
+    <>
+      <h2 class="text-2xl font-serif font-bold text-secondary mt-8 mb-4">Contact Us</h2>
+      <div data-setting="page_privacy_policy_10" data-setting-html><Fragment set:html={s('page_privacy_policy_10')} /></div>
+    </>
+  )}
+
+</PolicyLayout>

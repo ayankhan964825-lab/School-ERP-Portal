@@ -1,0 +1,101 @@
+---
+interface Props {
+  video: {
+    video_url: string;
+    thumbnail_url: string;
+    views_text: string;
+    [key: string]: any;
+  };
+  product: {
+    id: string | number;
+    name: string;
+    slug: string;
+    image?: string;
+    base_price?: number;
+    compare_at_price?: number;
+    [key: string]: any;
+  } | undefined;
+  index: number;
+}
+
+const { video, product, index } = Astro.props;
+
+const variants = product?.variants?.filter((v: any) => !v.is_hidden) || [];
+const defaultVariant = variants[0] || null;
+const basePrice = defaultVariant ? defaultVariant.price : (product?.price ?? product?.base_price ?? 0);
+const comparePrice = defaultVariant ? defaultVariant.mrp : (product?.original_price ?? product?.compare_at_price ?? 0);
+---
+
+<div class="flex flex-col w-[165px] md:w-[220px] shrink-0 snap-start group relative bg-white rounded-2xl overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.06)] hover:shadow-xl transition-shadow border border-gray-100">
+  <!-- Video Container (9:16 aspect ratio) -->
+  <div class="relative w-full aspect-[9/16] bg-gray-900 overflow-hidden">
+    
+    <!-- Main Modal Trigger Button (covers entire card except z-20 elements) -->
+    <button aria-label={`Play featured video for ${product?.name || 'product'}`} class="absolute inset-0 w-full h-full z-10 appearance-none border-none text-left p-0 cursor-pointer video-card-trigger hover:opacity-100" 
+         data-index={index}>
+      <!-- Thumbnail or Video Fallback -->
+      {video.thumbnail_url ? (
+        <img src={video.thumbnail_url} alt="Featured Video" class="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-700" loading="lazy" />
+      ) : (
+        <video src={video.video_url} class="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-700" preload="metadata" muted playsinline></video>
+      )}
+      
+      <!-- Dark Gradient Overlay for text -->
+      <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90"></div>
+      
+      <!-- Centered Play Button -->
+      <div class="absolute inset-0 flex items-center justify-center">
+        <div class="w-16 h-16 bg-black/30 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-[0_0_20px_rgba(0,0,0,0.2)] group-hover:scale-110 transition-transform duration-300">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="white" class="ml-1 opacity-90 group-hover:opacity-100"><path d="M5 3l14 9-14 9V3z"/></svg>
+        </div>
+      </div>
+      
+      <!-- Bottom Left Overlay (Views) -->
+      <div class="absolute bottom-4 left-4 flex items-end">
+        <div class="bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-white/10">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="white" class="opacity-90"><path d="M5 3l14 9-14 9V3z"/></svg>
+          <span class="text-white text-xs font-semibold tracking-wide">{video.views_text}</span>
+        </div>
+      </div>
+    </button>
+    
+    <!-- Bottom Right Overlay (Wishlist Button - Z-20 to be clickable) -->
+    {product && (
+      <button aria-label="Add to Wishlist" class="reel-wishlist-btn absolute bottom-4 right-4 z-20 w-10 h-10 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center hover:bg-black/60 transition-colors border border-white/10 group/heart"
+        data-product-id={product.id}
+        data-product-name={product.name}
+        data-product-slug={product.slug}
+        data-product-image={product.image ?? `/products/${product.slug}.webp`}
+        data-product-price={basePrice}
+        data-product-mrp={comparePrice}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="wishlist-icon text-white opacity-90 group-hover/heart:fill-red-500 group-hover/heart:stroke-red-500 transition-all" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+      </button>
+    )}
+  </div>
+
+  <!-- Linked Product Mini Card -->
+  {product && (
+    <div class="p-3 bg-white flex flex-col gap-3 relative z-10">
+      <div class="flex gap-2.5 items-center">
+        <div class="w-10 h-10 shrink-0 bg-gray-50 rounded-full flex items-center justify-center p-1 border border-gray-100">
+          <img src={product.image ?? `/products/${product.slug}.webp`} alt={product.name} class="w-full h-full object-contain" />
+        </div>
+        <div class="flex flex-col flex-1 min-w-0">
+          <h4 class="text-[11px] font-bold text-gray-800 line-clamp-1 leading-tight mb-0.5" title={product.name}>{product.name}</h4>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-[13px] font-bold text-gray-900">₹{basePrice}</span>
+            {comparePrice > basePrice && (
+              <>
+                <span class="text-[10px] text-gray-400 line-through">₹{comparePrice}</span>
+                <span class="text-[9px] font-bold bg-[#ff4d4f] text-white px-1 rounded">-{Math.round(((comparePrice - basePrice) / comparePrice) * 100)}%</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <a href={`/products/${product.slug}`} class="w-full text-center bg-[#5c6e46] hover:bg-[#4a5938] text-white text-xs font-bold py-2 rounded-md transition-colors shadow-sm">
+        Buy Now
+      </a>
+    </div>
+  )}
+</div>

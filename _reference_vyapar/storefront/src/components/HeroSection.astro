@@ -1,0 +1,295 @@
+---
+export interface Props {
+  initialSlides?: any[];
+}
+
+const { initialSlides } = Astro.props;
+import { getHeroSlides } from '../lib/database';
+import { optimizeImage } from '../lib/image-utils';
+
+let dbSlides = initialSlides || await getHeroSlides();
+let slides = [];
+
+
+if (dbSlides && dbSlides.length > 0) {
+  const activeDbSlides = dbSlides.filter((s: any) => s.is_active !== false);
+  if (activeDbSlides.length > 0) {
+    slides = activeDbSlides.map((s: any) => {
+      const hasTextContent = !!(s.headline || s.headline_accent || s.description || s.tagline || s.button_text || s.secondary_button_text);
+      return {
+        id: s.id,
+        headline: s.headline || '',
+        headlineAccent: s.headline_accent || '',
+        subtext: s.description || '',
+        cta: s.button_text ? { label: s.button_text, href: s.button_link || '#' } : null,
+        ctaSecondary: s.secondary_button_text ? { label: s.secondary_button_text, href: s.secondary_button_link || '#' } : null,
+        badge: s.tagline || '',
+        image: s.media_url ? optimizeImage(s.media_url, { quality: 80, format: 'webp' }) : '/images/hero-1.jpg',
+        fullSlideLink: (s.button_link && !s.button_text) ? s.button_link : null
+      };
+    });
+  }
+}
+---
+
+
+{slides.length > 0 && (
+<section id="hero" class="relative w-full overflow-hidden bg-primary" style={slides.length > 1 ? "aspect-ratio: 16/9;" : ""} aria-label="Hero Slider">
+  <!-- Slides Container -->
+  <div id="hero-slides" class="relative w-full h-full">
+    {slides.map((slide: any, i: number) => {
+      const hasContent = !!(slide.headline || slide.headlineAccent || slide.subtext || slide.badge || slide.cta || slide.ctaSecondary);
+      const isClickableBackground = slide.fullSlideLink;
+      
+      const isSingleSlide = slides.length === 1;
+      const slideClasses = isSingleSlide
+        ? "hero-slide relative w-full h-auto transition-all duration-700 ease-in-out opacity-100 z-10"
+        : `hero-slide absolute inset-0 w-full h-full transition-all duration-700 ease-in-out ${i === 0 ? "opacity-100 z-10" : "opacity-0 pointer-events-none"}`;
+        
+      const imgContainerClasses = isSingleSlide ? "block w-full h-auto cursor-pointer z-0" : "absolute inset-0 w-full h-full block cursor-pointer z-0";
+      const imgClasses = isSingleSlide ? "w-full h-auto block" : "absolute inset-0 w-full h-full object-cover";
+
+      return (
+      <div
+        id={slide.id}
+        class={slideClasses}
+        aria-hidden={i !== 0}
+      >
+        <!-- Background Image -->
+        {isClickableBackground ? (
+           <a href={isClickableBackground} class={imgContainerClasses}>
+             <img
+               src={slide.image}
+               alt={slide.headline || 'Promotional Slide'}
+               class={imgClasses}
+               loading={i === 0 ? 'eager' : 'lazy'}
+               fetchpriority={i === 0 ? 'high' : 'auto'}
+               decoding={i === 0 ? 'sync' : 'async'}
+             />
+           </a>
+        ) : (
+           <img
+             src={slide.image}
+             alt={slide.headline || 'Promotional Slide'}
+             class={imgClasses}
+             loading={i === 0 ? 'eager' : 'lazy'}
+             fetchpriority={i === 0 ? 'high' : 'auto'}
+             decoding={i === 0 ? 'sync' : 'async'}
+           />
+        )}
+
+        {hasContent && (
+          <>
+            <!-- Gradient overlays -->
+            <div class={`absolute inset-0 bg-gradient-to-r from-primary/95 via-primary/60 to-transparent pointer-events-none ${isSingleSlide ? 'h-full' : ''}`}></div>
+            <div class={`absolute inset-0 bg-gradient-to-t from-primary/30 via-transparent to-transparent pointer-events-none ${isSingleSlide ? 'h-full' : ''}`}></div>
+
+            <!-- Content Overlay -->
+            <div class="absolute inset-0 flex items-center z-10 pointer-events-none">
+              <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+                <div class="max-w-[85%] sm:max-w-xl flex flex-col gap-2 sm:gap-4 md:gap-5 lg:gap-6 text-surface">
+                  {slide.badge && (
+                    <span class="inline-flex items-center gap-2 text-[9px] sm:text-xs font-semibold text-accent uppercase tracking-[0.2em] animate-fade-in-up">
+                      <span class="w-6 sm:w-8 h-px bg-accent"></span>
+                      {slide.badge}
+                    </span>
+                  )}
+                  
+                  {(slide.headline || slide.headlineAccent) && (
+                    <h1 class="font-serif text-xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold leading-[1.1] animate-fade-in-up animation-delay-100">
+                      {slide.headline}
+                      {slide.headline && slide.headlineAccent && <br />}
+                      {slide.headlineAccent && <span class="text-accent italic">{slide.headlineAccent}</span>}
+                    </h1>
+                  )}
+
+                  {slide.subtext && (
+                    <p class="text-surface/85 text-[10px] sm:text-xs md:text-sm lg:text-base xl:text-lg leading-relaxed max-w-sm sm:max-w-md md:max-w-lg animate-fade-in-up animation-delay-200">
+                      {slide.subtext}
+                    </p>
+                  )}
+
+                  {(slide.cta || slide.ctaSecondary) && (
+                    <div class="flex flex-wrap items-center gap-3 sm:gap-4 pt-1 sm:pt-2 animate-fade-in-up animation-delay-300 pointer-events-auto">
+                      {slide.cta && (
+                        <a href={slide.cta.href} class="btn-accent text-[10px] sm:text-xs md:text-sm px-4 py-2 sm:px-6 sm:py-3.5 lg:px-8 lg:py-4">
+                          {slide.cta.label}
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                          </svg>
+                        </a>
+                      )}
+                      {slide.ctaSecondary && (
+                        <a href={slide.ctaSecondary.href} class="text-surface/80 hover:text-surface font-medium text-[10px] sm:text-xs md:text-sm transition-colors duration-200 flex items-center gap-1.5">
+                          {slide.ctaSecondary.label}
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    )})}
+  </div>
+
+
+  {slides.length > 1 && (
+    <>
+      <!-- Dot Controls -->
+      <div class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 sm:gap-3">
+        {slides.map((_: any, i: number) => (
+          <button
+            class:list={["hero-dot w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full transition-all duration-300", i === 0 ? "bg-accent w-4 sm:w-6" : "bg-surface/40 hover:bg-surface/70"]}
+            data-index={i}
+            aria-label={`Go to slide ${i + 1}`}
+          ></button>
+        ))}
+      </div>
+
+      <!-- Arrow Controls -->
+      <button id="hero-prev" aria-label="Previous slide" class="hidden sm:flex absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-30 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/70 text-white border border-white/20 transition-all duration-200 items-center justify-center shadow-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+      </button>
+      <button id="hero-next" aria-label="Next slide" class="hidden sm:flex absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-30 w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-black/40 hover:bg-black/60 active:bg-black/70 text-white border border-white/20 transition-all duration-200 items-center justify-center shadow-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+      </button>
+
+      <!-- Mobile swipe hint -->
+      <div id="swipe-hint" class="absolute bottom-12 right-4 sm:hidden z-20 flex items-center gap-1.5 text-white/90 bg-black/40 px-3 py-1.5 rounded-full text-[10px] font-medium animate-pulse pointer-events-none backdrop-blur-sm border border-white/20 shadow-lg">
+        Swipe 
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+      </div>
+    </>
+  )}
+</section>
+)}
+
+<script is:inline>
+(function () {
+  var heroTimer = null;
+
+  function initHero() {
+    if (heroTimer) { clearInterval(heroTimer); heroTimer = null; }
+
+    var heroEl  = document.getElementById('hero');
+    var slides  = document.querySelectorAll('.hero-slide');
+    var dots    = document.querySelectorAll('.hero-dot');
+    var hint    = document.getElementById('swipe-hint');
+    var current = 0;
+
+    if (!heroEl || !slides.length) return;
+
+    // Guard: don't double-init on same DOM
+    if (heroEl.dataset.heroReady === '1') return;
+    heroEl.dataset.heroReady = '1';
+
+    heroEl.style.touchAction = 'pan-y';
+
+    // Reset slide states
+    slides.forEach(function (s, i) {
+      s.classList.toggle('opacity-100', i === 0);
+      s.classList.toggle('z-10', i === 0);
+      s.classList.toggle('opacity-0', i !== 0);
+      s.classList.toggle('pointer-events-none', i !== 0);
+      s.setAttribute('aria-hidden', i !== 0 ? 'true' : 'false');
+    });
+    dots.forEach(function (d, i) {
+      d.classList.toggle('bg-accent', i === 0);
+      d.classList.toggle('w-4', i === 0);
+      d.classList.toggle('sm:w-6', i === 0);
+      d.classList.toggle('bg-surface/40', i !== 0);
+      d.classList.toggle('w-1.5', i !== 0);
+      d.classList.toggle('sm:w-2', i !== 0);
+    });
+
+    function goTo(index) {
+      slides[current].classList.remove('opacity-100', 'z-10');
+      slides[current].classList.add('opacity-0', 'pointer-events-none');
+      slides[current].setAttribute('aria-hidden', 'true');
+      if (dots[current]) {
+        dots[current].classList.remove('bg-accent', 'w-4', 'sm:w-6');
+        dots[current].classList.add('bg-surface/40', 'w-1.5', 'sm:w-2');
+      }
+      current = (index + slides.length) % slides.length;
+      slides[current].classList.add('opacity-100', 'z-10');
+      slides[current].classList.remove('opacity-0', 'pointer-events-none');
+      slides[current].setAttribute('aria-hidden', 'false');
+      if (dots[current]) {
+        dots[current].classList.add('bg-accent', 'w-4', 'sm:w-6');
+        dots[current].classList.remove('bg-surface/40', 'w-1.5', 'sm:w-2');
+      }
+    }
+
+    function startTimer() { heroTimer = setInterval(function () { goTo(current + 1); }, 5000); }
+    function resetTimer() { clearInterval(heroTimer); startTimer(); }
+    function hideHint() {
+      if (!hint) return;
+      hint.style.opacity = '0';
+      hint.style.transition = 'opacity 0.5s';
+      setTimeout(function () { hint && hint.parentNode && hint.parentNode.removeChild(hint); }, 500);
+      hint = null;
+    }
+
+    // Attach dot listeners (clone to clear stale ones)
+    var oldDots = document.querySelectorAll('.hero-dot');
+    oldDots.forEach(function (dot) {
+      var nd = dot.cloneNode(true);
+      dot.parentNode.replaceChild(nd, dot);
+      nd.addEventListener('click', function () { goTo(Number(nd.dataset.index)); resetTimer(); });
+    });
+    dots = document.querySelectorAll('.hero-dot'); // Re-query active nodes after cloning
+
+    var prevBtn = document.getElementById('hero-prev');
+    var nextBtn = document.getElementById('hero-next');
+    if (prevBtn) {
+      var np = prevBtn.cloneNode(true); prevBtn.parentNode.replaceChild(np, prevBtn);
+      np.addEventListener('click', function () { goTo(current - 1); resetTimer(); hideHint(); });
+    }
+    if (nextBtn) {
+      var nn = nextBtn.cloneNode(true); nextBtn.parentNode.replaceChild(nn, nextBtn);
+      nn.addEventListener('click', function () { goTo(current + 1); resetTimer(); hideHint(); });
+    }
+
+    // Touch swipe
+    var tx = 0, ty = 0, tt = 0;
+    heroEl.addEventListener('touchstart', function (e) {
+      tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = Date.now();
+      clearInterval(heroTimer);
+    }, { passive: true });
+    heroEl.addEventListener('touchend', function (e) {
+      var dx = e.changedTouches[0].clientX - tx;
+      var dy = Math.abs(e.changedTouches[0].clientY - ty);
+      var adx = Math.abs(dx);
+      if (adx >= 40 && dy < 80 && (Date.now() - tt) < 500 && adx > dy) {
+        dx < 0 ? goTo(current + 1) : goTo(current - 1);
+        hideHint();
+      }
+      resetTimer();
+    }, { passive: true });
+
+    setTimeout(hideHint, 4000);
+    startTimer();
+  }
+
+  // ── DOMContentLoaded fires AFTER ClientRouter swaps DOM, BEFORE page-load ──
+  // This is the correct hook for re-initializing page-specific components
+  document.addEventListener('DOMContentLoaded', function () {
+    var h = document.getElementById('hero');
+    if (h) delete h.dataset.heroReady; // Reset guard for fresh init
+    initHero();
+  });
+
+  // Also run immediately for first/hard page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initHero);
+  } else {
+    initHero();
+  }
+})();
+</script>

@@ -1,0 +1,203 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getPermissionContext } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+const isSuperAdmin = ctx.adminRole === 'super_admin';
+const userPermissions = ctx.permissions;
+const canView = isSuperAdmin || userPermissions['finance'] === 'view' || userPermissions['finance'] === 'manage';
+
+if (!canView) {
+  return Astro.redirect('/admin?error=unauthorized_finance');
+}
+---
+
+<AdminLayout title="Profit Calculator | Admin Panel" description="Calculate net margins factoring in shipping, PG fees, and RTOs.">
+  <div class="mb-6">
+    <h1 class="text-2xl font-serif font-bold text-secondary">Profit Calculator</h1>
+    <p class="text-sm text-secondary/60 mt-1">Estimate your real net margins by factoring in RTOs, shipping, and payment gateway fees.</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- Input Form -->
+    <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <h2 class="text-lg font-bold text-secondary mb-4">Input Variables</h2>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-secondary/70 mb-1">Selling Price (₹)</label>
+          <input type="number" id="calc-sp" value="1000" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+        </div>
+        
+        <div>
+          <label class="block text-xs font-medium text-secondary/70 mb-1">Product Cost / COGS (₹)</label>
+          <input type="number" id="calc-cogs" value="300" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-secondary/70 mb-1">Fwd Shipping (₹)</label>
+            <input type="number" id="calc-fwd" value="60" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary/70 mb-1">Rev Shipping (₹)</label>
+            <input type="number" id="calc-rev" value="60" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-secondary/70 mb-1">RTO Rate (%)</label>
+            <input type="number" id="calc-rto" value="15" step="0.1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary/70 mb-1">PG Fee (%)</label>
+            <input type="number" id="calc-pg" value="2.0" step="0.1" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-secondary/70 mb-1">Packaging Cost (₹)</label>
+          <input type="number" id="calc-pkg" value="15" class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Output Dashboard -->
+    <div class="lg:col-span-8 space-y-6">
+      
+      <!-- Top Level Metrics -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div class="text-xs font-medium text-secondary/60 mb-1">Gross Margin (Delivered)</div>
+          <div class="text-2xl font-bold text-green-600" id="out-gross">₹0</div>
+          <div class="text-[10px] text-secondary/50 mt-1">SP - COGS - Packaging</div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div class="text-xs font-medium text-secondary/60 mb-1">Loss per RTO Order</div>
+          <div class="text-2xl font-bold text-red-500" id="out-loss">₹0</div>
+          <div class="text-[10px] text-secondary/50 mt-1">Fwd + Rev + Packaging Loss</div>
+        </div>
+        <div class="bg-primary/5 rounded-2xl p-5 border border-primary/20">
+          <div class="text-xs font-bold text-primary mb-1">Blended Net Profit / Order</div>
+          <div class="text-3xl font-black text-primary" id="out-blended">₹0</div>
+          <div class="text-[10px] text-primary/70 mt-1" id="out-blended-margin">0% Margin</div>
+        </div>
+      </div>
+
+      <!-- Detailed Breakdown -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <h3 class="text-sm font-bold text-secondary mb-4 border-b pb-2">Projection for 100 Orders</h3>
+        
+        <div class="space-y-3 text-sm">
+          <div class="flex justify-between">
+            <span class="text-secondary/70">Total Revenue (on delivered):</span>
+            <span class="font-medium" id="proj-revenue">₹0</span>
+          </div>
+          <div class="flex justify-between text-secondary/70">
+            <span>Total COGS (for delivered only):</span>
+            <span id="proj-cogs">- ₹0</span>
+          </div>
+          <div class="flex justify-between text-secondary/70">
+            <span>Total Shipping (Fwd x 100, Rev x RTO):</span>
+            <span id="proj-shipping">- ₹0</span>
+          </div>
+          <div class="flex justify-between text-secondary/70">
+            <span>Total Packaging (Lost on RTO, Used on all):</span>
+            <span id="proj-pkg">- ₹0</span>
+          </div>
+          <div class="flex justify-between text-secondary/70 border-b pb-3">
+            <span>Total PG Fees:</span>
+            <span id="proj-pg">- ₹0</span>
+          </div>
+          <div class="flex justify-between font-bold text-base pt-1">
+            <span>Estimated Net Profit (per 100 orders):</span>
+            <span class="text-primary" id="proj-net">₹0</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script data-astro-rerun>
+  function calculate() {
+    // Get values
+    const sp = parseFloat((document.getElementById('calc-sp')).value) || 0;
+    const cogs = parseFloat((document.getElementById('calc-cogs')).value) || 0;
+    const fwd = parseFloat((document.getElementById('calc-fwd')).value) || 0;
+    const rev = parseFloat((document.getElementById('calc-rev')).value) || 0;
+    const rto = parseFloat((document.getElementById('calc-rto')).value) || 0;
+    const pg = parseFloat((document.getElementById('calc-pg')).value) || 0;
+    const pkg = parseFloat((document.getElementById('calc-pkg')).value) || 0;
+
+    const rtoRate = rto / 100;
+    const deliveredRate = 1 - rtoRate;
+
+    // Per Order calculations
+    const pgFeeAmount = sp * (pg / 100);
+    const grossMargin = sp - cogs - pkg; // Just product margin
+    
+    // Loss when order is RTO
+    const rtoLoss = fwd + rev + pkg; // Assuming packaging is wasted
+    
+    // Profit when order is delivered
+    const deliveredProfit = grossMargin - fwd - pgFeeAmount;
+
+    // Blended expected value per 1 order
+    const blendedProfit = (deliveredProfit * deliveredRate) - (rtoLoss * rtoRate);
+    const blendedMarginPercent = sp > 0 ? (blendedProfit / sp) * 100 : 0;
+
+    // Projections for 100 orders
+    const projDeliveredCount = 100 * deliveredRate;
+    const projRtoCount = 100 * rtoRate;
+
+    const projRevenue = projDeliveredCount * sp;
+    const projCogs = projDeliveredCount * cogs; // Cogs is recovered on RTO
+    const projShipping = (100 * fwd) + (projRtoCount * rev);
+    const projPkg = 100 * pkg;
+    const projPg = projDeliveredCount * pgFeeAmount;
+    
+    const projNet = projRevenue - projCogs - projShipping - projPkg - projPg;
+
+    // Update DOM
+    document.getElementById('out-gross').textContent = `₹${grossMargin.toFixed(0)}`;
+    document.getElementById('out-loss').textContent = `₹${rtoLoss.toFixed(0)}`;
+    document.getElementById('out-blended').textContent = `₹${blendedProfit.toFixed(0)}`;
+    
+    const marginEl = document.getElementById('out-blended-margin');
+    marginEl.textContent = `${blendedMarginPercent.toFixed(1)}% True Margin`;
+    if (blendedProfit < 0) {
+      document.getElementById('out-blended').classList.replace('text-primary', 'text-red-600');
+      marginEl.classList.replace('text-primary/70', 'text-red-500/70');
+    } else {
+      document.getElementById('out-blended').classList.replace('text-red-600', 'text-primary');
+      marginEl.classList.replace('text-red-500/70', 'text-primary/70');
+    }
+
+    document.getElementById('proj-revenue').textContent = `₹${projRevenue.toFixed(0)}`;
+    document.getElementById('proj-cogs').textContent = `- ₹${projCogs.toFixed(0)}`;
+    document.getElementById('proj-shipping').textContent = `- ₹${projShipping.toFixed(0)}`;
+    document.getElementById('proj-pkg').textContent = `- ₹${projPkg.toFixed(0)}`;
+    document.getElementById('proj-pg').textContent = `- ₹${projPg.toFixed(0)}`;
+    
+    const netEl = document.getElementById('proj-net');
+    netEl.textContent = `₹${projNet.toFixed(0)}`;
+    if (projNet < 0) {
+      netEl.classList.replace('text-primary', 'text-red-600');
+    } else {
+      netEl.classList.replace('text-red-600', 'text-primary');
+    }
+  }
+
+  // Attach listeners
+  const inputs = document.querySelectorAll('input[type="number"]');
+  inputs.forEach(input => {
+    input.addEventListener('input', calculate);
+  });
+
+  // Initial calculation
+  calculate();
+</script>
+
+</AdminLayout>

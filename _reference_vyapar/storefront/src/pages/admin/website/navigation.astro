@@ -1,0 +1,266 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!ctx.adminRole || ctx.adminRole === 'guest') {
+  return Astro.redirect('/admin/login');
+}
+if (!canViewSection(ctx, 'website_navigation')) {
+  return Astro.redirect('/admin');
+}
+
+const settings = await getSettings(Astro.locals?.storeId);
+// Safely parse navigation data or fallback to defaults
+let navData = { header: [], footer: [] };
+try {
+  const raw = settings?.website_navigation || '{"header":[],"footer":[]}';
+  navData = typeof raw === 'string' ? JSON.parse(raw) : raw;
+} catch (e) {
+  navData = { header: [], footer: [] };
+}
+
+// Ensure arrays exist
+if (!Array.isArray(navData.header)) navData.header = [];
+if (!Array.isArray(navData.footer)) navData.footer = [];
+
+const navDataStr = JSON.stringify(navData);
+---
+
+<AdminLayout title="Navigation Manager | Admin Panel" description="Manage header and footer links.">
+  <div class="mb-6">
+    <h1 class="text-2xl font-serif font-bold text-secondary">Navigation Manager</h1>
+    <p class="text-sm text-secondary/60 mt-1">Configure multi-level dropdowns for your Header and simple links for your Footer.</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    
+    <!-- HEADER NAVIGATION -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+      <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+            <svg class="w-5 h-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+            Header Menu
+          </h2>
+          <p class="text-xs text-secondary/60 mt-0.5">Top navigation bar (supports dropdowns)</p>
+        </div>
+        <button id="add-header-btn" class="btn-primary !py-1.5 !px-3 !text-xs !rounded-lg flex items-center gap-1">
+          <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+          Add Parent Link
+        </button>
+      </div>
+      <div class="p-4 flex-1 bg-gray-50/30 overflow-y-auto max-h-[600px]" id="header-container">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+
+    <!-- FOOTER NAVIGATION -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+      <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-secondary flex items-center gap-2">
+            <svg class="w-5 h-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+            Footer Links
+          </h2>
+          <p class="text-xs text-secondary/60 mt-0.5">Bottom navigation area (flat list)</p>
+        </div>
+        <button id="add-footer-btn" class="btn-primary !py-1.5 !px-3 !text-xs !rounded-lg flex items-center gap-1">
+          <svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+          Add Link
+        </button>
+      </div>
+      <div class="p-4 flex-1 bg-gray-50/30 overflow-y-auto max-h-[600px]" id="footer-container">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Sticky Save Bar -->
+  <div class="fixed bottom-0 left-0 lg:left-64 right-0 p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40 flex justify-between items-center">
+    <div class="text-sm text-secondary/70">
+      Click "Save Changes" to publish your navigation structure to the storefront.
+    </div>
+    <button id="save-nav-btn" class="btn-primary !px-8 !py-2.5 !rounded-xl text-sm font-bold shadow-md hover:-translate-y-0.5 transition-all">
+      Save Changes
+    </button>
+  </div>
+
+<script define:vars={{ navDataStr }} data-astro-rerun>
+  // Data State
+  let state = JSON.parse(navDataStr);
+
+  // Helper to generate unique IDs
+  const genId = () => Math.random().toString(36).substr(2, 9);
+
+  // Function to render the entire Header UI
+  function renderHeader() {
+    const container = document.getElementById('header-container');
+    if (!container) return;
+    
+    if (state.header.length === 0) {
+      container.innerHTML = `<div class="text-center py-12 text-secondary/40 text-sm">No header links configured. Click "Add Parent Link" to start.</div>`;
+      return;
+    }
+
+    let html = '<div class="space-y-3">';
+    state.header.forEach((parent, pIndex) => {
+      html += `
+        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden" data-id="${parent.id}">
+          <!-- Parent Row -->
+          <div class="p-3 bg-gray-50 flex items-center gap-3">
+            <div class="cursor-move text-gray-400 hover:text-secondary px-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" /></svg>
+            </div>
+            <div class="flex-1 grid grid-cols-2 gap-2">
+              <input type="text" value="${parent.label}" placeholder="Label (e.g. Shop)" class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:border-primary outline-none" onchange="updateHeaderParent(${pIndex}, 'label', this.value)" />
+              <input type="text" value="${parent.url || ''}" placeholder="URL (e.g. /collections/all)" class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded font-mono focus:border-primary outline-none" onchange="updateHeaderParent(${pIndex}, 'url', this.value)" />
+            </div>
+            <div class="flex items-center gap-1">
+              <button onclick="addHeaderChild(${pIndex})" class="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Add Dropdown Item">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+              </button>
+              <button onclick="removeHeaderParent(${pIndex})" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete Parent">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Children Rows -->
+          ${parent.children && parent.children.length > 0 ? `
+            <div class="p-3 bg-white space-y-2 border-t border-gray-100">
+              ${parent.children.map((child, cIndex) => `
+                <div class="flex items-center gap-3 pl-8 relative">
+                  <div class="absolute left-4 top-1/2 -translate-y-1/2 w-3 h-px bg-gray-300"></div>
+                  <div class="absolute left-4 top-0 bottom-1/2 w-px bg-gray-300"></div>
+                  <div class="flex-1 grid grid-cols-2 gap-2">
+                    <input type="text" value="${child.label}" placeholder="Child Label" class="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:border-primary outline-none" onchange="updateHeaderChild(${pIndex}, ${cIndex}, 'label', this.value)" />
+                    <input type="text" value="${child.url || ''}" placeholder="Child URL" class="w-full px-2 py-1 text-xs border border-gray-200 rounded font-mono focus:border-primary outline-none" onchange="updateHeaderChild(${pIndex}, ${cIndex}, 'url', this.value)" />
+                  </div>
+                  <button onclick="removeHeaderChild(${pIndex}, ${cIndex})" class="p-1 text-red-500 hover:bg-red-50 rounded transition-colors" title="Remove Child">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  // Function to render the Footer UI
+  function renderFooter() {
+    const container = document.getElementById('footer-container');
+    if (!container) return;
+    
+    if (state.footer.length === 0) {
+      container.innerHTML = `<div class="text-center py-12 text-secondary/40 text-sm">No footer links configured.</div>`;
+      return;
+    }
+
+    let html = '<div class="space-y-2">';
+    state.footer.forEach((item, fIndex) => {
+      html += `
+        <div class="bg-white border border-gray-200 rounded-xl p-3 flex items-center gap-3 shadow-sm">
+          <div class="cursor-move text-gray-400 hover:text-secondary px-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" /></svg>
+          </div>
+          <div class="flex-1 grid grid-cols-2 gap-2">
+            <input type="text" value="${item.label}" placeholder="Label (e.g. Privacy Policy)" class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:border-primary outline-none" onchange="updateFooter(${fIndex}, 'label', this.value)" />
+            <input type="text" value="${item.url || ''}" placeholder="URL (e.g. /privacy)" class="w-full px-2 py-1.5 text-sm border border-gray-200 rounded font-mono focus:border-primary outline-none" onchange="updateFooter(${fIndex}, 'url', this.value)" />
+          </div>
+          <button onclick="removeFooter(${fIndex})" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          </button>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  // --- Header Handlers ---
+  window.addHeaderParent = () => {
+    state.header.push({ id: genId(), label: '', url: '', children: [] });
+    renderHeader();
+  };
+  window.updateHeaderParent = (index, field, value) => { state.header[index][field] = value; };
+  window.removeHeaderParent = (index) => {
+    if(confirm('Remove this parent link and all its children?')) {
+      state.header.splice(index, 1);
+      renderHeader();
+    }
+  };
+  window.addHeaderChild = (pIndex) => {
+    if (!state.header[pIndex].children) state.header[pIndex].children = [];
+    state.header[pIndex].children.push({ id: genId(), label: '', url: '' });
+    renderHeader();
+  };
+  window.updateHeaderChild = (pIndex, cIndex, field, value) => { state.header[pIndex].children[cIndex][field] = value; };
+  window.removeHeaderChild = (pIndex, cIndex) => {
+    state.header[pIndex].children.splice(cIndex, 1);
+    renderHeader();
+  };
+
+  // --- Footer Handlers ---
+  window.addFooterItem = () => {
+    state.footer.push({ id: genId(), label: '', url: '' });
+    renderFooter();
+  };
+  window.updateFooter = (index, field, value) => { state.footer[index][field] = value; };
+  window.removeFooter = (index) => {
+    state.footer.splice(index, 1);
+    renderFooter();
+  };
+
+  // Bind main buttons
+  function initNavigation() {
+    const addHeaderBtn = document.getElementById('add-header-btn');
+    if (addHeaderBtn) addHeaderBtn.onclick = window.addHeaderParent;
+    const addFooterBtn = document.getElementById('add-footer-btn');
+    if (addFooterBtn) addFooterBtn.onclick = window.addFooterItem;
+
+    // Initialize
+    renderHeader();
+    renderFooter();
+
+    // Save changes
+    const saveBtn = document.getElementById('save-nav-btn') as HTMLButtonElement;
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        saveBtn.textContent = 'Saving...';
+        saveBtn.disabled = true;
+        
+        try {
+          const res = await fetch('/api/admin/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', settings: { website_navigation: JSON.stringify(state) } })
+          });
+          const data = await res.json();
+          if(data.success) {
+            alert('Navigation saved successfully!');
+          } else {
+            alert('Error saving navigation: ' + data.error);
+          }
+        } catch(err) {
+          alert('Network error while saving.');
+        } finally {
+          saveBtn.textContent = 'Save Changes';
+          saveBtn.disabled = false;
+        }
+      };
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', initNavigation);
+  document.addEventListener('astro:page-load', initNavigation);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initNavigation();
+  }
+</script>
+</AdminLayout>

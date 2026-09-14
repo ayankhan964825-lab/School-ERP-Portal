@@ -1,0 +1,252 @@
+---
+import { verifyAdminSession } from '../../lib/permissions';
+
+const adminId = Astro.cookies.get('admin_id')?.value || '';
+const adminRole = Astro.cookies.get('admin_role')?.value || '';
+const signature = Astro.cookies.get('admin_signature')?.value || '';
+const permissionsCookie = Astro.cookies.get('admin_permissions')?.value || '%7B%7D';
+const permissionsStr = decodeURIComponent(permissionsCookie);
+const storeId = Astro.locals.storeId;
+
+if (Astro.cookies.has('admin_auth') && verifyAdminSession(adminId, adminRole, signature, storeId, permissionsStr)) {
+  return Astro.redirect('/admin');
+} else if (Astro.cookies.has('admin_auth')) {
+  // Clear invalid session cookies
+  Astro.cookies.delete('admin_auth', { path: '/' });
+  Astro.cookies.delete('admin_id', { path: '/' });
+  Astro.cookies.delete('admin_role', { path: '/' });
+  Astro.cookies.delete('admin_signature', { path: '/' });
+}
+
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getSettings } from '../../lib/database';
+import { getPlatformSettings } from '../../lib/platform-settings';
+import { getEffectiveAuthMode } from '../../lib/auth';
+
+const hasError = Astro.url.searchParams.get('error') === 'invalid';
+const storeIdForLogin = Astro.locals?.storeId;
+const isGlobalRoot = storeIdForLogin === 'SUPER_ADMIN_BYPASS';
+
+const settings = isGlobalRoot ? await getPlatformSettings() : await getSettings(storeIdForLogin);
+const expectedOtpLength = settings?.otp_length || '4';
+const storeName = isGlobalRoot ? (settings as any).platform_name || 'Admin' : (settings as any).store_name || 'Admin';
+
+const { authMode } = await getEffectiveAuthMode(storeIdForLogin);
+---
+<AdminLayout title={`${storeName} | Admin Portal`}>
+  <div class="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div class="sm:mx-auto sm:w-full sm:max-w-md">
+      <div class="flex justify-center items-center gap-2">
+        <div class="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        </div>
+        <a href="/" class="text-3xl font-bold text-slate-900 tracking-tight">{storeName}</a>
+      </div>
+      <h2 class="mt-6 text-center text-2xl font-bold text-slate-900">
+        Admin Portal
+      </h2>
+      <p class="mt-2 text-center text-sm text-slate-500">
+        Sign in to manage your store
+      </p>
+    </div>
+
+    <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+      <div class="bg-white py-8 px-4 shadow-sm sm:rounded-2xl sm:px-10 border border-slate-200">
+        
+
+
+        {hasError && (
+          <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium mb-6 text-center">
+            Incorrect credentials. Please try again.
+          </div>
+        )}
+
+        <!-- Tab headers -->
+        <div class="flex border-b border-slate-200 mb-6">
+            <button onclick="switchLoginMethod('password')" id="tab-password" class="w-1/2 py-2 text-sm font-medium border-b-2 border-slate-900 text-slate-900">Password</button>
+            <button onclick="switchLoginMethod('otp')" id="tab-otp" class="w-1/2 py-2 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700">OTP Login</button>
+        </div>
+
+        <!-- Password Flow -->
+        <form id="form-password" class="space-y-6" action="/api/admin/login" method="POST">
+            <div>
+                <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                <input id="email" name="email" type="email" required placeholder="admin@example.com" class="appearance-none block w-full px-4 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-900 focus:border-slate-900 sm:text-sm" />
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                <input id="password" name="password" type="password" required placeholder="••••••••" class="appearance-none block w-full px-4 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-900 focus:border-slate-900 sm:text-sm" />
+            </div>
+
+            <div class="flex items-center justify-end">
+                <a href="/admin/forgot-password" class="text-sm font-medium text-slate-900 hover:underline">Forgot password?</a>
+            </div>
+
+            <button type="submit" class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors">
+                Sign In
+            </button>
+        </form>
+
+        <!-- OTP Flow -->
+        <div id="form-otp" class="space-y-6 hidden">
+            <div id="step-identifier">
+                {authMode === 'phone_only' || authMode === 'both' ? (
+                  <div>
+                      <label for="identifier" class="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                      <div class="flex">
+                          <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-slate-300 bg-slate-50 text-slate-500 sm:text-sm font-medium">
+                              +91
+                          </span>
+                          <input type="tel" id="identifier" name="identifier" data-type="phone" placeholder="Enter 10-digit number" class="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-slate-300 focus:ring-slate-900 focus:border-slate-900 sm:text-sm">
+                      </div>
+                  </div>
+                ) : (
+                  <div>
+                      <label for="identifier" class="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                      <input type="email" id="identifier" name="identifier" data-type="email" placeholder="admin@example.com" class="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-900 focus:border-slate-900 sm:text-sm" />
+                  </div>
+                )}
+                <button type="button" onclick="requestOTP()" id="btn-request-otp" class="mt-6 w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors">
+                    Send OTP
+                </button>
+                <div id="otp-error" class="text-red-500 text-sm mt-2 hidden text-center"></div>
+            </div>
+
+            <div id="step-otp-verify" class="hidden">
+                <p class="text-sm text-slate-600 mb-4 text-center">We've sent an OTP to <span id="display-identifier" class="font-bold text-slate-900"></span></p>
+                <div>
+                    <label for="otp" class="block text-sm font-medium text-slate-700 mb-1">One-Time Password</label>
+                    <input type="text" id="otp" name="otp" placeholder={expectedOtpLength === '6' ? '••••••' : '••••'} maxlength={expectedOtpLength} class="appearance-none block w-full px-4 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm text-center tracking-[0.5em] font-mono text-lg" />
+                </div>
+                <button type="button" onclick="verifyOTP()" id="btn-verify-otp" class="mt-6 w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors">
+                    Verify & Login
+                </button>
+                <div class="text-center mt-4">
+                    <button type="button" onclick="switchTab('identifier')" class="text-sm text-slate-500 hover:text-slate-800">Change Details</button>
+                </div>
+                <div id="verify-error" class="text-red-500 text-sm mt-2 hidden text-center"></div>
+            </div>
+        </div>
+
+
+
+      </div>
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    let sessionHash = '';
+    let sessionExpiry = '';
+
+    window.requestOTP = async function() {
+        var identInput = document.getElementById('identifier');
+        var identifier = identInput.value.trim();
+        var type = identInput.getAttribute('data-type');
+        var btn = document.getElementById('btn-request-otp');
+        var errorDiv = document.getElementById('otp-error');
+        
+        if (!identifier) {
+            errorDiv.textContent = "Please enter your details";
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        btn.innerHTML = "Sending...";
+        errorDiv.classList.add('hidden');
+
+        try {
+            var body = {};
+            if (type === 'email') body.email = identifier;
+            else body.phone = identifier;
+
+            var res = await fetch('/api/admin/request-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            var data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error || 'Failed to send OTP');
+            
+            sessionHash = data.sessionHash || '';
+            sessionExpiry = data.sessionExpiry || '';
+
+            document.getElementById('display-identifier').textContent = identifier;
+            document.getElementById('step-identifier').classList.add('hidden');
+            document.getElementById('step-otp-verify').classList.remove('hidden');
+        } catch (err) {
+            errorDiv.textContent = err.message;
+            errorDiv.classList.remove('hidden');
+        } finally {
+            btn.innerHTML = "Send OTP";
+        }
+    };
+
+    window.verifyOTP = async function() {
+        var identInput = document.getElementById('identifier');
+        var otpInput = document.getElementById('otp');
+        var identifier = identInput.value.trim();
+        var type = identInput.getAttribute('data-type');
+        var otp = otpInput.value.trim();
+        var btn = document.getElementById('btn-verify-otp');
+        var errorDiv = document.getElementById('verify-error');
+
+        if (!otp || otp.length < 4) {
+            errorDiv.textContent = "Please enter the valid OTP";
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        btn.innerHTML = "Verifying...";
+        errorDiv.classList.add('hidden');
+
+        try {
+            var body = { otp: otp, hash: sessionHash, expiry: sessionExpiry };
+            if (type === 'email') body.email = identifier;
+            else body.phone = identifier;
+
+            var res = await fetch('/api/admin/verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            
+            if (!res.ok) {
+                var data = await res.json();
+                throw new Error(data.error || 'Invalid OTP');
+            }
+            
+            window.location.href = '/admin';
+            
+        } catch (err) {
+            errorDiv.textContent = err.message;
+            errorDiv.classList.remove('hidden');
+            btn.innerHTML = "Verify & Login";
+        }
+    };
+
+    window.switchTab = function() {
+        document.getElementById('step-otp-verify').classList.add('hidden');
+        document.getElementById('step-identifier').classList.remove('hidden');
+    };
+
+    window.switchLoginMethod = function(method) {
+        if (method === 'password') {
+            document.getElementById('form-password').classList.remove('hidden');
+            document.getElementById('form-otp').classList.add('hidden');
+            document.getElementById('tab-password').classList.add('border-slate-900', 'text-slate-900');
+            document.getElementById('tab-password').classList.remove('border-transparent', 'text-slate-500');
+            document.getElementById('tab-otp').classList.remove('border-slate-900', 'text-slate-900');
+            document.getElementById('tab-otp').classList.add('border-transparent', 'text-slate-500');
+        } else {
+            document.getElementById('form-password').classList.add('hidden');
+            document.getElementById('form-otp').classList.remove('hidden');
+            document.getElementById('tab-otp').classList.add('border-slate-900', 'text-slate-900');
+            document.getElementById('tab-otp').classList.remove('border-transparent', 'text-slate-500');
+            document.getElementById('tab-password').classList.remove('border-slate-900', 'text-slate-900');
+            document.getElementById('tab-password').classList.add('border-transparent', 'text-slate-500');
+        }
+    };
+  </script>
+</AdminLayout>

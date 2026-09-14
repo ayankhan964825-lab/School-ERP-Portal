@@ -1,0 +1,271 @@
+---
+import FlashSaleProductCard from './FlashSaleProductCard.astro';
+
+export interface Props {
+  config: {
+    active: boolean;
+    title: string;
+    banner?: string;
+    type: 'simple' | 'theme';
+    id?: string;
+  };
+  products: any[];
+}
+
+const { config, products } = Astro.props;
+
+let earliestEndDate: string | null = null;
+let maxDiscount = 0;
+let minDiscount = 100;
+let hasDiscount = false;
+
+products.forEach(p => {
+  p.variants.forEach((v: any) => {
+    if (v.isFlashSale) {
+      if (v.flashSaleEndDate) {
+        if (!earliestEndDate || new Date(v.flashSaleEndDate) < new Date(earliestEndDate)) {
+          earliestEndDate = v.flashSaleEndDate;
+        }
+      }
+      const orig = v.originalPrice || v.mrp || 0;
+      const sale = v.price || 0;
+      if (orig > sale && orig > 0) {
+        const discount = Math.round(((orig - sale) / orig) * 100);
+        if (discount > maxDiscount) maxDiscount = discount;
+        if (discount < minDiscount) minDiscount = discount;
+        hasDiscount = true;
+      }
+    }
+  });
+});
+
+let discountText = "Special Offers";
+if (hasDiscount) {
+  if (maxDiscount === minDiscount) {
+    discountText = `${maxDiscount}% FLAT OFF`;
+  } else {
+    discountText = `UP TO ${maxDiscount}% OFF`;
+  }
+}
+
+const banners = config.banner ? config.banner.split(',').map(b => b.trim()).filter(Boolean) : [];
+const primaryBanner = banners.length > 0 ? banners[0] : null;
+
+// Add some dummy ends if not set for testing the UI
+if (!earliestEndDate) {
+  earliestEndDate = new Date(Date.now() + 86400000).toISOString(); // 24 hours from now
+}
+
+---
+
+<section id={`flash-sale-${config.id || Date.now()}`} class="py-10 bg-background-alt border-y border-primary/10 overflow-hidden relative">
+  <!-- Decorative Elements -->
+  <div class="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none"></div>
+  
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+    
+    <!-- Unified Flash Sale Block -->
+    <div class="bg-primary rounded-[24px] shadow-2xl shadow-overlay/30 overflow-hidden relative border border-accent/30">
+      
+      <!-- Subtle Festive Sparkles & Patterns -->
+      <div class="absolute inset-0 opacity-10 bg-[radial-gradient(var(--color-accent)_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none"></div>
+      <div class="absolute -top-24 -right-24 w-64 h-64 bg-accent/20 blur-[80px] rounded-full pointer-events-none"></div>
+      
+      <!-- Top Hero Section within the block -->
+      <div class="relative flex flex-col md:flex-row items-center justify-between p-6 md:p-8 lg:p-10 border-b border-accent/20">
+        
+        <!-- Title & Badges -->
+        <div class="flex-1 w-full flex flex-col md:flex-row md:items-center gap-6">
+          {primaryBanner ? (
+            <div class="w-full md:w-1/3 aspect-[21/9] md:aspect-[16/9] rounded-xl overflow-hidden shrink-0 border border-accent/40 shadow-lg relative">
+              <img src={primaryBanner} alt="Flash Sale" class="w-full h-full object-cover" loading="lazy" />
+              <div class="absolute inset-0 bg-gradient-to-t from-primary/80 to-transparent flex items-end p-3">
+                 <span class="text-accent text-[10px] font-bold uppercase tracking-widest bg-primary/80 px-2 py-1 rounded backdrop-blur-sm">Exclusive Event</span>
+              </div>
+            </div>
+          ) : (
+             <div class="w-16 h-16 shrink-0 bg-gradient-to-br from-accent to-accent-warm rounded-full flex items-center justify-center shadow-lg shadow-accent/20 animate-pulse">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+             </div>
+          )}
+          
+          <div class="flex flex-col gap-2">
+            <h2 class="font-serif text-3xl md:text-5xl font-bold text-white tracking-tight leading-none drop-shadow-md">
+              {config.title || 'Eid Flash Sale'}
+            </h2>
+            <div class="flex items-center gap-3 mt-1">
+              <span class="bg-accent text-primary text-xs font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-[0_0_15px_color-mix(in_srgb,var(--color-accent)_40%,transparent)] animate-pulse">
+                {discountText}
+              </span>
+              <span class="text-white/70 text-sm font-medium tracking-wide">
+                Limited Time Event
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Countdown Timer -->
+        {earliestEndDate && (
+          <div class="mt-6 md:mt-0 w-full md:w-auto flex flex-col items-start md:items-end sticky top-0 z-50">
+            <span class="text-accent text-[10px] font-bold uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+              Ends In
+            </span>
+            <div class="flex gap-2.5 sm:gap-4 f-countdown" data-end={earliestEndDate}>
+              <div class="flex flex-col items-center">
+                <div class="w-12 h-14 sm:w-16 sm:h-16 bg-primary-light border border-accent/30 rounded-xl flex items-center justify-center shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] overflow-hidden relative">
+                   <div class="absolute inset-x-0 top-1/2 h-[1px] bg-black/30 z-10"></div>
+                   <span class="text-white font-mono text-2xl sm:text-3xl font-bold tracking-tighter z-0 f-hours relative top-0.5">00</span>
+                </div>
+                <span class="text-white/60 text-[9px] uppercase tracking-wider mt-1.5 font-semibold">Hours</span>
+              </div>
+              <div class="flex flex-col items-center">
+                <div class="w-12 h-14 sm:w-16 sm:h-16 bg-primary-light border border-accent/30 rounded-xl flex items-center justify-center shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] overflow-hidden relative">
+                   <div class="absolute inset-x-0 top-1/2 h-[1px] bg-black/30 z-10"></div>
+                   <span class="text-white font-mono text-2xl sm:text-3xl font-bold tracking-tighter z-0 f-minutes relative top-0.5">00</span>
+                </div>
+                <span class="text-white/60 text-[9px] uppercase tracking-wider mt-1.5 font-semibold">Mins</span>
+              </div>
+              <div class="flex flex-col items-center">
+                <div class="w-12 h-14 sm:w-16 sm:h-16 bg-primary-light border border-accent/30 rounded-xl flex items-center justify-center shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] overflow-hidden relative group">
+                   <div class="absolute inset-x-0 top-1/2 h-[1px] bg-black/30 z-10"></div>
+                   <span class="text-accent font-mono text-2xl sm:text-3xl font-bold tracking-tighter z-0 f-seconds relative top-0.5">00</span>
+                </div>
+                <span class="text-accent/80 text-[9px] uppercase tracking-wider mt-1.5 font-semibold">Secs</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <!-- Products Carousel / Grid (Infinite JS Scroll) -->
+      <div class="bg-background-alt p-4 sm:p-6 lg:p-8 overflow-hidden relative [mask-image:_linear-gradient(to_right,transparent_0,_black_64px,_black_calc(100%-64px),transparent_100%)]">
+        <!-- 
+          We duplicate the products array to create a seamless infinite scroll effect.
+          JavaScript handles the auto-scroll by incrementing scrollLeft.
+        -->
+        <div id="flash-sale-carousel" class="flex overflow-x-auto gap-4 md:gap-6 pb-4 md:pb-0 hide-scrollbar" style="scroll-behavior: auto; -webkit-overflow-scrolling: touch;">
+          {[...products, ...products].map((product: any, i: number) => (
+            <div class="shrink-0 w-[280px] sm:w-[320px] h-full" style={`animation: fadeIn 0.5s ease-out ${i * 0.05}s both;`}>
+               <FlashSaleProductCard
+                  id={product.id}
+                  name={product.name}
+                  slug={product.slug}
+                  description={product.description}
+                  variants={product.variants}
+                  image={product.image}
+                  rating={product.rating}
+                  badge={product.badges?.[0]}
+                />
+            </div>
+          ))}
+          {/* Spacer to allow last item to scroll past the mask fade */}
+          <div class="shrink-0 w-12 sm:w-16" aria-hidden="true"></div>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</section>
+
+<style>
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+
+<script>
+  function initFlashCountdown() {
+    if (window.flashCountdownTimer) clearInterval(window.flashCountdownTimer);
+
+    const timers = document.querySelectorAll('.f-countdown');
+    if (!timers.length) return;
+
+    function updateTimers() {
+      const now = new Date().getTime();
+      timers.forEach((timer) => {
+        const endStr = (timer as HTMLElement).dataset.end;
+        if (!endStr) return;
+        const end = new Date(endStr).getTime();
+        const diff = end - now;
+
+        const hEl = timer.querySelector('.f-hours');
+        const mEl = timer.querySelector('.f-minutes');
+        const sEl = timer.querySelector('.f-seconds');
+
+        if (diff <= 0) {
+          if(hEl) hEl.innerHTML = "00";
+          if(mEl) mEl.innerHTML = "00";
+          if(sEl) sEl.innerHTML = "00";
+          return;
+        }
+
+        const h = Math.floor(diff / (1000 * 60 * 60));
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((diff % (1000 * 60)) / 1000);
+
+        if(hEl) hEl.innerHTML = h.toString().padStart(2, '0');
+        if(mEl) mEl.innerHTML = m.toString().padStart(2, '0');
+        if(sEl) sEl.innerHTML = s.toString().padStart(2, '0');
+      });
+    }
+
+    window.flashCountdownTimer = setInterval(updateTimers, 1000);
+    updateTimers();
+  }
+  
+  function initFlashCarousel() {
+    if (window.flashScrollInterval) clearInterval(window.flashScrollInterval);
+
+    var carousel = document.getElementById('flash-sale-carousel');
+    if (!carousel) return;
+    
+    // Clone node to clear stale event listeners
+    var newCarousel = carousel.cloneNode(true);
+    carousel.parentNode.replaceChild(newCarousel, carousel);
+    carousel = newCarousel;
+    
+    var isPaused = false;
+    window.flashScrollInterval = setInterval(function() {
+      if (!carousel) return;
+      if (!isPaused) {
+        carousel.scrollLeft += 1;
+        // Reset to start if we reached the end of the first set (infinite loop trick)
+        // Since we duplicated once, half width is the reset point
+        if (carousel.scrollLeft >= (carousel.scrollWidth / 2)) {
+          carousel.scrollLeft = 0;
+        }
+      }
+    }, 20);
+
+    carousel.addEventListener('touchstart', function() { isPaused = true; }, {passive: true});
+    carousel.addEventListener('touchend', function() { isPaused = false; });
+    carousel.addEventListener('touchcancel', function() { isPaused = false; });
+    carousel.addEventListener('mouseenter', function() { isPaused = true; });
+    carousel.addEventListener('mouseleave', function() { isPaused = false; });
+  }
+
+  function initAll() {
+    initFlashCountdown();
+    initFlashCarousel();
+  }
+
+  // Handle standard page load and Astro ViewTransitions
+  document.addEventListener('astro:page-load', initAll);
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initAll();
+  } else {
+    document.addEventListener('DOMContentLoaded', initAll);
+  }
+</script>

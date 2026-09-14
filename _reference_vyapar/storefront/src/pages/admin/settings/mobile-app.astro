@@ -1,0 +1,240 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+import { getStore } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canViewSection(ctx, 'settings')) return Astro.redirect('/admin');
+
+const storeId = Astro.locals.storeId;
+if (!storeId) return Astro.redirect('/login');
+
+const store = await getStore(storeId);
+const isFreeTier = store?.plan_id === '00000000-0000-0000-0000-000000000005';
+
+const { data } = await supabaseAdmin
+  .from('pages_content')
+  .select('mobile_app_config')
+  .eq('store_id', storeId)
+  .single();
+
+const config = data?.mobile_app_config || {};
+
+const androidStatus = config.android_status || 'idle'; // idle, processing, ready
+const iosStatus = config.ios_status || 'idle';
+const riderStatus = config.rider_status || 'idle';
+
+const androidApk = config.android_apk_url || '';
+const androidAab = config.android_aab_url || '';
+const iosIpa = config.ios_ipa_url || '';
+const riderApk = config.rider_apk_url || '';
+---
+
+<AdminLayout title="Mobile App" description="Manage your native mobile apps">
+  <div class="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+    <div class="mb-8">
+      <h1 class="text-2xl sm:text-3xl font-serif font-bold text-secondary">Native Mobile Apps</h1>
+      <p class="text-sm text-gray-500 mt-2">Get dedicated Android/iOS apps for your store, and a Rider app for your delivery fleet.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      
+      <!-- Android App Card -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-gray-100 flex items-center gap-4 bg-gray-50/50">
+          <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-600" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 15.3414C17.523 15.3414 16.208 15.3414 14.523 15.3414C12.838 15.3414 11.523 15.3414 11.523 15.3414C11.523 15.3414 11.523 16.6564 11.523 18.3414C11.523 20.0264 12.838 20.0264 14.523 20.0264C16.208 20.0264 17.523 20.0264 17.523 20.0264V15.3414ZM7.523 15.3414C7.523 15.3414 6.208 15.3414 4.523 15.3414C2.838 15.3414 1.523 15.3414 1.523 15.3414C1.523 15.3414 1.523 16.6564 1.523 18.3414C1.523 20.0264 2.838 20.0264 4.523 20.0264C6.208 20.0264 7.523 20.0264 7.523 20.0264V15.3414ZM17.523 4.34141C17.523 4.34141 16.208 4.34141 14.523 4.34141C12.838 4.34141 11.523 4.34141 11.523 4.34141C11.523 4.34141 11.523 5.65641 11.523 7.34141C11.523 9.02641 12.838 9.02641 14.523 9.02641C16.208 9.02641 17.523 9.02641 17.523 9.02641V4.34141ZM7.523 4.34141C7.523 4.34141 6.208 4.34141 4.523 4.34141C2.838 4.34141 1.523 4.34141 1.523 4.34141C1.523 4.34141 1.523 5.65641 1.523 7.34141C1.523 9.02641 2.838 9.02641 4.523 9.02641C6.208 9.02641 7.523 9.02641 7.523 9.02641V4.34141Z"/></svg>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">Android App</h2>
+            <p class="text-xs text-gray-500 font-medium">Publish to Google Play Store</p>
+          </div>
+        </div>
+        <div class="p-6 flex-grow flex flex-col justify-between">
+          <ul class="text-sm text-gray-600 space-y-3 mb-8">
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Fully synced with your store</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Push Notifications</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Ready in 1-2 business days</li>
+          </ul>
+
+          <div class="mt-auto">
+            {androidStatus === 'idle' && (
+              <button onclick="requestApp('android')" class="w-full py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-light transition-colors flex items-center justify-center gap-2">
+                Request Android App
+              </button>
+            )}
+            
+            {androidStatus === 'processing' && (
+              <div class="w-full py-2.5 bg-amber-50 text-amber-700 border border-amber-200 font-medium rounded-lg flex items-center justify-center gap-2">
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-amber-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Building App... (Takes 1-2 Days)
+              </div>
+            )}
+
+            {androidStatus === 'ready' && (
+              <div class="space-y-3">
+                <div class="w-full py-2 bg-green-50 text-green-700 border border-green-200 font-medium rounded-lg flex items-center justify-center gap-2 mb-4 text-sm">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  App is Ready!
+                </div>
+                {androidApk && (
+                  <a href={androidApk} target="_blank" class="w-full py-2.5 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download APK (For Testing)
+                  </a>
+                )}
+                {androidAab && (
+                  <a href={androidAab} target="_blank" class="w-full py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-light transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download AAB (For Play Store)
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <!-- iOS App Card -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-gray-100 flex items-center gap-4 bg-gray-50/50">
+          <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2ZM15.228 17.653C14.73 17.848 13.916 18.064 12.984 18.064C10.05 18.064 8.016 15.932 8.016 12.784C8.016 9.878 10.144 7.747 13.06 7.747C13.882 7.747 14.542 7.915 14.938 8.077L14.47 9.539C14.074 9.4 13.568 9.255 12.97 9.255C11.134 9.255 9.774 10.638 9.774 12.82C9.774 14.957 11.082 16.536 12.946 16.536C13.626 16.536 14.184 16.368 14.67 16.142L15.228 17.653Z"/></svg>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">iOS App</h2>
+            <p class="text-xs text-gray-500 font-medium">Publish to Apple App Store</p>
+          </div>
+        </div>
+        <div class="p-6 flex-grow flex flex-col justify-between">
+          <ul class="text-sm text-gray-600 space-y-3 mb-8">
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Fully synced with your store</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Apple Developer Compliant</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Ready in 3-4 business days</li>
+          </ul>
+
+          <div class="mt-auto">
+            {iosStatus === 'idle' && (
+              <button onclick="requestApp('ios')" class="w-full py-2.5 bg-gray-900 text-white font-medium rounded-lg hover:bg-black transition-colors flex items-center justify-center gap-2">
+                Request iOS App
+              </button>
+            )}
+
+            {iosStatus === 'processing' && (
+              <div class="w-full py-2.5 bg-amber-50 text-amber-700 border border-amber-200 font-medium rounded-lg flex items-center justify-center gap-2">
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-amber-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Building iOS App... 
+              </div>
+            )}
+
+            {iosStatus === 'ready' && iosIpa && (
+              <div class="space-y-3">
+                <div class="w-full py-2 bg-green-50 text-green-700 border border-green-200 font-medium rounded-lg flex items-center justify-center gap-2 mb-4 text-sm">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  App is Ready!
+                </div>
+                <a href={iosIpa} target="_blank" class="w-full py-2.5 bg-gray-900 text-white font-medium rounded-lg hover:bg-black transition-colors flex items-center justify-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  Download IPA
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <!-- Rider App Card -->
+      {isFreeTier ? (
+        <div class="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm flex flex-col justify-between items-center text-center opacity-70">
+          <div class="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+            <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+          </div>
+          <div class="mb-6">
+            <h3 class="text-xl font-bold text-gray-900 mb-2">Rider App Locked</h3>
+            <p class="text-sm text-gray-500">Upgrade to the Growth Plan to get a dedicated rider app for your delivery fleet.</p>
+          </div>
+          <a href="/admin/settings/billing" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-all flex items-center justify-center gap-2">
+            Upgrade Plan
+          </a>
+        </div>
+      ) : (
+      <div class="bg-white rounded-3xl border border-gray-100 p-8 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all duration-300 flex flex-col justify-between">
+        <div class="p-6 border-b border-gray-100 flex items-center gap-4 bg-gray-50/50">
+          <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">Rider / Delivery App</h2>
+            <p class="text-xs text-gray-500 font-medium">For your in-house delivery fleet (Q-Commerce & Local Delivery)</p>
+          </div>
+        </div>
+        <div class="p-6 flex-grow flex flex-col justify-between">
+          <ul class="text-sm text-gray-600 space-y-3 mb-8">
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-purple-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Real-time order assignments from Admin</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-purple-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Status updates (En-Route, Delivered)</li>
+            <li class="flex items-start gap-2"><svg class="w-4 h-4 text-purple-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Supports 3rd-party integration (Dunzo/Porter) alongside in-house fleet</li>
+          </ul>
+
+          <div class="mt-auto">
+            {riderStatus === 'idle' && (
+              <button onclick="requestApp('rider')" class="w-full py-2.5 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center gap-2">
+                Request Rider App
+              </button>
+            )}
+
+            {riderStatus === 'processing' && (
+              <div class="w-full py-2.5 bg-amber-50 text-amber-700 border border-amber-200 font-medium rounded-lg flex items-center justify-center gap-2">
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-amber-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Provisioning Rider System... 
+              </div>
+            )}
+
+            {riderStatus === 'ready' && riderApk && (
+              <div class="space-y-3">
+                <div class="w-full py-2 bg-green-50 text-green-700 border border-green-200 font-medium rounded-lg flex items-center justify-center gap-2 mb-4 text-sm">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  Rider App is Ready!
+                </div>
+                <a href={riderApk} target="_blank" class="w-full py-2.5 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  Download Rider APK
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      )}
+
+    </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    async function requestApp(osType) {
+      if (!confirm(`Are you sure you want to request a native ${osType.toUpperCase()} app build?`)) return;
+
+      const btn = event.currentTarget;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Requesting...`;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/admin/request-mobile-app', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ osType })
+        });
+        
+        if (!res.ok) throw new Error('Failed to request app');
+        
+        // Reload to show processing state
+        window.location.reload();
+      } catch (err) {
+        alert(err.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+  </script>
+</AdminLayout>

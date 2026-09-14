@@ -1,0 +1,178 @@
+---
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { supabaseAdmin } from '../../lib/database';
+import { getPermissionContext, canApproveMarketplace } from '../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canApproveMarketplace(ctx)) {
+  return Astro.redirect('/super-admin');
+}
+import { getCsrfToken } from '../../lib/csrf';
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Fetch applications with store details
+let applications = [];
+try {
+  const { data, error } = await supabaseAdmin
+    .from('marketplace_applications')
+    .select(`
+      *,
+      store:stores(name, subdomain, owner_name, owner_phone)
+    `)
+    .order('applied_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  applications = data || [];
+} catch (error) {
+  console.error("Error fetching KYC applications:", error);
+}
+
+const pendingCount = applications?.filter(a => a.status === 'pending').length || 0;
+---
+
+<SuperAdminLayout title="KYC Reviews | VyaparPe">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Marketplace KYC Approvals</h1>
+      <p class="text-slate-500 text-sm mt-1">Review seller business details before allowing them to list on VyaparPe Marketplace.</p>
+    </div>
+    <div class="bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full text-sm font-bold flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+      {pendingCount} Pending Reviews
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-left text-sm whitespace-nowrap">
+      <thead class="bg-slate-50 border-b border-slate-200 text-slate-500">
+        <tr>
+          <th class="px-6 py-4 font-medium">Store</th>
+          <th class="px-6 py-4 font-medium">Business Detail</th>
+          <th class="px-6 py-4 font-medium">Bank Info</th>
+          <th class="px-6 py-4 font-medium">Applied On</th>
+          <th class="px-6 py-4 font-medium">Status</th>
+          <th class="px-6 py-4 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {applications?.map((app) => (
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-6 py-4">
+              <div class="font-bold text-slate-900">{app.store?.name}</div>
+              <a href={`https://${app.store?.subdomain}.vyaparpe.in`} target="_blank" class="text-xs text-indigo-600 hover:text-indigo-800 hover:underline transition-colors">{app.store?.subdomain}.vyaparpe.in</a>
+              <div class="text-xs text-slate-400 mt-1">{app.store?.owner_name} ({app.store?.owner_phone})</div>
+            </td>
+            <td class="px-6 py-4">
+              <div class="font-medium text-slate-900">{app.business_name || 'N/A'}</div>
+              <div class="text-xs text-slate-500 mt-1">GST: <span class="font-mono text-slate-700">{app.gstin || 'Unregistered'}</span></div>
+              <div class="text-xs text-slate-500">PAN: <span class="font-mono text-slate-700">{app.pan || 'N/A'}</span></div>
+            </td>
+            <td class="px-6 py-4 font-mono text-xs text-slate-600">
+              <div>{app.bank_name || 'N/A'}</div>
+              <div>A/C: {app.bank_account_no}</div>
+              <div>IFSC: {app.bank_ifsc}</div>
+            </td>
+            <td class="px-6 py-4 text-slate-500">
+              {new Date(app.applied_at).toLocaleDateString()}
+            </td>
+            <td class="px-6 py-4">
+              {app.status === 'pending' && <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending Review</span>}
+              {app.status === 'approved' && <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Approved</span>}
+              {app.status === 'rejected' && <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Rejected</span>}
+            </td>
+            <td class="px-6 py-4 text-right">
+              {app.status === 'pending' ? (
+                <button onclick="reviewApp(this)" data-app={JSON.stringify(app)} class="text-indigo-600 hover:text-indigo-900 font-medium bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded transition-colors">
+                  Review
+                </button>
+              ) : (
+                <span class="text-slate-400 text-xs" title={`Reviewed by ${app.reviewed_by}`}>
+                  {app.status === 'approved' ? 'Verified' : 'Rejected'}
+                </span>
+              )}
+            </td>
+          </tr>
+        ))}
+        {(!applications || applications.length === 0) && (
+          <tr>
+            <td colspan="6" class="px-6 py-12 text-center text-slate-500">
+              No KYC applications found.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Review Modal -->
+  <div id="review-modal" class="fixed inset-0 bg-slate-900/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg">
+      <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+        <h2 class="text-xl font-bold text-slate-900">Review KYC Application</h2>
+        <button onclick="document.getElementById('review-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <form action="/api/super-admin/kyc-review" method="POST" class="p-6">
+        <input type="hidden" name="_csrf" value={csrfToken} />
+        <input type="hidden" name="application_id" id="review_app_id" value="" />
+        <input type="hidden" name="store_id" id="review_store_id" value="" />
+        
+        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6 space-y-2 text-sm">
+          <div class="flex justify-between"><span class="text-slate-500">Store Name:</span> <strong id="rv_store_name" class="text-slate-900"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">Business Name:</span> <strong id="rv_business" class="text-slate-900"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">GSTIN:</span> <strong id="rv_gst" class="font-mono text-slate-900"></strong></div>
+          <div class="flex justify-between"><span class="text-slate-500">PAN:</span> <strong id="rv_pan" class="font-mono text-slate-900"></strong></div>
+          <div class="pt-2 border-t border-slate-200 mt-2 flex justify-between"><span class="text-slate-500">Bank A/C:</span> <strong id="rv_bank" class="font-mono text-slate-900"></strong></div>
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Review Decision</label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-50 flex items-start gap-3">
+              <input type="radio" name="decision" value="approved" required class="mt-1 text-green-600 focus:ring-green-500" />
+              <div>
+                <div class="font-bold text-green-700">Approve</div>
+                <div class="text-xs text-slate-500 mt-0.5">Verify store and allow marketplace listings</div>
+              </div>
+            </label>
+            <label class="border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-50 flex items-start gap-3">
+              <input type="radio" name="decision" value="rejected" required class="mt-1 text-red-600 focus:ring-red-500" />
+              <div>
+                <div class="font-bold text-red-700">Reject</div>
+                <div class="text-xs text-slate-500 mt-0.5">Application is invalid or missing info</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Review Notes (Sent to Seller)</label>
+          <textarea name="review_notes" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="e.g. GSTIN format is incorrect. Please re-submit."></textarea>
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <button type="button" onclick="document.getElementById('review-modal').classList.add('hidden')" class="px-4 py-2 bg-white border border-slate-300 rounded-md text-slate-700 text-sm font-medium hover:bg-slate-50">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700">Submit Review</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script is:inline>
+    function reviewApp(btn) {
+      const app = JSON.parse(btn.getAttribute('data-app'));
+      document.getElementById('review_app_id').value = app.id;
+      document.getElementById('review_store_id').value = app.store_id;
+      
+      document.getElementById('rv_store_name').innerText = app.store?.name || 'Unknown';
+      document.getElementById('rv_business').innerText = app.business_name || 'N/A';
+      document.getElementById('rv_gst').innerText = app.gstin || 'N/A';
+      document.getElementById('rv_pan').innerText = app.pan || 'N/A';
+      document.getElementById('rv_bank').innerText = `${app.bank_name || ''} - ${app.bank_account_no} (${app.bank_ifsc})`;
+
+      document.getElementById('review-modal').classList.remove('hidden');
+    }
+  </script>
+</SuperAdminLayout>

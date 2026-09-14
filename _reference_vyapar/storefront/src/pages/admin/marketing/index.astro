@@ -1,0 +1,166 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+import { getSettings } from '../../../lib/database';
+
+const settings = (await getSettings(Astro.locals?.storeId)) || {};
+
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+
+const marketingForAI = JSON.stringify({
+  meta_pixel_id: settings.meta_pixel_id,
+  ga4_id: settings.ga4_id,
+  google_ads_conversion_id: settings.google_ads_conversion_id
+});
+---
+
+<AdminLayout title="Marketing & Ads | Admin Panel" description="Manage tracking pixels and ads integrations.">
+  <div class="max-w-4xl mx-auto">
+    <div class="mb-4">
+      <h1 class="text-2xl font-serif font-bold text-secondary">Marketing & Analytics</h1>
+      <p class="text-sm text-secondary/60 mt-1">Configure third-party tracking IDs for Google Analytics, Google Ads, and Meta (Facebook) Pixel.</p>
+    </div>
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="marketing"
+    title="Marketing Assistant"
+      pageDataJson={marketingForAI}
+      guideTitleEn="Marketing Guide"
+      guideTitleHi="Marketing Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Meta Pixel:</strong> Required to run conversion-optimized ads on Facebook and Instagram.</li>
+        <li><strong>Google Analytics:</strong> Essential for tracking where your visitors come from and how they behave.</li>
+        <li><strong>Google Ads:</strong> Input your Conversion ID and Label to track purchases accurately.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Meta Pixel:</strong> Facebook/Instagram par ads chalane aur track karne ke liye iski zaroorat hai.</li>
+        <li><strong>Google Analytics:</strong> Apni website ka traffic aur customer behavior check karne ke liye isko set karein.</li>
+        <li><strong>Google Ads:</strong> Google Ads se aane wali sales ko track karne ke liye yahan details daalein.</li>
+      </ul>`}
+      quickActions={[
+        { label: '📘 Setup Meta Pixel', query: 'meta pixel id kahan se milegi?' },
+        { label: '📊 Setup GA4', query: 'ga4 measurement id kaise banaye?' }
+      ]}
+    />
+
+    {success && (
+      <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+        Marketing settings saved successfully.
+      </div>
+    )}
+    {error && (
+      <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+        Failed to save settings. Please try again.
+      </div>
+    )}
+
+    <form action="/api/admin/update-settings" method="POST" class="space-y-6">
+      
+      <!-- Meta Pixel -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-secondary">Meta (Facebook) Pixel</h2>
+              <p class="text-sm text-secondary/60">Track conversions from Facebook & Instagram ads.</p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-1.5 border-t border-gray-50 pt-4 mt-2">
+          <label class="text-sm font-medium text-secondary">Meta Pixel ID</label>
+          <input type="text" name="meta_pixel_id" value={settings.meta_pixel_id || ''} placeholder="e.g. 123456789012345" class="w-full max-w-md px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
+        </div>
+      </div>
+
+      <!-- Google Analytics -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-yellow-50 text-yellow-600 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 3v18h18"></path>
+                <path d="m19 9-5 5-4-4-3 3"></path>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-secondary">Google Analytics 4 (GA4)</h2>
+              <p class="text-sm text-secondary/60">Monitor website traffic and user behavior.</p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-1.5 border-t border-gray-50 pt-4 mt-2">
+          <label class="text-sm font-medium text-secondary">Measurement ID</label>
+          <input type="text" name="ga4_id" value={settings.ga4_id || ''} placeholder="e.g. G-XXXXXXXXXX" class="w-full max-w-md px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
+        </div>
+      </div>
+
+      <!-- Google Ads -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="6"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-secondary">Google Ads</h2>
+              <p class="text-sm text-secondary/60">Track purchases and conversions from Google Search & Shopping campaigns.</p>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-50 pt-4 mt-2">
+          <div class="space-y-1.5">
+            <label class="text-sm font-medium text-secondary">Conversion ID</label>
+            <input type="text" name="google_ads_conversion_id" value={settings.google_ads_conversion_id || ''} placeholder="e.g. AW-123456789" class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-sm font-medium text-secondary">Conversion Label (Purchase)</label>
+            <input type="text" name="google_ads_conversion_label" value={settings.google_ads_conversion_label || ''} placeholder="e.g. AbC-XyZ123456789" class="w-full px-4 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" />
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-4">
+        <button type="submit" class="btn-primary !px-8 !py-3 !rounded-lg text-base shadow-lg shadow-primary/20">
+          Save All Changes
+        </button>
+      </div>
+      
+    </form>
+    </form>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      } else if (action === 'fill_marketing_ids') {
+        if (params.meta_pixel_id) document.querySelector('input[name="meta_pixel_id"]').value = params.meta_pixel_id;
+        if (params.ga4_id) document.querySelector('input[name="ga4_id"]').value = params.ga4_id;
+        if (params.google_ads_conversion_id) document.querySelector('input[name="google_ads_conversion_id"]').value = params.google_ads_conversion_id;
+        if (params.google_ads_conversion_label) document.querySelector('input[name="google_ads_conversion_label"]').value = params.google_ads_conversion_label;
+        
+        const submitBtn = document.querySelector('button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          submitBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(() => submitBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2'), 4000);
+        }
+      }
+    });
+  </script>
+</AdminLayout>

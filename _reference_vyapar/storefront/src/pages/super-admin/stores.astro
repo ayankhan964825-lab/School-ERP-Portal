@@ -1,0 +1,512 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+import { supabaseAdmin } from '../../lib/database';
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import type { Store } from '../../lib/types/admin';
+import { getCsrfToken } from '../../lib/csrf';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManageSection(ctx, "super_admin")) {
+  return Astro.redirect('/super-admin/login');
+}
+
+if (!supabaseAdmin) {
+    return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+const csrfToken = getCsrfToken(Astro.cookies);
+
+const pageParam = Astro.url.searchParams.get('page');
+const page = Math.max(1, parseInt(pageParam || '1') || 1);
+const limit = 50;
+const from = (page - 1) * limit;
+const to = from + limit - 1;
+
+let stores = [];
+let subscriptionPlans = [];
+
+try {
+    // Fetch paginated stores
+    const { data: storesData, error } = await supabaseAdmin
+        .from('stores')
+        .select('id, name, subdomain, custom_domain, status, created_at, plan_id, commission_rate, owner_email, owner_phone, domain_status, subscription_plans(name)')
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+    if (error) throw error;
+    stores = storesData || [];
+
+    // Fetch Q-Commerce theme config for each store
+    if (stores.length > 0) {
+        const storeIds = stores.map((s: any) => s.id);
+        const { data: settingsData } = await supabaseAdmin
+            .from('settings')
+            .select('store_id, pages_content')
+            .in('store_id', storeIds);
+        
+        const settingsMap: Record<string, any> = {};
+        (settingsData || []).forEach((s: any) => { settingsMap[s.store_id] = s; });
+        
+        stores = stores.map((store: any) => {
+            const s = settingsMap[store.id];
+            let theme = 'standard';
+            
+            if (s?.pages_content) {
+                try {
+                    // Check if pages_content itself is stringified JSONB (sometimes happens in Supabase)
+                    let pc = s.pages_content;
+                    if (typeof pc === 'string') {
+                        pc = JSON.parse(pc);
+                    }
+                    if (pc?.website_configuration) {
+                        const cfg = typeof pc.website_configuration === 'string' ? JSON.parse(pc.website_configuration) : pc.website_configuration;
+                        theme = cfg?.theme || 'standard';
+                    }
+                } catch(e) {}
+            }
+            return { ...store, theme };
+        });
+    }
+
+    // Fetch subscription plans
+    const { data: plansData, error: plansError } = await supabaseAdmin
+        .from('subscription_plans')
+        .select('id, name, slug, plan_type')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+
+    if (plansError) throw plansError;
+    subscriptionPlans = plansData || [];
+} catch (error) {
+    console.error("Data Fetch Error:", error);
+}
+
+---
+
+<SuperAdminLayout title="Tenant Stores | VyaparPe Super Admin">
+    <meta name="csrf-token" content={csrfToken} />
+    <div class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Tenants & Stores</h1>
+            <p class="text-sm text-slate-500 mt-1">Manage all provisioned stores and their subscriptions.</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="runAudit()" class="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm">
+                Run DB Audit
+            </button>
+            <button class="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm" onclick="document.getElementById('provision-modal').classList.remove('hidden'); document.getElementById('provision-modal').style.display='flex';">
+                + Provision New Store
+            </button>
+        </div>
+    </div>
+
+    <!-- Provisioning Modal -->
+    <div id="provision-modal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-slate-900">Provision New Tenant</h3>
+                <button onclick="document.getElementById('provision-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <form id="provision-form" class="p-6">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Store / Business Name</label>
+                        <input type="text" name="store_name" id="prov_name" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-900" placeholder="e.g. Momin Bakery" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Subdomain</label>
+                        <div class="flex items-center">
+                            <input type="text" name="subdomain" id="prov_subdomain" required pattern="[a-z0-9\-]+" title="Only lowercase letters, numbers, and hyphens" class="w-full px-3 py-2 border border-slate-300 rounded-l-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-900" placeholder="mominbakery" />
+                            <span class="px-3 py-2 bg-slate-50 border border-l-0 border-slate-300 rounded-r-md text-sm text-slate-500 font-mono">.vyaparpe.in</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Owner Phone (for OTP)</label>
+                            <input type="tel" name="owner_phone" id="prov_phone" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-900" placeholder="+91" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Owner Email</label>
+                            <input type="email" name="contact_email" id="prov_email" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-900" placeholder="owner@email.com" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Subscription Plan</label>
+                        <select name="plan_id" id="prov_plan" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white">
+                            {subscriptionPlans?.map(plan => (
+                                <option value={plan.id}>{plan.name} ({plan.plan_type})</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div id="prov-error" class="mt-3 text-sm text-red-600 font-medium hidden"></div>
+                <div class="mt-8 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('provision-modal').classList.add('hidden')" class="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-md border border-slate-200">Cancel</button>
+                    <button type="submit" id="prov-submit-btn" class="px-4 py-2 text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md shadow-sm">Provision Store</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stores Table -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+            <h2 class="text-[15px] font-semibold text-slate-900">Active Stores</h2>
+            <div class="relative">
+                <input type="text" id="store-search" placeholder="Search stores..." oninput="filterStores(this.value)" class="text-sm pl-9 pr-4 py-2 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-400 bg-slate-50 text-slate-900 placeholder-slate-400 w-64" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                    <tr>
+                        <th class="px-6 py-3 font-medium">Store Name</th>
+                        <th class="px-6 py-3 font-medium">Domain</th>
+                        <th class="px-6 py-3 font-medium">Plan</th>
+                        <th class="px-6 py-3 font-medium">Status</th>
+                        <th class="px-6 py-3 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {stores?.map((store: Store) => (
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-6 py-3">
+                                <div class="font-medium text-[14px] text-slate-900">{store.name}</div>
+                                <div class="text-[12px] text-slate-500 mt-0.5">{store.owner_phone || store.owner_email}</div>
+                            </td>
+                            <td class="px-6 py-3">
+                                <div class="text-[13px] text-slate-900 font-medium">
+                                    <a href={`https://${store.custom_domain || `${store.subdomain}.vyaparpe.in`}`} target="_blank" class="hover:underline hover:text-indigo-600 transition-colors">
+                                        {store.custom_domain || `${store.subdomain}.vyaparpe.in`}
+                                    </a>
+                                </div>
+                                {store.domain_status === 'active' ? (
+                                    <div class="text-[11px] text-green-600 font-medium flex items-center gap-1 mt-0.5">
+                                        <div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div> Verified
+                                    </div>
+                                ) : (
+                                    <div class="text-[11px] text-slate-400 font-medium mt-0.5">Subdomain</div>
+                                )}
+                            </td>
+                            <td class="px-6 py-3">
+                                <span class="text-[11px] capitalize font-medium px-2 py-0.5 rounded border border-slate-200 bg-slate-100 text-slate-700">
+                                    {store.commission_rate === 0 ? 'God Mode' : (Array.isArray(store.subscription_plans) ? store.subscription_plans[0]?.name : store.subscription_plans?.name) || 'Free'}
+                                </span>
+                            </td>
+                            <td class="px-6 py-3">
+                                <span class={`text-[11px] capitalize font-medium px-2 py-0.5 rounded-full ${store.status === 'active' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                                    {store.status}
+                                </span>
+                            </td>
+                            <td class="px-6 py-3 text-right">
+                                <div class="relative inline-block text-left qc-dropdown">
+                                    <button type="button" onclick="this.nextElementSibling.classList.toggle('hidden')" class="inline-flex justify-center w-full px-3 py-1.5 text-[12px] font-medium text-slate-700 bg-white border border-slate-300 rounded-md shadow-sm hover:bg-slate-50 focus:outline-none items-center gap-1">
+                                        Actions
+                                        <svg class="w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                        </svg>
+                                    </button>
+                                    <div class="hidden absolute right-0 z-50 mt-1 w-56 origin-top-right rounded-md bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none py-1 divide-y divide-slate-100">
+                                        
+                                        <!-- Primary Actions -->
+                                        <div class="py-1">
+                                            <form action="/api/super-admin/impersonate" method="POST" class="block w-full">
+                                                <input type="hidden" name="_csrf" value={csrfToken} />
+                                                <input type="hidden" name="store_id" value={store.id} />
+                                                <button type="submit" class="block w-full text-left px-4 py-2 text-[12px] font-medium text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                                    Login as Store
+                                                </button>
+                                            </form>
+                                            
+                                            <button type="button" onclick={`openAssignManagerModal('${store.id}', '${store.name.replace(/'/g, "\\'")}')`} class="block w-full text-left px-4 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+                                                Assign Staff
+                                            </button>
+
+                                            <a href={`/api/super-admin/export-store?store_id=${store.id}`} download class="block w-full text-left px-4 py-2 text-[12px] font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+                                                Export Data
+                                            </a>
+                                        </div>
+
+                                        <!-- Theme & Settings -->
+                                        <div class="py-1">
+                                            <button type="button" onclick={`openThemeModal('${store.id}', '${store.name.replace(/'/g, "\\'")}', '${(store as any).theme || 'standard'}')`} class="block w-full text-left px-4 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+                                                Manage Theme
+                                            </button>
+                                            
+                                            <form action="/api/super-admin/store-action" method="POST" class="block w-full" onsubmit="return confirm('Are you sure you want to change this store\'s status?') && confirm('CONFIRM AGAIN: This will enable/disable frontend access for this store. Proceed?');">
+                                                <input type="hidden" name="_csrf" value={csrfToken} />
+                                                <input type="hidden" name="store_id" value={store.id} />
+                                                {store.status === 'active' ? (
+                                                    <>
+                                                        <input type="hidden" name="action" value="suspend" />
+                                                        <button type="submit" class="block w-full text-left px-4 py-2 text-[12px] font-medium text-amber-700 hover:bg-amber-50 hover:text-amber-900 transition-colors">Suspend Store</button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <input type="hidden" name="action" value="activate" />
+                                                        <button type="submit" class="block w-full text-left px-4 py-2 text-[12px] font-medium text-green-700 hover:bg-green-50 hover:text-green-900 transition-colors">Activate Store</button>
+                                                    </>
+                                                )}
+                                            </form>
+                                        </div>
+
+                                        <!-- Danger Zone -->
+                                        <div class="py-1">
+                                            <form action="/api/super-admin/store-action" method="POST" class="block w-full" onsubmit="return confirm('WARNING: Deleting a store soft-deletes the record but it cannot be restored easily. Continue?') && confirm('CRITICAL CONFIRMATION: Are you absolutely sure? This action cannot be easily undone. Proceed with deletion?');">
+                                                <input type="hidden" name="_csrf" value={csrfToken} />
+                                                <input type="hidden" name="store_id" value={store.id} />
+                                                <input type="hidden" name="action" value="delete" />
+                                                <button type="submit" class="block w-full text-left px-4 py-2 text-[12px] font-medium text-orange-600 hover:bg-orange-50 hover:text-orange-700 transition-colors">Soft Delete</button>
+                                            </form>
+
+                                            <form action="/api/super-admin/store-action" method="POST" class="block w-full" onsubmit="return confirm('EXTREME DANGER: This will permanently wipe all tables (orders, products, customers, etc) from the database! Have you exported the data?') && prompt('Type WIPE to confirm permanent deletion of this store:') === 'WIPE';">
+                                                <input type="hidden" name="_csrf" value={csrfToken} />
+                                                <input type="hidden" name="store_id" value={store.id} />
+                                                <input type="hidden" name="action" value="hard_delete" />
+                                                <button type="submit" class="block w-full text-left px-4 py-2 text-[12px] font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors">Permanent Wipe</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                    {(!stores || stores.length === 0) && (
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">
+                                No stores provisioned yet.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <span class="text-sm text-slate-600">Showing page {page}</span>
+            <div class="flex gap-2">
+                {page > 1 && (
+                    <a href={`?page=${page - 1}`} class="px-3 py-1 border border-slate-300 rounded text-sm font-medium bg-white text-slate-700 hover:bg-slate-50">Previous</a>
+                )}
+                {stores.length === limit && (
+                    <a href={`?page=${page + 1}`} class="px-3 py-1 border border-slate-300 rounded text-sm font-medium bg-white text-slate-700 hover:bg-slate-50">Next</a>
+                )}
+            </div>
+        </div>
+    </div>
+
+    <!-- Assign Manager Modal -->
+    <div id="assign-manager-modal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-slate-900">Assign Manager to <span id="assign-store-name" class="text-indigo-600">Store</span></h3>
+                <button onclick="document.getElementById('assign-manager-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <form action="/api/super-admin/store-action" method="POST" class="p-6">
+                <input type="hidden" name="_csrf" value={csrfToken} />
+                <input type="hidden" name="action" value="assign_manager" />
+                <input type="hidden" name="store_id" id="assign_store_id" value="" />
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Staff Name</label>
+                        <input type="text" name="staff_name" required class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="John Doe" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Phone Number (Login ID)</label>
+                        <input type="tel" name="staff_phone" required pattern="^\+?[0-9]{10,15}$" class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="+919876543210" />
+                        <p class="text-[10px] text-slate-500 mt-1">They will login at the store's /admin URL using OTP.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Permissions</label>
+                        <div class="space-y-2 bg-slate-50 p-3 rounded-md border border-slate-200">
+                            <label class="flex items-center gap-2"><input type="checkbox" name="perm_orders" value="manage" class="rounded border-slate-300 text-indigo-600" /> <span class="text-sm">Manage Orders</span></label>
+                            <label class="flex items-center gap-2"><input type="checkbox" name="perm_products" value="manage" class="rounded border-slate-300 text-indigo-600" /> <span class="text-sm">Manage Products</span></label>
+                            <label class="flex items-center gap-2"><input type="checkbox" name="perm_customers" value="manage" class="rounded border-slate-300 text-indigo-600" /> <span class="text-sm">Manage Customers</span></label>
+                            <label class="flex items-center gap-2"><input type="checkbox" name="perm_settings" value="manage" class="rounded border-slate-300 text-indigo-600" /> <span class="text-sm">Manage Settings</span></label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('assign-manager-modal').classList.add('hidden')" class="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-md border border-slate-200">Cancel</button>
+                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm">Assign Staff</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Manage Theme Modal -->
+    <div id="manage-theme-modal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-slate-900">Manage Theme: <span id="theme-store-name" class="text-indigo-600">Store</span></h3>
+                <button onclick="document.getElementById('manage-theme-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <form action="/api/super-admin/store-action" method="POST" class="p-6">
+                <input type="hidden" name="_csrf" value={csrfToken} />
+                <input type="hidden" name="action" value="set_theme" />
+                <input type="hidden" name="store_id" id="theme_store_id" value="" />
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-3">Select Active Theme</label>
+                        <div class="space-y-3">
+                            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                                <input type="radio" name="theme_name" value="standard" class="mt-1 border-slate-300 text-indigo-600 focus:ring-indigo-600" id="theme_radio_standard" />
+                                <div>
+                                    <div class="font-medium text-slate-900 text-sm">Standard Storefront</div>
+                                    <div class="text-xs text-slate-500 mt-0.5">Classic e-commerce layout with a hero banner, product grid, and standard checkout flow.</div>
+                                </div>
+                            </label>
+                            
+                            <label class="flex items-start gap-3 p-3 border border-green-200 bg-green-50/30 rounded-lg cursor-pointer hover:bg-green-50 transition-colors">
+                                <input type="radio" name="theme_name" value="qcommerce" class="mt-1 border-green-500 text-green-600 focus:ring-green-600" id="theme_radio_qcommerce" />
+                                <div>
+                                    <div class="font-medium text-green-800 text-sm flex items-center gap-1">⚡ Quick Commerce <span class="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded uppercase font-bold">New</span></div>
+                                    <div class="text-xs text-green-600/80 mt-0.5">App-like mobile-first experience similar to Blinkit/Zepto with a dense UI.</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('manage-theme-modal').classList.add('hidden')" class="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-md border border-slate-200">Cancel</button>
+                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm">Save Theme</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script is:inline>
+        function openAssignManagerModal(storeId, storeName) {
+            document.getElementById('assign_store_id').value = storeId;
+            document.getElementById('assign-store-name').innerText = storeName;
+            document.getElementById('assign-manager-modal').classList.remove('hidden');
+            document.getElementById('assign-manager-modal').style.display = 'flex';
+        }
+
+        function openThemeModal(storeId, storeName, currentTheme) {
+            document.getElementById('theme_store_id').value = storeId;
+            document.getElementById('theme-store-name').innerText = storeName;
+            
+            if (currentTheme === 'qcommerce') {
+                document.getElementById('theme_radio_qcommerce').checked = true;
+            } else {
+                document.getElementById('theme_radio_standard').checked = true;
+            }
+
+            const m = document.getElementById('manage-theme-modal');
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+            const target = e.target;
+            if (!target.closest('.qc-dropdown')) {
+                document.querySelectorAll('.qc-dropdown > div').forEach(el => el.classList.add('hidden'));
+            } else {
+                const currentDropdown = target.closest('.qc-dropdown');
+                document.querySelectorAll('.qc-dropdown').forEach(dropdown => {
+                    if (dropdown !== currentDropdown) {
+                        const menu = dropdown.querySelector('div');
+                        if (menu) menu.classList.add('hidden');
+                    }
+                });
+            }
+        });
+
+        // Client-side store search filter
+        function filterStores(query) {
+            const rows = document.querySelectorAll('tbody tr[class]');
+            const q = query.toLowerCase().trim();
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = !q || text.includes(q) ? '' : 'none';
+            });
+        }
+
+        // Provision form — submit via fetch to correct super-admin endpoint
+        document.getElementById('provision-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('prov-submit-btn');
+            const errDiv = document.getElementById('prov-error');
+            btn.disabled = true;
+            btn.innerText = 'Provisioning...';
+            errDiv.classList.add('hidden');
+
+            try {
+                const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                const res = await fetch('/api/super-admin/provision-store', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-csrf-token': token
+                    },
+                    body: JSON.stringify({
+                        name: document.getElementById('prov_name').value,
+                        subdomain: document.getElementById('prov_subdomain').value,
+                        contact_phone: document.getElementById('prov_phone').value,
+                        contact_email: document.getElementById('prov_email').value,
+                        plan_id: document.getElementById('prov_plan').value
+                    })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.location.reload();
+                } else {
+                    errDiv.textContent = data.error || 'Failed to provision store';
+                    errDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.innerText = 'Provision Store';
+                }
+            } catch (err) {
+                errDiv.textContent = 'Network error. Please try again.';
+                errDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerText = 'Provision Store';
+            }
+        });
+    </script>
+</SuperAdminLayout>
+
+<script is:inline>
+    async function runAudit() {
+        if (!confirm('This will scan all 40+ tables in the database to check for orphaned data. Proceed?')) return;
+        
+        try {
+            const btn = event.currentTarget;
+            const originalText = btn.innerText;
+            btn.innerText = 'Scanning DB...';
+            btn.disabled = true;
+
+            const response = await fetch('/api/super-admin/audit-db');
+            const data = await response.json();
+            
+            if (data.total_orphaned_rows === 0) {
+                alert('✅ ' + data.message);
+            } else {
+                let msg = `⚠️ WARNING: Found ${data.total_orphaned_rows} orphaned rows across the database!\n\nBreakdown:\n`;
+                for (const [table, count] of Object.entries(data.breakdown)) {
+                    msg += `- ${table}: ${count} rows\n`;
+                }
+                alert(msg);
+            }
+        } catch (error) {
+            alert('Failed to run audit: ' + error.message);
+        } finally {
+            event.target.innerText = 'Run DB Audit';
+            event.target.disabled = false;
+        }
+    }
+</script>

@@ -1,0 +1,154 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+import { getBlogPosts } from '../../../lib/database';
+
+const posts = await getBlogPosts();
+// Sort by newest first
+posts.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+
+const blogsForAI = JSON.stringify(posts.slice(0, 50).map((p: any) => ({
+  title: p.title,
+  slug: p.slug,
+  category: p.category,
+  is_published: p.is_published,
+  created_at: p.created_at
+})));
+---
+
+<AdminLayout title="Blog Posts | Admin Panel" description="Manage blog posts.">
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Blog Posts</h1>
+      <p class="text-sm text-secondary/60 mt-1">Create and manage blog content for your storefront.</p>
+    </div>
+    <div class="flex gap-3 items-center">
+      <a href="/admin/bulk-upload/blog" class="btn-primary !py-2.5 flex items-center gap-2 shrink-0 whitespace-nowrap text-xs font-medium bg-secondary text-white hover:bg-secondary/90">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        Bulk Upload
+      </a>
+      <a href="/admin/blog/new" class="btn-primary" id="btn-new-post">
+        + New Post
+      </a>
+    </div>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="blog"
+    pageDataJson={blogsForAI}
+    guideTitleEn="Blog Guide"
+    guideTitleHi="Blog Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Manage:</strong> View all published posts and drafts.</li>
+      <li><strong>Create:</strong> Click '+ New Post' to write a new article.</li>
+      <li><strong>SEO:</strong> Regular blog posts improve your store's search engine ranking.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Manage:</strong> Yahan aap apne saare published aur draft posts dekh sakte hain.</li>
+      <li><strong>Create:</strong> Naya post likhne ke liye '+ New Post' par click karein.</li>
+      <li><strong>SEO:</strong> Regular blog likhne se aapke store ki Google ranking achhi hoti hai.</li>
+    </ul>`}
+    quickActions={[
+      { label: '✍️ New Post', query: 'naya blog post likhna hai' },
+      { label: '📊 Status', query: 'kaun kaun se posts published hain?' }
+    ]}
+  />
+
+  {success && (
+    <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+      Blog post saved successfully!
+    </div>
+  )}
+
+  {error && (
+    <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+      Failed to save blog post. Please try again.
+    </div>
+  )}
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    {posts.length === 0 ? (
+      <div class="p-12 text-center">
+        <div class="text-secondary/30 mb-4 flex justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+        <h3 class="text-lg font-semibold text-secondary mb-2">No blog posts yet</h3>
+        <p class="text-sm text-secondary/60 mb-6">Start creating content to engage your customers and boost SEO.</p>
+        <a href="/admin/blog/new" class="btn-primary inline-block">
+          Create Your First Post
+        </a>
+      </div>
+    ) : (
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs text-secondary/70 uppercase bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th class="px-6 py-4">Title</th>
+              <th class="px-6 py-4">Slug</th>
+              <th class="px-6 py-4">Category</th>
+              <th class="px-6 py-4">Status</th>
+              <th class="px-6 py-4">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {posts.map((post: any) => (
+              <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                <td class="px-6 py-4">
+                  <div class="font-medium text-secondary">{post.title}</div>
+                  {post.excerpt && (
+                    <div class="text-xs text-secondary/60 mt-0.5 line-clamp-1">{post.excerpt}</div>
+                  )}
+                </td>
+                <td class="px-6 py-4">
+                  <code class="text-xs bg-gray-100 px-2 py-1 rounded text-secondary/70">{post.slug}</code>
+                </td>
+                <td class="px-6 py-4">
+                  <span class="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                    {post.category || 'â€”'}
+                  </span>
+                </td>
+                <td class="px-6 py-4">
+                  {post.is_published ? (
+                    <span class="text-xs font-medium bg-green-100 text-green-800 px-2.5 py-1 rounded-full">
+                      Published
+                    </span>
+                  ) : (
+                    <span class="text-xs font-medium bg-yellow-100 text-yellow-800 px-2.5 py-1 rounded-full">
+                      Draft
+                    </span>
+                  )}
+                </td>
+                <td class="px-6 py-4">
+                  <div class="text-xs text-secondary/60">
+                    {new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+  </div>
+
+  <script is:inline data-astro-rerun>
+    // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+    document.addEventListener('ai-action', function(e) {
+      var action = e.detail.action;
+      var params = e.detail.params || {};
+
+      if (action === 'new_post') {
+        var btn = document.getElementById('btn-new-post');
+        if (btn) btn.click();
+      }
+      else if (action === 'navigate') {
+        if (params.url) window.location.href = params.url;
+      }
+    });
+  </script>
+</AdminLayout>

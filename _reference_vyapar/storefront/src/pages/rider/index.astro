@@ -1,0 +1,334 @@
+---
+import RiderLayout from '../../layouts/RiderLayout.astro';
+import { getEffectiveAuthMode } from '../../lib/auth';
+import { getSettings } from '../../lib/database';
+
+// If already logged in, redirect
+if (Astro.cookies.has('vyaparpe_rider_id')) {
+  return Astro.redirect('/rider/dashboard');
+}
+
+const { authMode, otpLength, testMode } = await getEffectiveAuthMode(Astro.locals?.storeId);
+---
+
+<RiderLayout title="Rider App - VyaparPe" description="Delivery Rider Portal">
+  <div class="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-white rounded-3xl shadow-xl overflow-hidden">
+      <!-- Header Image/Graphic -->
+      <div class="bg-primary p-6 flex flex-col items-center justify-center text-white relative">
+        <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at 2px 2px, white 1px, transparent 0); background-size: 16px 16px;"></div>
+        <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-lg relative z-10 mb-4 text-primary">
+          <span class="text-4xl">🛵</span>
+        </div>
+        <h1 class="text-2xl font-bold relative z-10">Rider Partner</h1>
+        <p class="text-white/80 text-sm mt-1 relative z-10 text-center">Join the delivery fleet</p>
+      </div>
+
+      <!-- Body -->
+      <div class="p-6 relative">
+        
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 mb-6 relative">
+          <button id="tab-login" class="flex-1 py-3 text-sm font-bold text-primary border-b-2 border-primary transition-colors">Log In</button>
+          <button id="tab-register" class="flex-1 py-3 text-sm font-medium text-secondary/60 hover:text-secondary transition-colors border-b-2 border-transparent">Apply Now</button>
+        </div>
+
+        <!-- Details Step -->
+        <div id="details-step">
+          <!-- Login Form -->
+          <form id="login-form" class="space-y-4">
+            <div id="login-phone-field" class={authMode === 'email_only' ? 'hidden' : ''}>
+              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Phone Number</label>
+              <div class="flex relative">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">+91</span>
+                <input type="tel" name="phone" id="login-phone" maxlength="10" class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm" placeholder="Enter 10-digit number" />
+              </div>
+            </div>
+            
+            <div id="login-email-field" class={authMode === 'phone_only' ? 'hidden' : ''}>
+              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Email Address</label>
+              <input type="email" name="email" id="login-email" class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm" placeholder="rider@example.com" />
+            </div>
+
+            {authMode === 'both' && (
+              <p class="text-xs text-gray-500 text-center">
+                <button type="button" id="toggle-login-method-btn" class="text-primary font-bold hover:underline">Use Email instead</button>
+              </p>
+            )}
+
+            <button type="submit" id="login-btn" class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-primary/30 transition-all active:scale-95 flex justify-center items-center gap-2 mt-2">
+              <span>Send OTP</span>
+            </button>
+          </form>
+
+          <!-- Register Form -->
+          <form id="register-form" class="space-y-4 hidden">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Full Name</label>
+              <input type="text" name="name" required class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm" placeholder="Your Name" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Phone Number</label>
+              <div class="flex relative">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">+91</span>
+                <input type="tel" name="phone" required maxlength="10" class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm" placeholder="Enter 10-digit number" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Email Address</label>
+              <input type="email" name="email" required class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm" placeholder="rider@example.com" />
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Vehicle</label>
+                <select name="vehicle_type" class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm">
+                  <option value="bike">Bike / Motorcycle</option>
+                  <option value="scooter">Scooter / Scooty</option>
+                  <option value="cycle">Bicycle</option>
+                  <option value="walking">Walking</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Vehicle No.</label>
+                <input type="text" name="vehicle_number" class="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-4 py-3 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-semibold text-sm" placeholder="UP32XX1234" />
+              </div>
+            </div>
+
+            <button type="submit" id="register-btn" class="w-full bg-secondary hover:bg-secondary/90 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-secondary/30 transition-all active:scale-95 flex justify-center items-center gap-2 mt-4">
+              <span>Send OTP to Apply</span>
+            </button>
+          </form>
+
+          <p id="error-msg" class="text-red-500 text-xs font-medium text-center mt-4 hidden"></p>
+        </div>
+
+        <!-- OTP Step -->
+        <div id="otp-step" class="hidden">
+          <div class="text-center mb-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">Enter OTP</h2>
+            <p class="text-sm text-gray-500">We've sent a code to <br/><span id="otp-display" class="font-bold text-gray-900"></span></p>
+          </div>
+          
+          <form id="verify-form" class="space-y-6">
+            <div class="flex justify-center">
+              <input type="text" id="otp-input" maxlength={otpLength} required class="w-3/4 text-center text-3xl font-bold tracking-[0.5em] bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all" placeholder="••••" />
+            </div>
+            {testMode && <p class="text-xs text-gray-500 text-center mt-2">Test mode: Enter any {otpLength}-digit code</p>}
+            
+            <button type="submit" id="verify-btn" class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-primary/30 transition-all active:scale-95 flex justify-center items-center gap-2">
+              <span>Verify & Continue</span>
+            </button>
+          </form>
+
+          <p id="otp-error-msg" class="text-red-500 text-xs font-medium text-center mt-4 hidden"></p>
+          
+          <div class="mt-6 text-center">
+            <button type="button" id="back-btn" class="text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors">
+              &larr; Change Details
+            </button>
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  </div>
+
+  <script is:inline define:vars={{ authMode, otpLength }}>
+    // State
+    let currentAction = 'login'; // 'login' | 'register'
+    let currentLoginVia = authMode === 'email_only' ? 'email' : 'phone';
+    let pendingFormData = null;
+
+    // Elements
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const detailsStep = document.getElementById('details-step');
+    const otpStep = document.getElementById('otp-step');
+    const errorMsg = document.getElementById('error-msg');
+    const otpErrorMsg = document.getElementById('otp-error-msg');
+    const otpDisplay = document.getElementById('otp-display');
+    const verifyForm = document.getElementById('verify-form');
+    
+    const loginPhoneField = document.getElementById('login-phone-field');
+    const loginEmailField = document.getElementById('login-email-field');
+    const toggleLoginMethodBtn = document.getElementById('toggle-login-method-btn');
+
+    // Tab Switching
+    function switchTab(isLogin) {
+      errorMsg.classList.add('hidden');
+      currentAction = isLogin ? 'login' : 'register';
+      
+      if (isLogin) {
+        tabLogin.classList.replace('text-secondary/60', 'text-primary');
+        tabLogin.classList.replace('font-medium', 'font-bold');
+        tabLogin.classList.replace('border-transparent', 'border-primary');
+        
+        tabRegister.classList.replace('text-primary', 'text-secondary/60');
+        tabRegister.classList.replace('font-bold', 'font-medium');
+        tabRegister.classList.replace('border-primary', 'border-transparent');
+        
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+      } else {
+        tabRegister.classList.replace('text-secondary/60', 'text-primary');
+        tabRegister.classList.replace('font-medium', 'font-bold');
+        tabRegister.classList.replace('border-transparent', 'border-primary');
+        
+        tabLogin.classList.replace('text-primary', 'text-secondary/60');
+        tabLogin.classList.replace('font-bold', 'font-medium');
+        tabLogin.classList.replace('border-primary', 'border-transparent');
+        
+        registerForm.classList.remove('hidden');
+        loginForm.classList.add('hidden');
+      }
+    }
+
+    tabLogin?.addEventListener('click', () => switchTab(true));
+    tabRegister?.addEventListener('click', () => switchTab(false));
+
+    toggleLoginMethodBtn?.addEventListener('click', () => {
+      if (currentLoginVia === 'phone') {
+        currentLoginVia = 'email';
+        loginPhoneField.classList.add('hidden');
+        loginEmailField.classList.remove('hidden');
+        toggleLoginMethodBtn.textContent = 'Use Phone instead';
+      } else {
+        currentLoginVia = 'phone';
+        loginEmailField.classList.add('hidden');
+        loginPhoneField.classList.remove('hidden');
+        toggleLoginMethodBtn.textContent = 'Use Email instead';
+      }
+    });
+
+    document.getElementById('back-btn')?.addEventListener('click', () => {
+      otpStep.classList.add('hidden');
+      detailsStep.classList.remove('hidden');
+      document.getElementById('otp-input').value = '';
+    });
+
+    // Send OTP Handler
+    async function handleSendOtp(formElement, btnElement, actionStr) {
+      const btnOrigText = btnElement.textContent;
+      btnElement.disabled = true;
+      btnElement.textContent = 'Sending OTP...';
+      errorMsg.classList.add('hidden');
+
+      const formData = new FormData(formElement);
+      const data = Object.fromEntries(formData);
+      
+      // Basic validation
+      if (actionStr === 'login') {
+        if (currentLoginVia === 'phone' && (!data.phone || data.phone.length !== 10)) {
+          errorMsg.textContent = 'Please enter a valid 10-digit phone number.';
+          errorMsg.classList.remove('hidden');
+          btnElement.disabled = false;
+          btnElement.textContent = btnOrigText;
+          return;
+        }
+        if (currentLoginVia === 'email' && (!data.email || !data.email.includes('@'))) {
+          errorMsg.textContent = 'Please enter a valid email address.';
+          errorMsg.classList.remove('hidden');
+          btnElement.disabled = false;
+          btnElement.textContent = btnOrigText;
+          return;
+        }
+      }
+
+      let sendVia;
+      if (actionStr === 'login') {
+        sendVia = currentLoginVia;
+      } else {
+        sendVia = authMode === 'email_only' ? 'email' : 'phone'; // Default to phone for registration unless email-only
+      }
+      
+      const sendPayload = {
+        via: sendVia,
+        phone: data.phone,
+        email: data.email,
+        action: actionStr
+      };
+
+      try {
+        const res = await fetch('/api/rider/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sendPayload)
+        });
+
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.mock) alert(`MOCK MODE: Any ${otpLength}-digit OTP will work!`);
+          
+          pendingFormData = { ...data, action: actionStr, via: sendVia };
+          otpDisplay.textContent = sendVia === 'phone' ? '+91 ' + data.phone : data.email;
+          
+          detailsStep.classList.add('hidden');
+          otpStep.classList.remove('hidden');
+          document.getElementById('otp-input').focus();
+        } else {
+          const errBody = await res.json().catch(()=>({}));
+          errorMsg.textContent = errBody.error || 'Failed to send OTP. Please try again.';
+          errorMsg.classList.remove('hidden');
+        }
+      } catch (err) {
+        errorMsg.textContent = 'Network error. Check your connection.';
+        errorMsg.classList.remove('hidden');
+      } finally {
+        btnElement.disabled = false;
+        btnElement.textContent = btnOrigText;
+      }
+    }
+
+    loginForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleSendOtp(loginForm, document.getElementById('login-btn'), 'login');
+    });
+
+    registerForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleSendOtp(registerForm, document.getElementById('register-btn'), 'register');
+    });
+
+    // Verify OTP
+    verifyForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const otpInput = document.getElementById('otp-input');
+      const otp = otpInput.value.trim();
+      const btn = document.getElementById('verify-btn');
+      
+      if (!otp) return;
+      
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+      otpErrorMsg.classList.add('hidden');
+
+      try {
+        const payload = { ...pendingFormData, otp };
+        const res = await fetch('/api/rider/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+          window.location.href = '/rider/dashboard';
+        } else {
+          otpErrorMsg.textContent = data.error || 'Invalid OTP. Please try again.';
+          otpErrorMsg.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Verify & Continue';
+        }
+      } catch (err) {
+        otpErrorMsg.textContent = 'Something went wrong. Please try again.';
+        otpErrorMsg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Verify & Continue';
+      }
+    });
+  </script>
+</RiderLayout>

@@ -1,0 +1,551 @@
+---
+import { getSettings } from '../lib/database';
+const settings = await getSettings(Astro.locals?.storeId);
+const globalInventoryTracking = settings?.global_inventory_tracking !== false;
+
+export interface Variant {
+  id: string;
+  weight: string;
+  price: number;
+  mrp: number;
+  originalPrice?: number;
+  isFlashSale?: boolean;
+  stockType?: 'none' | 'real' | 'fake';
+  totalStock?: number;
+  soldStock?: number;
+  fakePercentage?: number;
+  stock?: number;
+  is_out_of_stock?: boolean;
+}
+
+export interface Props {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  variants: Variant[];
+  image?: string;
+  badge?: string | null;
+  rating?: { value: number; count: number };
+  track_inventory?: boolean;
+  is_q_commerce_only?: boolean;
+}
+
+const { id, name, slug, description, variants: rawVariants, image, badge, rating, track_inventory, is_q_commerce_only } = Astro.props;
+const variants = rawVariants.filter((v: any) => !v.is_hidden).map((v: any) => ({
+  ...v,
+  computed_out_of_stock: v.is_out_of_stock || (globalInventoryTracking && track_inventory && (v.stock || 0) <= 0)
+}));
+const defaultVariant = variants[0] || { price: 0, mrp: 0, computed_out_of_stock: true };
+const discount = Math.round(((defaultVariant.mrp - defaultVariant.price) / defaultVariant.mrp) * 100);
+const isFakeDbPlaceholder = image?.startsWith('/products/') && image?.endsWith('.webp');
+const validMainImage = (image && !isFakeDbPlaceholder) ? image : null;
+const imageSrc = validMainImage || (variants[0]?.images?.[0]) || `/products/${slug}.webp`;
+
+const isBestseller = badge?.toLowerCase().includes('best');
+const isFlashSale = variants.some((v: any) => v.isFlashSale);
+
+let fomoPercent = 0;
+let fomoText = '';
+if (isFlashSale && defaultVariant.stockType && defaultVariant.stockType !== 'none') {
+  if (defaultVariant.stockType === 'fake') {
+    fomoPercent = defaultVariant.fakePercentage || 0;
+    fomoText = `${fomoPercent}% Claimed`;
+  } else if (defaultVariant.stockType === 'real') {
+    const total = defaultVariant.totalStock || 1;
+    const sold = defaultVariant.soldStock || 0;
+    const left = Math.max(0, total - sold);
+    fomoPercent = Math.min(100, Math.round((sold / total) * 100));
+    fomoText = left > 0 ? `Only ${left} left!` : 'Sold Out!';
+  }
+}
+
+---
+
+<article class="product-card group relative flex flex-col h-full bg-surface rounded-2xl border border-transparent hover:border-background-alt transition-colors duration-300 min-w-0 w-full" data-product-id={id} data-qco={is_q_commerce_only ? 'true' : undefined}>
+  <a href={`/products/${slug}`} class="absolute inset-0 z-10" aria-label={`View details for ${name}`}></a>
+  <!-- Image Container with skeleton -->
+  <div class="product-card-img-wrap w-full rounded-t-2xl overflow-hidden relative">
+    <div class="img-skeleton" aria-hidden="true"></div>
+    <img
+      src={imageSrc}
+      alt={name}
+      loading="lazy"
+      decoding="async"
+      width="400"
+      height="400"
+      class="product-card-img"
+      loading="lazy"
+      decoding="async"
+      onload="this.classList.add('img-loaded'); this.previousElementSibling.classList.add('sk-done');"
+      onerror="this.src='/placeholder-product.webp'; this.classList.add('img-loaded'); this.previousElementSibling.classList.add('sk-done');"
+    />
+    <!-- Discount Badge -->
+    {discount > 0 && (
+      <span class="absolute top-3 left-3 bg-accent text-white text-[10px] font-bold px-2 py-0.5 rounded-full z-10">
+        {discount}% OFF
+      </span>
+    )}
+
+    <!-- Q-Commerce Badge -->
+    {is_q_commerce_only && (
+      <span class={`absolute left-3 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full z-10 ${discount > 0 ? 'top-9' : 'top-3'} flex items-center gap-1`}>
+        <span>⚡</span> 15-30 Mins
+      </span>
+    )}
+    
+    <!-- Wishlist Button -->
+    <button
+      class="wishlist-btn absolute top-3 right-3 z-20 p-1.5 rounded-full bg-surface/80 backdrop-blur-sm text-primary/40 hover:text-accent hover:bg-surface transition-all duration-200 shadow-sm"
+      data-product-id={id}
+      data-product-name={name}
+      data-product-slug={slug}
+      data-product-image={imageSrc}
+      data-product-price={defaultVariant.price}
+      data-product-mrp={defaultVariant.mrp}
+      aria-label="Add to Wishlist"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 wishlist-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+      </svg>
+    </button>
+
+    {badge && !isFlashSale && (
+      <span class={`absolute bottom-3 left-3 text-surface text-[10px] font-bold px-2 py-0.5 rounded-full z-10 ${isBestseller ? 'bg-accent' : 'bg-primary'}`}>
+        {isBestseller ? '⭐ ' : ''}{badge}
+      </span>
+    )}
+    {isFlashSale && (
+      <span class="absolute bottom-3 left-3 bg-gradient-to-r from-accent to-accent-warm text-white shadow-sm shadow-accent/20 text-[10px] font-bold px-2.5 py-0.5 rounded-full z-10 flex items-center gap-1 animate-pulse">
+        ⚡ Flash Sale
+      </span>
+    )}
+  </div>
+
+  <!-- Content -->
+  <div class="p-4 pb-5 flex flex-col gap-2 flex-1 relative z-20 pointer-events-none min-w-0">
+    <h3 class="font-serif text-base font-semibold text-primary leading-snug group-hover:text-primary transition-colors duration-200 line-clamp-2 break-words">
+      {name}
+    </h3>
+    
+    <!-- Rating -->
+    <div class="flex items-center gap-1.5 -mt-1">
+      <div class="flex gap-0.5 text-amber-400">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill={i < Math.floor(rating?.value || 5) ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        ))}
+      </div>
+      <span class="text-[10px] font-medium text-primary/60">
+        {rating?.value || '5.0'} ({rating?.count || 0})
+      </span>
+    </div>
+
+    <p class="text-xs text-primary/60 line-clamp-2 mt-1 break-words w-full">{description}</p>
+
+    <!-- Variant Pills -->
+    <div class="flex flex-wrap gap-1.5 mt-2 mb-2 variant-selector relative" role="group" aria-label="Select weight variant">
+      {variants.length <= 3 ? (
+        variants.map((v: any, index: number) => (
+          <button
+            type="button"
+            class={`variant-pill px-2 py-1 text-[10px] sm:text-xs font-medium rounded-md border transition-colors duration-200 pointer-events-auto relative z-30 max-w-full truncate ${
+              index === 0 
+                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                : 'border-background-alt text-primary/60 hover:border-primary/50'
+            } ${v.computed_out_of_stock ? 'opacity-50 line-through cursor-not-allowed' : ''}`}
+            data-product={id}
+            data-variant={v.id}
+            data-price={v.price}
+            data-mrp={v.mrp}
+            data-stock={v.stock || 0}
+            data-image={v.images && v.images.length > 0 ? v.images[0] : ''}
+            data-out-of-stock={v.computed_out_of_stock ? 'true' : 'false'}
+            aria-label={`Select ${v.weight} variant`}
+          >
+            {v.weight}
+          </button>
+        ))
+      ) : (
+        <Fragment>
+          {variants.slice(0, 2).map((v: any, index: number) => (
+            <button
+              type="button"
+              class={`variant-pill px-2 py-1 text-[10px] sm:text-xs font-medium rounded-md border transition-colors duration-200 pointer-events-auto relative z-30 max-w-full whitespace-normal leading-snug break-words ${
+                index === 0 
+                  ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                  : 'border-background-alt text-primary/60 hover:border-primary/50'
+              } ${v.computed_out_of_stock ? 'opacity-50 line-through cursor-not-allowed' : ''}`}
+              data-product={id}
+              data-variant={v.id}
+              data-price={v.price}
+              data-mrp={v.mrp}
+              data-stock={v.stock || 0}
+              data-image={v.images && v.images.length > 0 ? v.images[0] : ''}
+              data-out-of-stock={v.computed_out_of_stock ? 'true' : 'false'}
+              aria-label={`Select ${v.weight} variant`}
+            >
+              {v.weight}
+            </button>
+          ))}
+          
+          <button
+            type="button"
+            class="variant-pill-more px-2 py-1 text-[10px] sm:text-xs font-medium rounded-md border border-background-alt text-primary/60 hover:border-primary/50 transition-colors duration-200 pointer-events-auto relative z-30 w-full"
+          >
+            Show {variants.length - 2} more options ▾
+          </button>
+        </Fragment>
+      )}
+    </div>
+
+    <!-- FOMO Bar -->
+    {fomoText !== '' && (
+      <div class="mt-1 mb-2">
+        <div class="flex items-center justify-between text-[9px] font-bold text-accent uppercase tracking-wide mb-1">
+          <span>{fomoText}</span>
+        </div>
+        <div class="w-full bg-accent/10 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-gradient-to-r from-accent to-accent-warm h-1.5 rounded-full" style={`width: ${fomoPercent}%`}></div>
+        </div>
+      </div>
+    )}
+
+    <!-- Price -->
+    <div class="flex flex-wrap items-baseline gap-1.5 mt-auto pt-2 w-full min-w-0">
+      <span class="font-bold text-base sm:text-lg text-primary price-display break-words" id={`price-${id}`}>₹{defaultVariant.price}</span>
+      <span class="text-[10px] sm:text-xs text-primary/40 line-through mrp-display break-words" id={`mrp-${id}`}>₹{defaultVariant.mrp}</span>
+    </div>
+
+    <!-- Add to Cart Button -->
+    <button
+      style="padding-left: 0.5rem !important; padding-right: 0.5rem !important; white-space: normal; line-height: 1.2;"
+      class={`w-full justify-center mt-1 min-h-[36px] sm:min-h-[44px] text-[11px] sm:text-sm add-to-cart-btn pointer-events-auto ${defaultVariant.computed_out_of_stock ? 'btn-secondary opacity-60 cursor-not-allowed bg-background-alt text-text-muted hover:bg-background-alt border-none' : 'btn-primary'}`}
+      data-product-id={id}
+      data-product-name={name}
+      data-product-slug={slug}
+      data-variant-id={defaultVariant.id}
+      data-variant-weight={defaultVariant.weight}
+      data-price={defaultVariant.price}
+      data-mrp={defaultVariant.mrp}
+      data-image={defaultVariant.images && defaultVariant.images.length > 0 ? defaultVariant.images[0] : imageSrc}
+      data-default-image={imageSrc}
+      data-out-of-stock={defaultVariant.computed_out_of_stock ? 'true' : 'false'}
+      aria-label={`Add ${name} to cart`}
+      disabled={defaultVariant.computed_out_of_stock}
+    >
+      {defaultVariant.computed_out_of_stock ? 'Out of Stock' : (
+        <Fragment>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+          <span class="truncate">Add to Cart</span>
+        </Fragment>
+      )}
+    </button>
+    
+    <!-- Content Overlay for Variants -->
+    {variants.length > 2 && (
+      <div class="more-variants-dropdown absolute inset-0 bg-white/98 backdrop-blur-md z-[70] hidden flex-col p-4 rounded-b-2xl pointer-events-auto shadow-inner" data-total={variants.length} style="display: none;">
+        <div class="flex justify-between items-center mb-3 flex-shrink-0">
+          <span class="text-sm font-bold text-primary">All Options</span>
+          <button type="button" class="close-variants text-primary/60 hover:text-primary p-1 bg-gray-50 rounded-full" aria-label="Close options">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div class="overflow-y-auto flex-1 flex flex-col gap-2 pb-2">
+          {variants.map((v: any, index: number) => (
+            <button
+               type="button"
+               class={`variant-pill w-full text-left px-3 py-2.5 text-[10px] sm:text-xs font-medium rounded-md border transition-colors duration-200 pointer-events-auto whitespace-normal leading-snug break-words ${
+                index === 0 
+                  ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+                  : 'border-transparent text-primary/60 hover:bg-gray-50 hover:border-gray-200'
+               } ${v.computed_out_of_stock ? 'opacity-50 line-through cursor-not-allowed' : ''}`}
+               data-product={id}
+               data-variant={v.id}
+               data-price={v.price}
+               data-mrp={v.mrp}
+               data-stock={v.stock || 0}
+               data-image={v.images && v.images.length > 0 ? v.images[0] : ''}
+               data-out-of-stock={v.computed_out_of_stock ? 'true' : 'false'}
+               aria-label={`Select ${v.weight} variant`}
+            >
+              {v.weight}
+            </button>
+          ))}
+        </div>
+        
+        <button type="button" class="close-variants mt-2 w-full flex-shrink-0 py-2.5 bg-background-alt text-primary/70 text-[11px] font-bold rounded-md border border-gray-200 hover:bg-gray-200 transition-colors">
+           Hide options ▴
+        </button>
+      </div>
+    )}
+  </div>
+</article>
+
+<script>
+// Use event delegation so it works even after view transitions or dynamic loading
+document.addEventListener('click', function(e) {
+  // --- More Variants Dropdown Toggle ---
+  const moreBtn = (e.target as Element).closest('.variant-pill-more') as HTMLElement;
+  if (moreBtn) {
+    const card = moreBtn.closest('.product-card');
+    if (card) {
+      const dropdown = card.querySelector('.more-variants-dropdown') as HTMLElement;
+      if (dropdown) {
+        const isHidden = dropdown.style.display === 'none';
+        
+        // Close all other dropdowns
+        document.querySelectorAll('.more-variants-dropdown').forEach(d => {
+          (d as HTMLElement).style.display = 'none';
+        });
+        
+        if (isHidden) {
+          dropdown.style.display = 'flex';
+          // Optional: Elevate card z-index just in case
+          (card as HTMLElement).style.zIndex = '50';
+          if (card.parentElement) card.parentElement.style.zIndex = '50';
+        }
+      }
+    }
+    return;
+  }
+
+  // --- Close Variants Dropdown via X button or Hide options ---
+  const closeBtn = (e.target as Element).closest('.close-variants') as HTMLElement;
+  if (closeBtn) {
+    const dropdown = closeBtn.closest('.more-variants-dropdown') as HTMLElement;
+    if (dropdown) {
+      dropdown.style.display = 'none';
+      const card = dropdown.closest('.product-card') as HTMLElement;
+      if (card) {
+        card.style.zIndex = '';
+        if (card.parentElement) card.parentElement.style.zIndex = '';
+      }
+    }
+    return;
+  }
+
+  // --- Close dropdown if clicking outside ---
+  if (!(e.target as Element).closest('.product-card')) {
+    document.querySelectorAll('.more-variants-dropdown').forEach(d => {
+      (d as HTMLElement).style.display = 'none';
+      const card = d.closest('.product-card') as HTMLElement;
+      if (card) {
+        card.style.zIndex = '';
+        if (card.parentElement) card.parentElement.style.zIndex = '';
+      }
+    });
+  }
+
+  // --- Variant Pill Selection ---
+  const pillBtn = (e.target as Element).closest('.variant-pill') as HTMLElement;
+  if (pillBtn) {
+    const productId = pillBtn.dataset.product;
+    const price     = pillBtn.dataset.price;
+    const mrp       = pillBtn.dataset.mrp;
+    const stock     = pillBtn.dataset.stock;
+    const variantId = pillBtn.dataset.variant;
+    const weight    = pillBtn.dataset.weight || pillBtn.textContent?.trim();
+    const isOut     = pillBtn.dataset.outOfStock === 'true';
+
+    const card = pillBtn.closest('.product-card');
+    if (!card) return;
+
+    // Logic to replace the 2nd visible pill if a hidden variant is selected
+    const visibleSelector = card.querySelector('.variant-selector');
+    if (visibleSelector) {
+      const visiblePills = Array.from(visibleSelector.children).filter(c => c.classList.contains('variant-pill')) as HTMLElement[];
+      const isVisible = visiblePills.some(p => p.dataset.variant === variantId);
+      
+      if (!isVisible && visiblePills.length > 1) {
+        const secondVisible = visiblePills[1];
+        secondVisible.dataset.variant = variantId || '';
+        secondVisible.dataset.price = price || '';
+        secondVisible.dataset.mrp = mrp || '';
+        secondVisible.dataset.stock = stock || '';
+        secondVisible.dataset.image = pillBtn.dataset.image || '';
+        secondVisible.dataset.outOfStock = isOut ? 'true' : 'false';
+        secondVisible.textContent = weight || '';
+        
+        if (isOut) {
+          secondVisible.classList.add('opacity-50', 'line-through', 'cursor-not-allowed');
+        } else {
+          secondVisible.classList.remove('opacity-50', 'line-through', 'cursor-not-allowed');
+        }
+      }
+    }
+
+    // Highlight all pills matching this variantId (both visible and in dropdown)
+    card.querySelectorAll('.variant-pill').forEach(function(el) {
+      const p = el as HTMLElement;
+      if (p.dataset.variant === variantId) {
+        p.classList.add('border-primary', 'bg-primary/5', 'text-primary', 'shadow-sm');
+        p.classList.remove('border-background-alt', 'border-transparent', 'text-primary/60');
+      } else {
+        p.classList.remove('border-primary', 'bg-primary/5', 'text-primary', 'shadow-sm');
+        // Dropdown pills have border-transparent by default, visible have border-background-alt
+        if (p.closest('.more-variants-dropdown')) {
+          p.classList.add('border-transparent', 'text-primary/60');
+        } else {
+          p.classList.add('border-background-alt', 'text-primary/60');
+        }
+      }
+    });
+    
+    // Close dropdown if a pill was selected inside it
+    if (pillBtn.closest('.more-variants-dropdown')) {
+      const dropdown = pillBtn.closest('.more-variants-dropdown') as HTMLElement;
+      if (dropdown) {
+        dropdown.style.display = 'none';
+        const c = dropdown.closest('.product-card') as HTMLElement;
+        if (c) {
+          c.style.zIndex = '';
+          if (c.parentElement) c.parentElement.style.zIndex = '';
+        }
+      }
+    }
+
+    // Update price display
+    const priceEl = card.querySelector('.price-display');
+    const mrpEl   = card.querySelector('.mrp-display');
+    if (priceEl) priceEl.textContent = '₹' + price;
+    if (mrpEl)   mrpEl.textContent   = '₹' + mrp;
+
+    // Update add-to-cart button data
+    card.querySelectorAll('.add-to-cart-btn').forEach(function(el) {
+      const addBtn = el as HTMLButtonElement;
+      addBtn.dataset.variantId     = variantId;
+      addBtn.dataset.price         = price;
+      addBtn.dataset.mrp           = mrp;
+      addBtn.dataset.stock         = stock;
+      addBtn.dataset.variantWeight = weight;
+      addBtn.dataset.image         = pillBtn.dataset.image || addBtn.dataset.defaultImage || '';
+      addBtn.dataset.outOfStock    = isOut ? 'true' : 'false';
+      
+      if (isOut) {
+        addBtn.disabled = true;
+        addBtn.innerHTML = 'Out of Stock';
+        addBtn.className = 'w-full justify-center mt-1 add-to-cart-btn pointer-events-auto btn-secondary opacity-60 cursor-not-allowed bg-background-alt text-text-muted hover:bg-background-alt border-none';
+      } else {
+        addBtn.disabled = false;
+        addBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg> Add to Cart';
+        addBtn.className = 'btn-primary w-full justify-center mt-1 add-to-cart-btn pointer-events-auto';
+      }
+    });
+    return;
+  }
+
+  // --- Add to Cart ---
+  const addBtn = (e.target as Element).closest('.add-to-cart-btn') as HTMLButtonElement;
+  if (addBtn) {
+    if (addBtn.dataset.outOfStock === 'true') return;
+    const slug = addBtn.dataset.productSlug || addBtn.dataset.productId || '';
+    const item = {
+      id:     (addBtn.dataset.productId || '') + '-' + (addBtn.dataset.variantId || ''),
+      product_id: addBtn.dataset.productId || '',
+      name:   addBtn.dataset.productName   || '',
+      price:  Number(addBtn.dataset.price  || 0),
+      mrp:    Number(addBtn.dataset.mrp    || addBtn.dataset.price || 0),
+      weight: addBtn.dataset.variantWeight || '',
+      image:  addBtn.dataset.image || '/products/' + slug + '.webp',
+    };
+
+    // BUG 5 FIX: Check if cart quantity exceeds stock
+    const stock = Number(addBtn.dataset.stock || 0);
+    if (stock > 0 && typeof window !== 'undefined') {
+      try {
+        const cartData = JSON.parse(localStorage.getItem(`vyaparpe-cart-${window.location.hostname}`) || '[]');
+        const existingItem = cartData.find((i: any) => i.id === item.id);
+        if (existingItem && existingItem.quantity >= stock) {
+          alert(`Maximum stock of ${stock} already in cart.`);
+          return;
+        }
+      } catch (e) {}
+    }
+
+    window.dispatchEvent(new CustomEvent('vyaparpe:add-to-cart', { detail: item }));
+
+    // Button feedback
+    const originalInner = addBtn.innerHTML;
+    addBtn.innerHTML = '✓ Added!';
+    addBtn.classList.add('!bg-green-600');
+    setTimeout(function() {
+      addBtn.innerHTML = originalInner;
+      addBtn.classList.remove('!bg-green-600');
+    }, 1500);
+  }
+
+  // --- Wishlist Toggle ---
+  const wishlistBtn = (e.target as Element).closest('.wishlist-btn') as HTMLButtonElement;
+  if (wishlistBtn) {
+    e.preventDefault(); // Prevent navigating to PDP if it's over the link
+    const productId = wishlistBtn.dataset.productId;
+    if (!productId) return;
+
+    const item = {
+      id: productId,
+      name: wishlistBtn.dataset.productName,
+      slug: wishlistBtn.dataset.productSlug,
+      image: wishlistBtn.dataset.productImage,
+      price: Number(wishlistBtn.dataset.productPrice),
+      mrp: Number(wishlistBtn.dataset.productMrp),
+    };
+
+    let wishlist = [];
+    try {
+      wishlist = JSON.parse(localStorage.getItem(`vyaparpe-wishlist-${window.location.hostname}`) || '[]');
+    } catch(err) {}
+
+    const index = wishlist.findIndex(w => w.id === productId);
+    const icon = wishlistBtn.querySelector('.wishlist-icon');
+    
+    if (index > -1) {
+      // Remove
+      wishlist.splice(index, 1);
+      if (icon) {
+        icon.setAttribute('fill', 'none');
+        icon.classList.remove('text-red-500');
+        wishlistBtn.classList.replace('text-red-500', 'text-primary/40');
+      }
+    } else {
+      // Add
+      wishlist.push(item);
+      if (icon) {
+        icon.setAttribute('fill', 'currentColor');
+        icon.classList.add('text-red-500');
+        wishlistBtn.classList.replace('text-primary/40', 'text-red-500');
+      }
+    }
+    
+    localStorage.setItem(`vyaparpe-wishlist-${window.location.hostname}`, JSON.stringify(wishlist));
+    // Optional: dispatch event if navbar has a wishlist counter
+    window.dispatchEvent(new Event('wishlist-updated'));
+  }
+});
+
+// Initialize Wishlist State on load
+document.addEventListener('DOMContentLoaded', () => {
+  let wishlist = [];
+  try {
+    wishlist = JSON.parse(localStorage.getItem(`vyaparpe-wishlist-${window.location.hostname}`) || '[]');
+  } catch(err) {}
+
+  if (wishlist.length > 0) {
+    document.querySelectorAll('.wishlist-btn').forEach(btn => {
+      const id = (btn as HTMLElement).dataset.productId;
+      if (wishlist.some(w => w.id === id)) {
+        const icon = btn.querySelector('.wishlist-icon');
+        if (icon) {
+          icon.setAttribute('fill', 'currentColor');
+          icon.classList.add('text-red-500');
+          btn.classList.replace('text-primary/40', 'text-red-500');
+        }
+      }
+    });
+  }
+});
+</script>

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_storefront_src_components_accountsidebar_astro", "label": "AccountSidebar.astro", "file_type": "code", "source_file": "storefront/src/components/AccountSidebar.astro", "source_location": "L1"}], "edges": [], "raw_calls": [], "parse_errors": {"first_error_line": 2, "multiline_error": true}}

@@ -1,0 +1,354 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "customers")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getOrders, getCustomers } from '../../lib/database';
+
+const [orders, dbCustomers] = await Promise.all([getOrders(), getCustomers()]);
+
+// Extract unique customers by phone number
+const customerMap = new Map<string, { name: string; phone: string; email: string; cities: Set<string>; addresses: Set<string>; totalOrders: number; lastOrder: string, createdAt: string }>();
+
+// Pre-fill from dbCustomers
+(dbCustomers || []).forEach((c: any) => {
+  if (c.phone) {
+    customerMap.set(c.phone, {
+      name: c.name || 'Guest',
+      phone: c.phone,
+      email: c.email || '—',
+      cities: new Set(c.city ? [c.city] : []),
+      addresses: new Set(c.address ? [c.address] : []),
+      totalOrders: 0,
+      lastOrder: '',
+      createdAt: c.created_at || new Date().toISOString()
+    });
+  }
+});
+
+orders.forEach((order: any) => {
+  const c = order.customer;
+  if (!c?.phone) return;
+
+  const existing = customerMap.get(c.phone);
+  if (existing) {
+    existing.totalOrders += 1;
+    if (c.city) existing.cities.add(c.city);
+    if (c.address) existing.addresses.add(c.address);
+    if (order.createdAt > existing.lastOrder) {
+      existing.name = c.name && c.name !== 'Guest' ? c.name : existing.name;
+      existing.email = c.email && c.email !== '—' ? c.email : existing.email;
+      existing.lastOrder = order.createdAt;
+    }
+  } else {
+    customerMap.set(c.phone, {
+      name: c.name || 'Guest',
+      phone: c.phone,
+      email: c.email || '—',
+      cities: new Set(c.city ? [c.city] : []),
+      addresses: new Set(c.address ? [c.address] : []),
+      totalOrders: 1,
+      lastOrder: order.createdAt || '',
+      createdAt: order.createdAt || new Date().toISOString()
+    });
+  }
+});
+
+const customers = Array.from(customerMap.values()).map(c => ({
+  ...c,
+  city: c.cities.size > 0 ? Array.from(c.cities).join(', ') : '—',
+  address: c.addresses.size > 0 ? Array.from(c.addresses).join(' | ') : '—',
+  timestampForSort: new Date(c.createdAt).getTime()
+})).sort((a, b) => b.timestampForSort - a.timestampForSort);
+
+const totalCustomersCount = customers.length;
+const page = parseInt(Astro.url.searchParams.get('page') || '1');
+const limit = 50;
+const totalPages = Math.max(1, Math.ceil(totalCustomersCount / limit));
+const paginatedCustomers = customers.slice((page - 1) * limit, page * limit);
+
+const customersForAI = JSON.stringify(paginatedCustomers.slice(0, 100).map((c: any) => ({
+  name: c.name,
+  phone: c.phone,
+  email: c.email,
+  city: c.city,
+  totalOrders: c.totalOrders,
+  lastOrder: c.lastOrder
+})));
+---
+
+<AdminLayout title="Customers | Admin Panel" description="View your customer base.">
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Customers</h1>
+      <p class="text-sm text-secondary/60 mt-1">
+        {customers.length > 0
+          ? `${customers.length} total customer${customers.length !== 1 ? 's' : ''} in the system.`
+          : 'No customers yet.'}
+      </p>
+    </div>
+    <div class="flex items-center gap-3 w-full sm:w-auto">
+      {customers.length > 0 && (
+        <div class="relative w-full sm:w-72">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary/40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            id="customer-search"
+            type="text"
+            placeholder="Search by name, phone, city, or address..."
+            class="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white"
+          />
+        </div>
+      )}
+      
+      <div class="flex items-center gap-2 hidden sm:flex">
+        <select id="filter-orders" class="px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white">
+          <option value="all">All Customers</option>
+          <option value="with_orders">With Orders</option>
+          <option value="no_orders">No Orders</option>
+        </select>
+        <select id="sort-customers" class="px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white">
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+          <option value="most_orders">Most Orders</option>
+        </select>
+      </div>
+      <a href="/admin/bulk-upload/customers" class="btn-primary !py-2.5 flex items-center gap-2 shrink-0 whitespace-nowrap">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        <span class="hidden sm:inline">Import</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- AI Assistant Panel -->
+  <PageAiPanel
+    page="customers"
+    title="Customers Assistant"
+    pageDataJson={customersForAI}
+    guideTitleEn="Customers Guide"
+    guideTitleHi="Customers Guide"
+    guideHtml={`<ul class="space-y-2">
+      <li><strong>Directory:</strong> View all unique customers who have placed orders.</li>
+      <li><strong>Search:</strong> Quickly find customers by name, phone, or location.</li>
+      <li><strong>Metrics:</strong> See total orders and location per customer.</li>
+    </ul>`}
+    guideHtmlHi={`<ul class="space-y-2">
+      <li><strong>Directory:</strong> Jinhone orders kiye hain, un sabhi customers ki list dekhein.</li>
+      <li><strong>Search:</strong> Naam, phone ya location se customer jaldi dhundhein.</li>
+      <li><strong>Metrics:</strong> Har customer ne kitne orders kiye hain wo yahan dikhega.</li>
+    </ul>`}
+    quickActions={[
+      { label: '🔍 Customer search', query: 'customer dhoondo' },
+      { label: '📊 Total customers', query: 'kitne customers hain' },
+      { label: '🏆 Top customer', query: 'sabse zyada order karne wala customer kaun hai' },
+      { label: '⬇️ Export', query: 'customers CSV export karo' },
+      { label: '📤 Import', query: 'mujhe naye customers import karne hain' }
+    ]}
+  />
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+    {paginatedCustomers.length === 0 ? (
+      <div class="p-16 text-center">
+        <div class="text-5xl mb-4 text-secondary/20 flex justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        </div>
+        <p class="text-secondary/60 text-lg font-medium">No customers yet</p>
+        <p class="text-secondary/40 text-sm mt-1">Customers will appear here once orders come in.</p>
+      </div>
+    ) : (
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full text-sm text-left" id="customers-table">
+          <thead class="text-xs text-secondary/70 uppercase bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th class="px-6 py-4">#</th>
+              <th class="px-6 py-4">Name</th>
+              <th class="px-6 py-4">Phone</th>
+              <th class="px-6 py-4">Email</th>
+              <th class="px-6 py-4">City & Address</th>
+              <th class="px-6 py-4">Total Orders</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedCustomers.map((customer: any, index: number) => (
+              <tr class="customer-row border-b border-gray-50 hover:bg-gray-50/50 transition-colors" data-orders={customer.totalOrders} data-joined={customer.timestampForSort} data-search={`${customer.name} ${customer.phone} ${customer.email} ${customer.city} ${customer.address}`.toLowerCase()}>
+                <td class="px-6 py-4 text-secondary/40 font-medium">{(page - 1) * limit + index + 1}</td>
+                <td class="px-6 py-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm flex-shrink-0">
+                      {customer.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span class="font-medium text-secondary">{customer.name}</span>
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <span class="text-secondary/80 font-mono text-xs">{customer.phone}</span>
+                </td>
+                <td class="px-6 py-4">
+                  <span class="text-secondary/70 text-xs">{customer.email}</span>
+                </td>
+                <td class="px-6 py-4">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-secondary/90 font-medium">{customer.city}</span>
+                    {customer.address !== '—' && (
+                      <span class="text-secondary/50 text-xs line-clamp-2 max-w-[200px]" title={customer.address}>{customer.address}</span>
+                    )}
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <span class="inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-full bg-primary/10 text-primary font-bold text-xs">
+                    {customer.totalOrders}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  {totalPages > 1 && (
+    <div class="flex items-center justify-between border-t border-gray-100 bg-white px-4 py-3 sm:px-6 rounded-2xl shadow-sm mb-6">
+      <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-gray-700">
+            Showing <span class="font-medium">{Math.min(1 + (page - 1) * limit, totalCustomersCount)}</span> to <span class="font-medium">{Math.min(page * limit, totalCustomersCount)}</span> of <span class="font-medium">{totalCustomersCount}</span> customers
+          </p>
+        </div>
+        <div>
+          <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <a href={`?page=${Math.max(1, page - 1)}`} class={`relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${1 >= page ? 'pointer-events-none opacity-50' : ''}`}>
+              <span class="sr-only">Previous</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" /></svg>
+            </a>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((num) => {
+              if (num === 1 || num === totalPages || (num >= page - 2 && page + 2 >= num)) {
+                return (
+                  <a href={`?page=${num}`} class={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${num === page ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}`}>
+                    {num}
+                  </a>
+                );
+              } else if (num === page - 3 || num === page + 3) {
+                return <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>;
+              }
+              return null;
+            })}
+            <a href={`?page=${Math.min(totalPages, page + 1)}`} class={`relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${page >= totalPages ? 'pointer-events-none opacity-50' : ''}`}>
+              <span class="sr-only">Next</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" /></svg>
+            </a>
+          </nav>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {totalCustomersCount > 0 && (
+    <p id="results-info" class="text-xs text-secondary/50 mt-4 text-center"></p>
+  )}
+
+
+<script data-astro-rerun>
+  const searchInput = document.getElementById('customer-search');
+  const filterOrders = document.getElementById('filter-orders');
+  const sortCustomers = document.getElementById('sort-customers');
+  const tableBody = document.querySelector('#customers-table tbody');
+  let rows = Array.from(document.querySelectorAll('.customer-row'));
+  const resultsInfo = document.getElementById('results-info');
+
+  function applyFiltersAndSort() {
+    if (!rows.length) return;
+    
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const filter = filterOrders ? filterOrders.value : 'all';
+    const sort = sortCustomers ? sortCustomers.value : 'newest';
+
+    let visibleCount = 0;
+
+    // Filter
+    rows.forEach(row => {
+      const searchData = row.dataset.search || '';
+      const totalOrders = parseInt(row.dataset.orders || '0', 10);
+      
+      let matchesSearch = !query || searchData.includes(query);
+      let matchesFilter = true;
+      if (filter === 'with_orders') matchesFilter = totalOrders > 0;
+      if (filter === 'no_orders') matchesFilter = totalOrders === 0;
+
+      const show = matchesSearch && matchesFilter;
+      row.style.display = show ? '' : 'none';
+      if (show) visibleCount++;
+    });
+
+    // Sort
+    const visibleRows = rows.filter(r => r.style.display !== 'none');
+    visibleRows.sort((a, b) => {
+      if (sort === 'most_orders') {
+        return parseInt(b.dataset.orders) - parseInt(a.dataset.orders);
+      } else if (sort === 'oldest') {
+        return parseInt(a.dataset.joined) - parseInt(b.dataset.joined);
+      } else {
+        // newest
+        return parseInt(b.dataset.joined) - parseInt(a.dataset.joined);
+      }
+    });
+
+    // Re-append to DOM to reflect sort
+    if (tableBody) {
+      visibleRows.forEach(row => tableBody.appendChild(row));
+    }
+
+    if (resultsInfo) {
+      resultsInfo.textContent = query || filter !== 'all'
+        ? `Showing ${visibleCount} of ${rows.length} customer${rows.length !== 1 ? 's' : ''}`
+        : '';
+    }
+  }
+
+  searchInput?.addEventListener('input', applyFiltersAndSort);
+  filterOrders?.addEventListener('change', applyFiltersAndSort);
+  sortCustomers?.addEventListener('change', applyFiltersAndSort);
+
+  // Initial call
+  applyFiltersAndSort();
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'search_customer') {
+      if (searchInput) {
+        searchInput.value = params.query || '';
+        applyFiltersAndSort();
+      }
+    }
+    else if (action === 'export_csv') {
+      var currentRows = rows.filter(function(row) { return row.style.display !== 'none'; });
+      if(currentRows.length === 0) return alert('No customers to export');
+      var csv = 'Name,Phone,Email,City,Total Orders\n' + currentRows.map(function(row) {
+        var cols = row.querySelectorAll('td');
+        return '"' + cols[1].innerText.trim() + '","' + cols[2].innerText.trim() + '","' + cols[3].innerText.trim() + '","' + cols[4].innerText.trim().replace(/\n/g, ' ') + '","' + cols[5].innerText.trim() + '"';
+      }).join('\n');
+      var blob = new Blob([csv], { type: 'text/csv' });
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'customers.csv'; a.click();
+    }
+    else if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+  });
+</script>
+</AdminLayout>

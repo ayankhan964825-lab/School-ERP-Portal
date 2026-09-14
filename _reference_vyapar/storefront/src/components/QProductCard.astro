@@ -1,0 +1,141 @@
+---
+interface Variant {
+  id: string;
+  weight: string;
+  price: number;
+  mrp: number;
+  stock?: number;
+  is_out_of_stock?: boolean;
+  is_hidden?: boolean;
+  images?: string[];
+}
+
+interface Props {
+  id: string;
+  name: string;
+  slug: string;
+  variants: Variant[];
+  image?: string;
+  badge?: string | null;
+  rating?: { value: number; count: number } | number;
+  categoryName?: string;
+  categorySlug?: string;
+  deliveryMins?: number | string;
+  storeName?: string;
+}
+
+const {
+  id,
+  name,
+  slug,
+  variants: rawVariants,
+  image,
+  badge,
+  rating = 4.2,
+  categoryName,
+  categorySlug,
+  deliveryMins,
+  storeName,
+} = Astro.props;
+
+const variants = (rawVariants || []).filter((v: any) => !v.is_hidden);
+const defaultVariant = variants[0] || { price: 0, mrp: 0 };
+const discountPct = defaultVariant.mrp > 0
+  ? Math.round(((defaultVariant.mrp - defaultVariant.price) / defaultVariant.mrp) * 100)
+  : 0;
+
+const imageSrc = (defaultVariant as any).images?.[0] || image || '/placeholder.webp';
+const isOutOfStock = variants.length > 0 
+  ? variants.every((v: any) => v.computed_out_of_stock || v.is_out_of_stock) 
+  : ((defaultVariant as any).computed_out_of_stock || (defaultVariant as any).is_out_of_stock || false);
+const hasMultipleVariants = variants.length > 1;
+
+const stockLeft = (defaultVariant as any).stock;
+const isLowStock = !isOutOfStock && stockLeft !== undefined && stockLeft > 0 && stockLeft <= 5;
+
+const variantsJson = JSON.stringify(variants.map((v: any) => ({
+  id: v.id, weight: v.weight || v.variant_name || v.name, price: v.price, mrp: v.mrp,
+  image: v.images?.[0] || image,
+  out_of_stock: v.is_out_of_stock || false,
+  stock: v.stock
+})));
+
+const finalRating = typeof rating === 'object' ? rating.value : rating;
+---
+
+<div class="qc-card flex flex-col h-full bg-white w-full relative rounded-xl overflow-visible" data-product-id={id} data-slug={slug}>
+  
+  <!-- Image Container -->
+  <div class="relative w-full aspect-square bg-[#f5f3f0] rounded-xl flex items-center justify-center p-2 mb-2">
+    <a href={`/products/${slug}`} class="w-full h-full block flex items-center justify-center">
+      <img
+        src={imageSrc}
+        alt={name}
+        loading="lazy"
+        class="w-[98%] h-[98%] object-contain mix-blend-multiply transition-transform hover:scale-105"
+      />
+    </a>
+    
+    <!-- Heart Icon (Top Right) -->
+    <button class="absolute top-2 right-2 text-gray-300 hover:text-rose-500 transition-colors z-10">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
+    </button>
+    
+    <!-- Discount Badge Overlaid (Bottom Left) -->
+    {discountPct > 0 && (
+       <div class="absolute -bottom-2 left-0 bg-[#ffdb00] px-1.5 py-0.5 rounded-sm z-10 shadow-[0_1px_2px_rgba(0,0,0,0.1)] border border-yellow-400/50">
+          <span class="text-[9px] font-black text-slate-900 tracking-wide">{discountPct}% OFF</span>
+       </div>
+    )}
+
+    <!-- Action Button (Floating Bottom Right) -->
+    <div class="absolute -bottom-3 right-1 z-20">
+      {isOutOfStock ? (
+         <div class="px-2 py-1 bg-slate-100 text-slate-400 text-[9px] font-bold rounded border border-slate-200">Out of Stock</div>
+      ) : hasMultipleVariants ? (
+         <div class="qc-add-controls flex justify-end">
+            <button class="qc-btn-options px-5 py-1.5 rounded-lg bg-white border border-primary text-primary shadow-sm font-bold text-[12px] hover:bg-primary/10 active:scale-95 transition-all tracking-wide" data-variants={variantsJson} aria-label="Select Options">
+              ADD
+            </button>
+            <button class="qc-btn-qty qc-btn-options hidden flex items-center justify-center bg-surface border border-primary text-primary rounded h-7 px-2 shadow-sm active:scale-95 transition-all" data-variants={variantsJson}>
+              <span class="qc-qty-text text-[10px] font-bold text-primary text-center w-full"></span>
+            </button>
+         </div>
+      ) : (
+         <div class="qc-add-controls flex justify-end">
+            <button class="qc-btn-add px-5 py-1.5 rounded-lg bg-white border border-primary text-primary shadow-sm font-bold text-[12px] hover:bg-primary/10 active:scale-95 transition-all tracking-wide" data-variant-id={defaultVariant.id} aria-label={`Add ${name} to cart`}>
+              ADD
+            </button>
+            <div class="qc-btn-qty hidden flex items-center bg-surface border border-primary text-primary rounded h-7 overflow-hidden shadow-sm active:scale-95 transition-transform min-w-[64px]">
+              <button class="qc-btn-minus flex-1 h-full flex items-center justify-center font-bold text-lg hover:bg-[#e8f3ea] transition-colors leading-none" aria-label="Decrease quantity">−</button>
+              <span class="qc-qty-text text-[12px] font-bold text-slate-900 text-center px-1">1</span>
+              <button class="qc-btn-plus flex-1 h-full flex items-center justify-center font-bold text-lg hover:bg-[#e8f3ea] transition-colors leading-none" aria-label="Increase quantity">+</button>
+            </div>
+         </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Content Container -->
+  <div class="flex flex-col flex-1 px-1 mt-1">
+    
+    <!-- Price -->
+    <div class="flex items-center gap-1">
+       <span class="text-[13px] font-black text-slate-900 tracking-tight">₹{defaultVariant.price}</span>
+       {discountPct > 0 && (
+         <span class="text-[10px] text-slate-500 line-through">₹{defaultVariant.mrp}</span>
+       )}
+    </div>
+
+    <!-- Brand -->
+    <span class="text-[9px] font-bold text-slate-500 uppercase mt-1 mb-0.5 tracking-wider">{storeName || 'Store'}</span>
+    
+    <!-- Title -->
+    <a href={`/products/${slug}`} class="block mb-1 group">
+      <h3 class="text-[11px] font-medium text-slate-700 leading-tight line-clamp-2 min-h-[28px] group-hover:text-primary transition-colors">{name}</h3>
+    </a>
+    
+    <!-- Weight -->
+    <span class="text-[10px] font-medium text-slate-500 mt-auto">{defaultVariant.weight || '1 pc'}</span>
+  </div>
+</div>

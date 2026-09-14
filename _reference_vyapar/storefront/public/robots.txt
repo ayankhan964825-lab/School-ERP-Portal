@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# Block admin and API from indexing
+Disallow: /admin/
+Disallow: /api/
+Disallow: /account/
+Disallow: /checkout/
+Disallow: /order-success
+Disallow: /track-order
+
+# Sitemap
+Sitemap: https://thenutridry.com/sitemap.xml

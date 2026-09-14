@@ -1,0 +1,237 @@
+﻿diff --git a/storefront/src/pages/checkout/index.astro b/storefront/src/pages/checkout/index.astro
+index f0eefa9..45af5c7 100644
+--- a/storefront/src/pages/checkout/index.astro
++++ b/storefront/src/pages/checkout/index.astro
+@@ -486,7 +486,10 @@ const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.raz
+   }
+ 
+   function renderCart() {
+-    const cart = getCart();
++    let rawCart;
++    try { rawCart = getCart(); } catch(e) { rawCart = []; }
++    if (!Array.isArray(rawCart)) rawCart = [];
++    const cart = rawCart.filter(item => item && typeof item === 'object');
+     const container = document.getElementById('order-items');
+     if (!container) return;
+ 
+@@ -625,6 +628,154 @@ const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.raz
+         }
+     }
+     
++    if (hasDigitalProduct && !window.hasPrepaidGateway) {
++        digitalBlockBanner.innerHTML = '<strong>Checkout Blocked:</strong> Your cart contains digital products which require online payment, but this store only accepts Cash on Delivery. Please remove the digital products or contact the store owner.';
++        digitalBlockBanner.classList.remove('hidden');
++        document.querySelectorAll('#btn-place-order, #btn-place-order-mobile').forEach(b => {
++           b.disabled = true;
++           b.classList.add('opacity-50', 'cursor-not-allowed');
++           b.innerText = 'Checkout Unavailable';
++        });
++    } else {
++    const cart = rawCart.filter(item => item && typeof item === 'object');
++    const container = document.getElementById('order-items');
++    if (!container) return;
++
++    if (cart.length === 0) {
++      container.innerHTML = `<div class="text-center py-4"><p class="text-sm text-secondary/60">Your cart is empty.</p><a href="/products" class="text-primary text-sm font-medium hover:underline">Shop now ΓåÆ</a></div>`;
++      updateTotals();
++      // Only redirect if the user is logged in (authCookieRaw is truthy server-side).
++      // We detect login by checking if the place-order button exists (it's only rendered when logged in).
++      const isLoggedIn = !!document.getElementById('btn-place-order') || !!document.getElementById('btn-place-order-mobile');
++      if (isLoggedIn) {
++        // Use a longer timeout so the cart has time to hydrate from storage.
++        // If the cart is genuinely empty (not a race condition), we redirect.
++        setTimeout(() => { window.location.href = '/products'; }, 3000);
++      }
++      return;
++    }
++
++    container.innerHTML = cart.map(item => `
++      <div class="flex gap-3 items-start">
++        <img src="${item.image || 'https://placehold.co/60x60/e2e8f0/64748b?text=P'}" alt="${item.name}" class="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-100" onerror="this.src='https://placehold.co/60x60/e2e8f0/64748b?text=P'" />
++        <div class="flex-1 min-w-0">
++          <p class="text-sm font-medium text-secondary leading-tight truncate">${item.name}</p>
++          <p class="text-xs text-secondary/50">${item.weight || ''}</p>
++          <div class="flex items-center justify-between mt-1">
++            <span class="text-xs text-secondary/50">Qty: ${item.quantity || 1}</span>
++            <span class="text-sm font-bold text-secondary">Γé╣${((item.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}</span>
++          </div>
++        </div>
++      </div>
++    `).join('');
++
++    // Also populate mobile compact summary
++    const mobileItems = document.getElementById('mobile-order-items');
++    if (mobileItems) {
++      mobileItems.innerHTML = cart.map(item => `
++        <div class="flex items-center justify-between gap-2">
++          <div class="flex items-center gap-2 min-w-0">
++            <img src="${item.image || 'https://placehold.co/32x32/e2e8f0/64748b?text=P'}" alt="${item.name}" class="w-8 h-8 rounded-lg object-cover shrink-0" onerror="this.src='https://placehold.co/32x32/e2e8f0/64748b?text=P'" />
++            <div class="min-w-0">
++              <p class="text-xs font-medium text-secondary truncate">${item.name}</p>
++              <p class="text-[10px] text-secondary/40">${item.weight || ''} ├ù ${item.quantity || 1}</p>
++            </div>
++          </div>
++          <span class="text-xs font-bold text-secondary shrink-0">Γé╣${((item.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}</span>
++        </div>
++      `).join('');
++    }
++    const mobileCount = document.getElementById('mobile-item-count');
++    
++    // Auto-fill coupon input if we have a saved coupon
++    const couponInput = document.getElementById('coupon-input');
++    if (couponInput && appliedCoupons.length > 0) {
++      couponInput.value = appliedCoupons.map(c => c.code).join(', ');
++      document.getElementById('btn-remove-coupon')?.classList.remove('hidden');
++    }
++    if (mobileCount) mobileCount.textContent = cart.reduce((s, i) => s + (i.quantity || i.qty || 1), 0) + ' items';
++
++    const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
++    if (isBuyNow) {
++      try {
++        const regularCart = JSON.parse(localStorage.getItem(getCartStorageKey()) || '[]');
++        if (regularCart.length > 0) {
++          const mergePrompt = document.createElement('div');
++          mergePrompt.className = 'mt-3 p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between gap-3';
++          mergePrompt.innerHTML = `
++            <div>
++              <p class="text-xs font-bold text-secondary">You have ${regularCart.length} item(s) in your cart.</p>
++              <p class="text-[10px] text-secondary/60">Add them to this order to save on shipping!</p>
++            </div>
++            <button id="btn-merge-cart" class="text-xs font-bold bg-primary text-white px-3 py-1.5 rounded-lg shrink-0 hover:bg-primary/90 transition-colors">Add Items</button>
++          `;
++          container.appendChild(mergePrompt);
++          
++          document.getElementById('btn-merge-cart')?.addEventListener('click', () => {
++            const merged = [...cart];
++            regularCart.forEach(item => {
++              const existing = merged.find(i => i.id === item.id);
++              if (existing) {
++                existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
++              } else {
++                merged.push(item);
++              }
++            });
++            sessionStorage.setItem('buy-now-cart', JSON.stringify(merged));
++            window.location.reload();
++          });
++        }
++      } catch (e) {}
++    }
++
++    const hasDigitalProduct = cart.some(item => item.is_digital === true || item.is_digital === 'true');
++    const isDigitalOnly = cart.length > 0 && cart.every(item => item.is_digital === true || item.is_digital === 'true');
++
++    // Hide Address Fields if Digital Only
++    const physicalFields = document.getElementById('physical-address-fields');
++    if (physicalFields) {
++      if (isDigitalOnly) {
++        physicalFields.classList.add('hidden');
++        physicalFields.classList.remove('contents');
++        document.getElementById('delivery-address')?.removeAttribute('required');
++        document.getElementById('delivery-city')?.removeAttribute('required');
++        document.getElementById('delivery-pincode')?.removeAttribute('required');
++      } else {
++        physicalFields.classList.remove('hidden');
++        physicalFields.classList.add('contents');
++        document.getElementById('delivery-address')?.setAttribute('required', 'true');
++        document.getElementById('delivery-city')?.setAttribute('required', 'true');
++        document.getElementById('delivery-pincode')?.setAttribute('required', 'true');
++      }
++    }
++
++    // Hide COD if Has Digital Product
++    const codOption = document.querySelector('.payment-option[data-method="cod"]');
++    if (codOption) {
++      if (hasDigitalProduct) {
++        codOption.style.display = 'none';
++        const codRadio = codOption.querySelector('input[type="radio"]');
++        if (codRadio && codRadio.checked) {
++           const onlineOptions = document.querySelectorAll('.payment-option:not([data-method="cod"])');
++           if (onlineOptions.length > 0) onlineOptions[0].click();
++        }
++      } else {
++        codOption.style.display = 'flex';
++      }
++    }
++
++    // Show warning banner if digital and no prepaid gateway
++    let digitalBlockBanner = document.getElementById('digital-block-banner');
++    if (!digitalBlockBanner) {
++        digitalBlockBanner = document.createElement('div');
++        digitalBlockBanner.id = 'digital-block-banner';
++        digitalBlockBanner.className = 'mt-4 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm hidden shadow-sm';
++        const orderSummarySection = document.querySelector('.lg\\:col-span-1 > div');
++        if (orderSummarySection) {
++            orderSummarySection.insertAdjacentElement('beforebegin', digitalBlockBanner);
++        }
++    }
++    
+     if (hasDigitalProduct && !window.hasPrepaidGateway) {
+         digitalBlockBanner.innerHTML = '<strong>Checkout Blocked:</strong> Your cart contains digital products which require online payment, but this store only accepts Cash on Delivery. Please remove the digital products or contact the store owner.';
+         digitalBlockBanner.classList.remove('hidden');
+@@ -643,12 +794,22 @@ const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.raz
+         });
+     }
+ 
+-    const subtotal = cart.reduce((s, i) => s + ((i.price || 0) * (i.quantity || i.qty || 1)), 0);
+-    updateTotals(subtotal);
++    updateTotals();
+   }
+ 
++  let isUpdatingTotals = false;
++  let pendingUpdateTotals = false;
++
+   async function updateTotals() {
+-    const cart = getCart();
++    if (isUpdatingTotals) {
++       pendingUpdateTotals = true;
++       return;
++    }
++    isUpdatingTotals = true;
++    let rawCart;
++    try { rawCart = getCart(); } catch(e) { rawCart = []; }
++    if (!Array.isArray(rawCart)) rawCart = [];
++    const cart = rawCart.filter(item => item && typeof item === 'object');
+     if (cart.length === 0) return;
+     
+     const stateElement = document.getElementById('delivery-state');
+@@ -820,19 +981,6 @@ const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.raz
+           }
+         }
+       } else {
+-        alert(data.error || 'Failed to validate totals');
+-        // Reset state dropdown if shipping is blocked
+-        const stateSelect = document.getElementById('delivery-state');
+-        if (stateSelect) stateSelect.value = '';
+-      }
+-    } catch (e) {
+-      console.error('Failed to validate totals', e);
+-    }
+-  }
+-
+-  // ΓöÇΓöÇ Coupon Logic ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  document.getElementById('btn-apply-coupon')?.addEventListener('click', async () => {
+-    const code = document.getElementById('coupon-input').value.trim().toUpperCase();
+     const msgEl = document.getElementById('coupon-msg');
+     
+     if (!code) {
+@@ -890,7 +1038,8 @@ const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.raz
+ 
+   // ΓöÇΓöÇ Payment Option Cards ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   document.querySelectorAll('.payment-option').forEach(card => {
+-    card.addEventListener('click', function() {
++    card.addEventListener('click', function(e) {
++      if (e && e.target && e.target.tagName && e.target.tagName.toLowerCase() === 'input') return;
+       document.querySelectorAll('.payment-option').forEach(c => {
+         c.className = 'payment-option flex items-center gap-4 p-4 border-2 border-gray-200 bg-white rounded-2xl cursor-pointer hover:border-blue-300 transition-all';
+         const dot = c.querySelector('.w-5.h-5 div');
+@@ -918,7 +1067,8 @@ const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.raz
+ 
+   // ΓöÇΓöÇ Saved Address Cards ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   document.querySelectorAll('.address-card').forEach(card => {
+-    card.addEventListener('click', function() {
++    card.addEventListener('click', function(e) {
++      if (e && e.target && e.target.tagName && e.target.tagName.toLowerCase() === 'input') return;
+       document.querySelectorAll('.address-card').forEach(c => {
+         c.classList.remove('border-primary', 'bg-primary/5');
+         c.classList.add('border-gray-100', 'bg-white');

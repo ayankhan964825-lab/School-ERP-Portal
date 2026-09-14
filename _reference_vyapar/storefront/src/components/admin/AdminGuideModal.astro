@@ -1,0 +1,116 @@
+---
+import { adminGuides } from '../../lib/admin-guides';
+// Serialize guide data to pass to client script via define:vars
+const guidesJson = JSON.stringify(adminGuides);
+---
+
+<!-- Guide Modal Backdrop -->
+<div id="admin-guide-backdrop" class="fixed inset-0 bg-black/50 z-[100] hidden backdrop-blur-sm transition-opacity opacity-0"></div>
+
+<!-- Guide Modal Container -->
+<div id="admin-guide-modal" class="fixed inset-y-0 right-0 w-full max-w-md bg-white z-[110] transform translate-x-full transition-transform duration-300 flex flex-col shadow-2xl">
+  
+  <!-- Header -->
+  <div class="h-16 flex items-center justify-between px-5 border-b border-gray-100 shrink-0 bg-gray-50">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div>
+        <h2 id="guide-title" class="text-base font-bold text-secondary">Page Guide</h2>
+        <p class="text-[10px] text-secondary/60">How to use this section</p>
+      </div>
+    </div>
+    <button id="close-guide-modal" class="p-2 text-secondary/50 hover:text-secondary bg-white rounded-lg border border-gray-200">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+    </button>
+  </div>
+
+  <!-- Language Toggle -->
+  <div class="px-5 py-3 border-b border-gray-100 flex justify-end">
+    <div class="bg-gray-100 p-1 rounded-lg flex items-center gap-1 w-fit">
+      <button id="guide-lang-en" class="px-3 py-1 text-xs font-semibold rounded-md bg-white text-primary shadow-sm transition-all" data-lang="en">English</button>
+      <button id="guide-lang-hi" class="px-3 py-1 text-xs font-semibold rounded-md text-secondary/60 hover:text-secondary transition-all" data-lang="hi">Hinglish</button>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="flex-1 overflow-y-auto p-5">
+    <div id="guide-content" class="prose prose-sm prose-p:text-secondary/80 prose-li:text-secondary/80 max-w-none">
+      <!-- Injected by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- FIX: Use define:vars to safely pass server data to client — no ES module import in browser -->
+<script define:vars={{ guidesJson }}>
+  var adminGuides = JSON.parse(guidesJson);
+
+  function initGuideModal() {
+    var backdrop = document.getElementById('admin-guide-backdrop');
+    var modal    = document.getElementById('admin-guide-modal');
+    var closeBtn = document.getElementById('close-guide-modal');
+    var openBtn  = document.getElementById('open-guide-modal');
+    var langEn   = document.getElementById('guide-lang-en');
+    var langHi   = document.getElementById('guide-lang-hi');
+    var titleEl  = document.getElementById('guide-title');
+    var contentEl= document.getElementById('guide-content');
+
+    var currentLang = 'en';
+    var path = window.location.pathname;
+    var guideData = adminGuides[path] || adminGuides['default'];
+
+    function renderGuide() {
+      if (!titleEl || !contentEl) return;
+      titleEl.textContent = currentLang === 'en' ? guideData.titleEn : guideData.titleHi;
+      contentEl.innerHTML = currentLang === 'en' ? guideData.en     : guideData.hi;
+    }
+
+    function setLanguage(lang) {
+      currentLang = lang;
+      if (lang === 'en') {
+        langEn && langEn.classList.add('bg-white', 'text-primary', 'shadow-sm');
+        langEn && langEn.classList.remove('text-secondary/60');
+        langHi && langHi.classList.remove('bg-white', 'text-primary', 'shadow-sm');
+        langHi && langHi.classList.add('text-secondary/60');
+      } else {
+        langHi && langHi.classList.add('bg-white', 'text-primary', 'shadow-sm');
+        langHi && langHi.classList.remove('text-secondary/60');
+        langEn && langEn.classList.remove('bg-white', 'text-primary', 'shadow-sm');
+        langEn && langEn.classList.add('text-secondary/60');
+      }
+      renderGuide();
+    }
+
+    langEn && langEn.addEventListener('click', function() { setLanguage('en'); });
+    langHi && langHi.addEventListener('click', function() { setLanguage('hi'); });
+
+    function openModal() {
+      renderGuide();
+      backdrop && backdrop.classList.remove('hidden');
+      setTimeout(function() { backdrop && backdrop.classList.remove('opacity-0'); }, 10);
+      modal && modal.classList.remove('translate-x-full');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+      modal && modal.classList.add('translate-x-full');
+      backdrop && backdrop.classList.add('opacity-0');
+      setTimeout(function() { backdrop && backdrop.classList.add('hidden'); }, 300);
+      document.body.style.overflow = '';
+    }
+
+    openBtn  && openBtn.addEventListener('click', openModal);
+    closeBtn && closeBtn.addEventListener('click', closeModal);
+    backdrop && backdrop.addEventListener('click', closeModal);
+  }
+
+  // Run immediately if DOM is ready, else wait
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGuideModal);
+  } else {
+    initGuideModal();
+  }
+</script>

@@ -1,0 +1,195 @@
+---
+import { getPermissionContext, canManageSection } from '../../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "finance_calculator")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+---
+
+<AdminLayout title="Shipping Rate Calculator | Admin Panel" description="Calculate forward and return shipping rates across multiple couriers.">
+  <!-- Page Header -->
+  <div class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-serif font-bold text-secondary">Rate Calculator</h1>
+      <p class="text-sm text-secondary/60 mt-1">Estimate shipping costs for Forward and Return shipments before dispatch.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Calculator Form -->
+    <div class="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 h-fit">
+      <h2 class="text-lg font-bold text-secondary mb-4 border-b border-gray-100 pb-3">Shipment Details</h2>
+      
+      <form id="calculator-form" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-secondary/70 mb-1.5 uppercase tracking-wide">Pickup Pincode</label>
+            <input type="text" id="pickup_pin" value="110020" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. 110020" required />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-secondary/70 mb-1.5 uppercase tracking-wide">Delivery Pincode</label>
+            <input type="text" id="delivery_pin" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="e.g. 400001" required />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-secondary/70 mb-1.5 uppercase tracking-wide">Weight (KG)</label>
+          <input type="number" step="0.1" id="weight" value="0.5" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="0.5" required />
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[10px] font-bold text-secondary/60 mb-1 uppercase tracking-wide">Length (CM)</label>
+            <input type="number" id="length" value="10" class="w-full text-sm border border-gray-200 rounded-lg px-2 py-2 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors text-center" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-secondary/60 mb-1 uppercase tracking-wide">Breadth (CM)</label>
+            <input type="number" id="breadth" value="10" class="w-full text-sm border border-gray-200 rounded-lg px-2 py-2 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors text-center" />
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold text-secondary/60 mb-1 uppercase tracking-wide">Height (CM)</label>
+            <input type="number" id="height" value="10" class="w-full text-sm border border-gray-200 rounded-lg px-2 py-2 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors text-center" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-secondary/70 mb-1.5 uppercase tracking-wide">Payment Mode</label>
+          <select id="payment_mode" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors bg-white">
+            <option value="prepaid">Prepaid</option>
+            <option value="cod">COD (Cash on Delivery)</option>
+          </select>
+        </div>
+        
+        <div id="cod_amount_container" class="hidden">
+          <label class="block text-xs font-bold text-secondary/70 mb-1.5 uppercase tracking-wide">Declared Value (₹)</label>
+          <input type="number" id="cod_amount" value="500" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" placeholder="500" />
+        </div>
+
+        <button type="submit" id="calculate-btn" class="w-full flex justify-center items-center gap-2 bg-primary text-white font-semibold text-sm px-4 py-3 rounded-xl hover:bg-primary/90 transition-colors mt-6">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+          Calculate Rates
+        </button>
+      </form>
+    </div>
+
+    <!-- Results Area -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-full min-h-[400px] flex flex-col">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+          <h2 class="text-lg font-bold text-secondary">Courier Estimates</h2>
+          <span id="zone-badge" class="hidden px-2.5 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded-lg uppercase tracking-wide">Zone: Metro</span>
+        </div>
+        
+        <div id="results-placeholder" class="flex-1 flex flex-col items-center justify-center p-12 text-secondary/40 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" /></svg>
+          <p class="text-lg font-semibold">Enter details and calculate to view rates</p>
+          <p class="text-sm mt-1">We'll fetch live estimates for Delhivery, Bluedart, Xpressbees & more.</p>
+        </div>
+
+        <div id="results-loading" class="hidden flex-1 flex flex-col items-center justify-center p-12 text-secondary">
+           <svg class="animate-spin h-10 w-10 text-primary mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <p class="text-sm font-semibold animate-pulse">Fetching real-time rates...</p>
+        </div>
+
+        <div id="results-container" class="hidden flex-1 overflow-y-auto">
+          <table class="min-w-full text-sm text-left">
+            <thead class="text-[10px] text-secondary/60 uppercase bg-gray-50/50 sticky top-0 z-10 border-b border-gray-100">
+              <tr>
+                <th class="px-5 py-3 font-bold">Courier Partner</th>
+                <th class="px-5 py-3 font-bold">Delivery Time</th>
+                <th class="px-5 py-3 font-bold">Base Freight</th>
+                <th class="px-5 py-3 font-bold">COD Charge</th>
+                <th class="px-5 py-3 font-bold text-right">Total Est.</th>
+              </tr>
+            </thead>
+            <tbody id="results-body" class="divide-y divide-gray-50">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script data-astro-rerun>
+  const payModeSel = document.getElementById('payment_mode');
+  const codContainer = document.getElementById('cod_amount_container');
+  payModeSel?.addEventListener('change', () => {
+    if (payModeSel.value === 'cod') {
+      codContainer?.classList.remove('hidden');
+    } else {
+      codContainer?.classList.add('hidden');
+    }
+  });
+
+  const form = document.getElementById('calculator-form');
+  const btn = document.getElementById('calculate-btn');
+  const placeholder = document.getElementById('results-placeholder');
+  const loading = document.getElementById('results-loading');
+  const container = document.getElementById('results-container');
+  const body = document.getElementById('results-body');
+  const zoneBadge = document.getElementById('zone-badge');
+
+  form?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if(placeholder) placeholder.style.display = 'none';
+    if(container) container.classList.add('hidden');
+    if(loading) loading.classList.remove('hidden');
+    btn.disabled = true;
+
+    // Simulate API Call for fetching rates
+    setTimeout(() => {
+      const isCod = payModeSel.value === 'cod';
+      const weight = parseFloat((document.getElementById('weight')).value || '0.5');
+      const baseMulti = Math.ceil(weight / 0.5);
+
+      const couriers = [
+        { name: 'Delhivery Surface', time: '3-4 Days', base: 45 * baseMulti, cod: isCod ? 40 : 0 },
+        { name: 'Xpressbees Surface', time: '4-5 Days', base: 42 * baseMulti, cod: isCod ? 35 : 0 },
+        { name: 'Ecom Express', time: '3-4 Days', base: 48 * baseMulti, cod: isCod ? 45 : 0 },
+        { name: 'Bluedart Air', time: '1-2 Days', base: 110 * baseMulti, cod: isCod ? 50 : 0 },
+        { name: 'Delhivery Air', time: '1-2 Days', base: 95 * baseMulti, cod: isCod ? 45 : 0 },
+      ].sort((a,b) => (a.base+a.cod) - (b.base+b.cod));
+
+      let html = '';
+      couriers.forEach((c, i) => {
+        const isBest = i === 0;
+        html += `
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-5 py-4">
+              <div class="font-bold text-secondary flex items-center gap-2">
+                ${c.name}
+                ${isBest ? '<span class="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] uppercase tracking-wider rounded">Best Price</span>' : ''}
+              </div>
+              <div class="text-[10px] text-secondary/50 mt-0.5">Rating: ${(4.0 + Math.random()).toFixed(1)}/5.0</div>
+            </td>
+            <td class="px-5 py-4 font-medium text-secondary/80">${c.time}</td>
+            <td class="px-5 py-4 text-secondary">₹${c.base.toFixed(2)}</td>
+            <td class="px-5 py-4 text-secondary/60">${isCod ? '+₹'+c.cod.toFixed(2) : '-'}</td>
+            <td class="px-5 py-4 font-bold text-secondary text-right text-base">₹${(c.base + c.cod).toFixed(2)}</td>
+          </tr>
+        `;
+      });
+
+      if(body) body.innerHTML = html;
+      if(zoneBadge) {
+         zoneBadge.classList.remove('hidden');
+         const r = Math.random();
+         zoneBadge.textContent = `Zone: ${r > 0.6 ? 'National' : r > 0.3 ? 'Metro' : 'Local'}`;
+         zoneBadge.className = `hidden px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wide ${r > 0.6 ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`;
+         zoneBadge.classList.remove('hidden');
+      }
+
+      if(loading) loading.classList.add('hidden');
+      if(container) container.classList.remove('hidden');
+      btn.disabled = false;
+    }, 1200);
+  });
+</script>

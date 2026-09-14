@@ -1,0 +1,171 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+import { supabaseAdmin } from '../../lib/database';
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canManageSection(ctx, "super_admin")) {
+  return Astro.redirect('/super-admin/login');
+}
+
+// Ensure Admin client exists
+if (!supabaseAdmin) {
+    return new Response("Missing SUPABASE_SERVICE_ROLE_KEY", { status: 500 });
+}
+
+import { getCsrfToken } from '../../lib/csrf';
+const csrfToken = getCsrfToken(Astro.cookies);
+
+// Fetch Stores with Custom Domains
+let domains = [];
+try {
+    const { data, error } = await supabaseAdmin
+        .from('stores')
+        .select('id, name, subdomain, custom_domain, domain_status')
+        .not('custom_domain', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(100);
+    if (error) throw error;
+    domains = data || [];
+} catch (error) {
+    console.error("Error fetching domains:", error);
+}
+
+interface Domain {
+    id: string;
+    name: string;
+    subdomain: string;
+    custom_domain: string;
+    domain_status: string;
+}
+
+---
+
+<SuperAdminLayout title="Domain Manager | VyaparPe">
+    <meta name="csrf-token" content={csrfToken} />
+    <div class="mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Domain Manager</h1>
+            <p class="text-sm text-slate-500 mt-1">Monitor and manage custom domains connected via Vercel API.</p>
+        </div>
+        <button id="btn-sync-all" onclick="syncAllDomains()" class="px-4 py-2 bg-white border border-slate-200 rounded-md text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <span id="sync-text">Sync Vercel Domains</span>
+        </button>
+    </div>
+
+    <!-- Domains Table -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+            <h2 class="text-[15px] font-semibold text-slate-900">Connected Custom Domains</h2>
+        </div>
+        
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-100">
+                    <tr>
+                        <th class="px-6 py-3 font-medium">Custom Domain</th>
+                        <th class="px-6 py-3 font-medium">Mapped Subdomain</th>
+                        <th class="px-6 py-3 font-medium">Store Name</th>
+                        <th class="px-6 py-3 font-medium">DNS Status</th>
+                        <th class="px-6 py-3 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {domains?.map((domain: Domain) => (
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-6 py-3">
+                                <div class="font-medium text-[13px] text-slate-900 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                                    <a href={`https://${domain.custom_domain}`} target="_blank" class="hover:underline">{domain.custom_domain}</a>
+                                </div>
+                            </td>
+                            <td class="px-6 py-3">
+                                <a href={`https://${domain.subdomain}.vyaparpe.in`} target="_blank" class="text-[13px] text-indigo-600 hover:text-indigo-800 font-mono bg-slate-50 hover:bg-slate-100 transition-colors px-2 py-0.5 rounded inline-block">
+                                    {domain.subdomain}.vyaparpe.in
+                                </a>
+                            </td>
+                            <td class="px-6 py-3 text-[13px] text-slate-700">
+                                {domain.name}
+                            </td>
+                            <td class="px-6 py-3">
+                                {domain.domain_status === 'active' ? (
+                                    <span class="text-[11px] capitalize font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 flex items-center inline-flex gap-1.5">
+                                        <div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div> Verified
+                                    </span>
+                                ) : (
+                                    <span class="text-[11px] capitalize font-medium px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200 flex items-center inline-flex gap-1.5">
+                                        <div class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div> Pending DNS
+                                    </span>
+                                )}
+                            </td>
+                            <td class="px-6 py-3 text-right">
+                                {domain.domain_status !== 'active' && (
+                                    <button onclick={`verifySingleDomain('${domain.custom_domain}')`} class="text-sm font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-2 py-1 bg-white shadow-sm hover:bg-slate-50">Verify DNS</button>
+                                )}
+                            </td>
+                        </tr>
+                    ))}
+                    {(!domains || domains.length === 0) && (
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">
+                                No custom domains connected yet.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function syncAllDomains() {
+            const textSpan = document.getElementById('sync-text');
+            const originalText = textSpan.innerText;
+            textSpan.innerText = "Syncing with Vercel...";
+            
+            try {
+                const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                const res = await fetch('/api/super-admin/domains/sync', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-csrf-token': token
+                    },
+                    body: JSON.stringify({ action: 'sync_all' })
+                });
+                const data = await res.json();
+                
+                if (!res.ok) throw new Error(data.error || 'Failed to sync domains');
+                
+                alert(data.message);
+                window.location.reload();
+            } catch (err: any) {
+                alert("Error: " + err.message);
+                textSpan.innerText = originalText;
+            }
+        }
+
+        async function verifySingleDomain(domain) {
+            try {
+                const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                const res = await fetch('/api/super-admin/domains/sync', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-csrf-token': token
+                    },
+                    body: JSON.stringify({ action: 'verify_single', domain })
+                });
+                const data = await res.json();
+                
+                if (!res.ok) throw new Error(data.error || 'Failed to verify domain');
+                
+                alert(data.message);
+                window.location.reload();
+            } catch (err: any) {
+                alert("Error: " + err.message);
+            }
+        }
+    </script>
+</SuperAdminLayout>

@@ -1,0 +1,1873 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../../components/admin/PageAiPanel.astro';
+import { getProducts, getCategories, supabaseAdmin, getStore } from '../../../lib/database';
+
+const url = new URL(Astro.request.url);
+const productId = url.searchParams.get('id');
+const isEditing = !!productId;
+
+// Permission Check
+let userPermissions: Record<string, string> = {};
+try { userPermissions = JSON.parse(decodeURIComponent(Astro.cookies.get('admin_permissions')?.value || '%7B%7D')); } catch {}
+const adminRole = Astro.cookies.get('admin_role')?.value || 'super_admin';
+const isSuperAdmin = adminRole === 'super_admin';
+const canManage = isSuperAdmin || userPermissions['products'] === 'manage';
+
+// Fetch from DB (merged with catalog data via getProducts)
+let product: any = null;
+if (isEditing) {
+  const all = await getProducts(Astro.locals?.storeId);
+  product = all.find((p: any) => p.id === productId) || null;
+  if (!product) return Astro.redirect('/admin/products');
+}
+
+// Get categories from DB for dropdown
+const categories = await getCategories(Astro.locals?.storeId);
+
+const storeId = Astro.locals?.storeId;
+const store = await getStore(storeId);
+const isFreeTier = store?.plan_id === '00000000-0000-0000-0000-000000000005';
+
+// Check if Q-commerce is enabled for this store
+let hasQCommerce = false;
+if (supabaseAdmin && Astro.locals?.storeId) {
+  const { data: locs } = await supabaseAdmin
+    .from('locations')
+    .select('q_commerce_enabled')
+    .eq('store_id', Astro.locals.storeId)
+    .eq('is_active', true);
+  hasQCommerce = locs?.some((l: any) => l.q_commerce_enabled) || false;
+}
+
+const productForAI = JSON.stringify({
+  name: product?.name || '',
+  category: product?.category || '',
+  description: product?.description || '',
+  variants: product?.variants || [],
+  specifications: product?.specifications || {},
+  badges: product?.badges || []
+});
+---
+
+<AdminLayout title={isEditing ? `Edit Product | Admin Panel` : `New Product | Admin Panel`} description="Manage product details and variants.">
+  <div class="max-w-7xl mx-auto px-4 pb-24">
+    <!-- Header -->
+    <div class="sticky top-0 z-40 bg-gray-50/90 backdrop-blur-md pb-4 pt-4 mb-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <a href="/admin/products" class="p-2 rounded-lg border border-gray-200 text-secondary hover:bg-white transition-colors bg-white/50 shadow-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </a>
+        <div>
+          <h1 class="text-2xl font-serif font-bold text-secondary">{isEditing ? 'Edit Product' : 'Add New Product'}</h1>
+          <p class="text-sm text-secondary/60 mt-1 hidden sm:block">{isEditing ? `Editing: ${product?.name}` : 'Create a new product listing.'}</p>
+        </div>
+      </div>
+      <div>
+         <button type="submit" form="product-form" id="save-btn-top" class="btn-primary !px-6 !py-2.5 !rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm w-full sm:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+            Save Product
+         </button>
+      </div>
+    </div>
+
+    <!-- Status Banner -->
+    <div id="save-status" class="hidden mb-6 p-4 rounded-xl text-sm font-medium flex items-center gap-2"></div>
+
+    <form id="product-form" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- Left Column: Main Content -->
+      <div class="lg:col-span-8 space-y-6">
+
+      <!-- AI Assistant Panel -->
+      <PageAiPanel
+    page="product_edit"
+    title="Product_Edit Assistant"
+        pageDataJson={productForAI}
+        guideTitleEn="Product Listing Guide"
+        guideTitleHi="Product Listing Guide"
+        guideHtml={`<ul class="space-y-2">
+          <li><strong>AI Assistant:</strong> Use the "Generate Listing" button to automatically write SEO-friendly titles, descriptions, and bullets based on a short prompt.</li>
+          <li><strong>Variants:</strong> Add different sizes (e.g., 100g, 200g) with their respective prices.</li>
+          <li><strong>Images:</strong> Auto-converts to WebP. You can pick variant images to be the main thumbnail.</li>
+        </ul>`}
+        guideHtmlHi={`<ul class="space-y-2">
+          <li><strong>AI Assistant:</strong> Product details auto-generate karne ke liye prompt daalein aur Generate click karein.</li>
+          <li><strong>Variants:</strong> Alag weights (jaise 100g, 500g) aur unki prices daalein.</li>
+          <li><strong>Images:</strong> Sabhi images auto-compress hoti hain.</li>
+        </ul>`}
+        quickActions={[
+          { label: '✨ Write Description', query: 'ek acha SEO description likho is product ke liye' },
+          { label: '📝 Suggest Bullets', query: 'key benefits ke 5 bullet points suggest karo' }
+        ]}
+      />
+
+      <!-- AI Listing Assistant -->
+      <div class="bg-gradient-to-br from-primary/10 to-primary/5 p-6 rounded-2xl shadow-sm border border-primary/20">
+        <div class="flex items-start gap-4">
+          <div class="p-3 bg-white rounded-xl shadow-sm border border-primary/10 hidden sm:block">
+            <span class="text-2xl">✨</span>
+          </div>
+          <div class="flex-1">
+            <h2 class="text-lg font-bold text-primary mb-1">AI Listing Assistant</h2>
+            <p class="text-sm text-secondary/70 mb-4">Product ka naam aur variants enter karo — AI automatically SEO description, bullets aur specifications generate karega.</p>
+            <div class="space-y-3">
+              <textarea id="ai-prompt" rows="3" class="w-full px-4 py-3 border border-primary/20 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none bg-white shadow-inner" placeholder="e.g. Make a listing for Mango Powder. Variants: 100g (₹200), 200g (₹380)."></textarea>
+              <div class="flex justify-end items-center gap-3">
+                <span id="ai-status" class="text-sm text-primary font-medium hidden flex items-center gap-2">
+                  <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  Generating...
+                </span>
+                <button type="button" id="btn-generate-ai" class="btn-primary !py-2 !px-6 !rounded-lg flex items-center gap-2">
+                  Generate Listing ✨
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── BASIC INFO ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <h2 class="text-lg font-bold text-secondary mb-4">Basic Information</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-secondary">Product Name <span class="text-red-500">*</span></label>
+            <input type="text" id="name" required value={product?.name || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="e.g. Beetroot Powder" />
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-secondary">URL Slug</label>
+            <input type="text" id="slug" value={product?.slug || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none font-mono text-sm" placeholder="beetroot-powder" />
+            <p class="text-xs text-secondary/40">Auto-generated from name. Edit only if needed.</p>
+          </div>
+        </div>
+
+
+        <div class="space-y-2 mt-6">
+          <label class="text-sm font-medium text-secondary">Short Description <span class="text-red-500">*</span></label>
+          <textarea id="description" required rows="2" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none" placeholder="Product card pe dikhne wala short description...">{product?.description || ''}</textarea>
+        </div>
+
+        <div class="space-y-2 mt-6">
+          <label class="text-sm font-medium text-secondary">Long Description (Product Page)</label>
+          <textarea id="long_description" rows="5" class="hidden">{product?.long_description || ''}</textarea>
+          <div id="long_description_editor" class="bg-white border border-gray-200 rounded-lg" style="min-height: 200px;"></div>
+        </div>
+                <!-- Dynamic Content Sections -->
+        <div class="mt-8 border-t border-gray-100 pt-6">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-secondary">Custom Sections (Accordions)</h3>
+              <p class="text-xs text-secondary/60">Dynamic sections (e.g. Health Benefits, Size Guide) that appear as accordions on product page.</p>
+            </div>
+            <button type="button" id="add-custom-section-btn" class="text-primary text-sm font-medium hover:underline">+ Add Section</button>
+          </div>
+          <div id="custom-sections-container" class="space-y-4"></div>
+        </div>
+
+      </div>
+
+      <!-- ── DIGITAL & CUSTOM PRODUCTS ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold text-secondary mb-4">Product Type & Customization</h2>
+        
+        <div class="space-y-6">
+          <!-- Digital Product Toggle -->
+          <div class="col-span-1 md:col-span-2">
+            {isFreeTier ? (
+              <div class="flex items-start gap-3 p-4 bg-gray-50 border border-gray-200 rounded-xl opacity-75">
+                <div class="flex-1">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="text-sm font-medium text-gray-500">Digital Product (No Shipping) 🔒</label>
+                    <a href="/admin/settings/billing" class="text-[10px] uppercase font-bold tracking-wider bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full hover:bg-amber-200">Upgrade to unlock</a>
+                  </div>
+                  <p class="text-xs text-gray-400">Sell ebooks, courses, software, or direct download links. (Growth Plan required)</p>
+                </div>
+              </div>
+            ) : (
+            <div class="flex items-start gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:border-primary/30 hover:shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] transition-all">
+              <div class="flex items-center h-5 mt-0.5">
+                <input type="checkbox" id="is_digital" class="w-5 h-5 text-primary border-gray-300 rounded focus:ring-primary" checked={product?.is_digital} />
+              </div>
+              <div class="flex-1">
+                <label for="is_digital" class="text-sm font-medium text-secondary cursor-pointer">Digital Product (No Shipping)</label>
+                <p class="text-xs text-secondary/60 mt-1">If checked, physical shipping methods and COD will be disabled. Delivery type is instantly marked delivered.</p>
+              </div>
+            </div>
+            )}
+          </div>
+            
+            <div class="mt-4 pt-4 border-t border-gray-200" id="delivery_type_container" data-has-qc={hasQCommerce ? 'true' : 'false'}>
+              <label for="delivery_type" class="text-sm font-medium text-secondary block mb-2">Delivery Type Configuration</label>
+              <select id="delivery_type" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none disabled:bg-gray-100 disabled:text-gray-500" disabled={!hasQCommerce}>
+                <option value="both" selected={!product?.is_q_commerce_only && !product?.is_standard_only}>Both (Quick Commerce & Standard Delivery)</option>
+                <option value="qc_only" selected={product?.is_q_commerce_only}>Only Quick Commerce (Hyperlocal Fast Delivery)</option>
+                <option value="std_only" selected={product?.is_standard_only}>Only Standard Delivery (Courier / 3-4 Days)</option>
+              </select>
+              {!hasQCommerce ? (
+                 <p class="text-xs text-amber-600 mt-2 font-medium">⚠️ Enable Quick Commerce in Location & Fulfillment to use this setting.</p>
+              ) : (
+                 <p class="text-xs text-secondary/60 mt-1">Select how this product can be delivered to the customer.</p>
+              )}
+            </div>
+            
+            <div id="digital_warning" class={`mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs ${product?.is_digital ? '' : 'hidden'}`}>
+                <strong>⚠️ Note:</strong> Cash on Delivery (COD) will be automatically disabled for this product at checkout. <br/>
+                If your store only has COD enabled (no online payment gateways like Razorpay/PhonePe), customers will not be able to purchase this product.
+            </div>
+
+            <div id="digital_url_container" class={`mt-4 ${product?.is_digital ? '' : 'hidden'}`}>
+              <label class="text-sm font-medium text-secondary block mb-1">Digital Delivery URL</label>
+              <input type="text" id="digital_delivery_url" value={product?.digital_delivery_url || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="e.g. https://wa.me/919999999999?text=Send%20File or Google Drive Link" />
+              <p class="text-xs text-secondary/40 mt-1">Customers will see this link on the Order Success page after paying.</p>
+            </div>
+          </div>
+
+          <!-- Custom Fields Builder -->
+          <div>
+            <div class="flex justify-between items-center mb-3">
+              <div>
+                <h3 class="text-sm font-bold text-secondary">Custom Input Fields</h3>
+                <p class="text-xs text-secondary/60">Allow customers to provide text or upload files (e.g. Custom Cakes, T-Shirts)</p>
+              </div>
+              <button type="button" id="add-custom-field-btn" class="text-xs font-bold bg-primary/10 text-primary px-3 py-1.5 rounded-lg hover:bg-primary/20 transition-colors">
+                + Add Field
+              </button>
+            </div>
+            
+            <div id="custom-fields-container" class="space-y-3">
+              <!-- JS rendered custom fields -->
+            </div>
+          </div>
+        </div>
+
+      <!-- ── SEO ENGINE ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold text-secondary mb-1">Search Engine Optimization</h2>
+        <p class="text-sm text-secondary/60 mb-4">Customize how this product appears on Google search results.</p>
+        
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-secondary">SEO Page Title</label>
+            <input type="text" id="seo_title" value={product?.specifications?._seo_title || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="Leave empty to use product name" />
+          </div>
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-secondary">SEO Meta Description</label>
+            <textarea id="seo_description" rows="2" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none resize-none" placeholder="Leave empty to use short description...">{product?.specifications?._seo_description || ''}</textarea>
+          </div>
+          
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-secondary">SEO Tags (Keywords)</label>
+            <input type="text" id="seo_keywords" value={product?.specifications?._seo_keywords || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="e.g. natural, organic, powder (comma separated)" />
+          </div>
+        </div>
+      </div>
+      
+      <!-- ── MULTI-DIMENSIONAL VARIANTS ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100" id="md-variant-builder">
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-secondary">Variant Options (Multi-Dimensional)</h2>
+            <p class="text-sm text-secondary/60">E.g. Group: "Size" → Values: "S, M, L". Use "@Color" or "@Image" to enable swatches.</p>
+          </div>
+          <button type="button" id="add-vgroup-btn" class="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Add Option Group
+          </button>
+        </div>
+        <div id="vgroups-container" class="space-y-3 mb-6"></div>
+        <div class="flex justify-between items-center mb-4 border-t border-gray-100 pt-6">
+          <div>
+            <h2 class="text-lg font-bold text-secondary">Combinations & Pricing</h2>
+            <p class="text-sm text-secondary/60">Set prices, stock, upload images. <strong class="text-red-500">Uncheck to disable invalid combinations.</strong></p>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="number" id="bulk-price-input" placeholder="Price (₹)" class="w-24 px-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:border-primary outline-none" />
+            <button type="button" id="apply-bulk-btn" class="text-xs font-bold bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors">Apply to All</button>
+          </div>
+        </div>
+
+        <div class="overflow-auto rounded-xl border border-gray-200 shadow-sm mb-4 max-h-[60vh]">
+          <table class="w-full text-left border-collapse min-w-[600px] mobile-card-table">
+            <thead class="sticky top-0 z-10 bg-gray-50 outline outline-1 outline-gray-200">
+              <tr class="text-xs uppercase tracking-wider text-secondary/70">
+                <th class="p-3 w-10 text-center"><input type="checkbox" id="toggle-all-variants" class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" checked></th>
+                <th class="p-3 font-semibold" id="variant-col-header">Variant (Options)</th>
+                <th class="p-3 font-semibold w-28">Price (₹)</th>
+                <th class="p-3 font-semibold w-28">MRP (₹)</th>
+                <th class="p-3 font-semibold w-28">SKU</th>
+                <th class="p-3 font-semibold w-28 text-center">Images</th>
+                <th class="p-3 w-10"></th>
+              </tr>
+            </thead>
+            <tbody id="variants-container" class="divide-y divide-gray-100 text-sm">
+              <!-- Grid rows go here -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="flex justify-between items-center">
+          <button type="button" id="generate-combinations-btn" class="text-sm font-bold bg-primary/10 text-primary px-4 py-2 rounded-lg hover:bg-primary/20 transition-colors flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+            Auto-Generate Table
+          </button>
+          <button type="button" id="add-custom-variant-btn" class="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1">
+            + Add Custom Row
+          </button>
+        </div>
+      </div>
+
+      <!-- ── PRODUCT THUMBNAIL ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-secondary">Product Thumbnail</h2>
+            <p class="text-sm text-secondary/60">Naya image upload karo <strong>ya</strong> variant images mein se koi choose karo as thumbnail.</p>
+          </div>
+          <span class="text-xs bg-primary/10 text-primary font-semibold px-2 py-1 rounded-full">Auto WebP ✨</span>
+        </div>
+
+        <!-- Current thumbnail preview -->
+        <div id="current-thumb-box" class={`mb-4 overflow-hidden flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3 ${!product?.image ? 'hidden' : ''}`}>
+          <img id="current-thumb-img"
+            src={product?.image?.startsWith('data:') ? product.image : (product?.image || '')}
+            alt="Current thumbnail"
+            class="w-16 h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+            onerror="this.src='/placeholder-product.webp'"
+          />
+          <div class="flex-1 min-w-0 overflow-hidden">
+            <p class="text-sm font-medium text-secondary">Current Thumbnail</p>
+            <p
+              class="text-xs text-secondary/40 font-mono truncate max-w-full block"
+              id="current-thumb-label"
+              title={product?.image?.startsWith('data:') ? 'Compressed WebP (stored as base64)' : (product?.image || '')}
+            >
+              {product?.image?.startsWith('data:') ? '✅ Uploaded image (WebP, compressed)' : (product?.image || '')}
+            </p>
+          </div>
+          <button type="button" id="remove-thumb-btn" class="flex-shrink-0 text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 border border-red-200 rounded-lg whitespace-nowrap">Remove</button>
+        </div>
+
+        <input type="hidden" id="image_url" value={product?.image || ''} />
+
+        <!-- Tabs: Upload New / Choose from Variants -->
+        <div class="flex border border-gray-200 rounded-xl overflow-hidden mb-4">
+          <button type="button" id="tab-upload" class="flex-1 py-2.5 text-sm font-medium bg-primary text-white transition-colors">
+            📤 Upload New Image
+          </button>
+          <button type="button" id="tab-gallery" class="flex-1 py-2.5 text-sm font-medium bg-white text-secondary hover:bg-gray-50 transition-colors">
+            🖼️ Choose from Variant Images
+          </button>
+        </div>
+
+        <!-- Upload Panel -->
+        <div id="panel-upload">
+          <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors relative" id="thumbnail-dropzone">
+            <input type="file" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" id="thumbnail-upload" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <div class="text-sm font-medium text-secondary" id="thumbnail-upload-text">Drop image here or click to browse</div>
+            <p class="text-xs text-secondary/40 mt-1">JPG, PNG, HEIC, WEBP → auto-compressed to WebP</p>
+          </div>
+          <div id="thumbnail-preview-box" class="hidden mt-3 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-3 overflow-hidden">
+            <img id="thumbnail-preview-img" class="w-16 h-16 object-cover rounded-lg border border-green-300 flex-shrink-0" />
+            <div class="flex-1 min-w-0 overflow-hidden">
+              <p class="text-sm font-semibold text-green-800 truncate" id="thumbnail-preview-name"></p>
+              <p class="text-xs text-green-700 truncate" id="thumbnail-preview-size"></p>
+            </div>
+            <a id="thumbnail-download-btn" download class="text-xs font-semibold text-primary underline flex-shrink-0 whitespace-nowrap">⬇ Download WebP</a>
+          </div>
+        </div>
+
+        <!-- Variant Image Gallery Panel -->
+        <div id="panel-gallery" class="hidden">
+          <div id="gallery-empty" class="text-center py-8 text-secondary/40 text-sm border-2 border-dashed border-gray-200 rounded-xl">
+            <p class="font-medium">Abhi koi variant images nahi hain</p>
+            <p class="text-xs mt-1">Pehle Variants section mein images upload karo, phir yahan se select kar sakte ho</p>
+          </div>
+          <div id="gallery-grid" class="hidden grid grid-cols-4 sm:grid-cols-6 gap-3">
+            <!-- Populated by JS when variant images are uploaded -->
+          </div>
+          <p class="text-xs text-secondary/40 mt-2 text-center">Kisi bhi image pe click karo use thumbnail set karne ke liye ✅</p>
+        </div>
+      </div>
+
+
+      <!-- ── BADGES ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-secondary">Product Badges</h2>
+            <p class="text-sm text-secondary/60">Labels jaise '100% Natural', 'New', 'Trending', 'Best Seller'</p>
+          </div>
+          <button type="button" id="add-badge-btn" class="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Add Badge
+          </button>
+        </div>
+        <div id="badges-container" class="flex flex-wrap gap-3"></div>
+      </div>
+
+      <!-- ── BULLET POINTS ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-secondary">Feature Bullet Points</h2>
+            <p class="text-sm text-secondary/60">Product page pe key benefits highlight karo.</p>
+          </div>
+          <button type="button" id="add-bullet-btn" class="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Add Point
+          </button>
+        </div>
+        <div id="bullets-container" class="space-y-3"></div>
+      </div>
+
+
+      <!-- ── SPECIFICATIONS ── -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-secondary">Specifications</h2>
+            <p class="text-sm text-secondary/60">Technical details — key aur value pairs.</p>
+          </div>
+          <button type="button" id="add-spec-btn" class="text-sm font-medium text-primary hover:text-primary/80 flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Add Spec
+          </button>
+        </div>
+        <div id="specs-container" class="space-y-3"></div>
+      </div>
+
+      </div>
+      <!-- END LEFT COLUMN -->
+
+      <!-- RIGHT COLUMN: SETTINGS -->
+      <div class="lg:col-span-4 space-y-6">
+        <!-- Product Status -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h2 class="text-lg font-bold text-secondary mb-4">Status</h2>
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-secondary">Product Status</label>
+            <select id="is_active" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50">
+              <option value="true" selected={product?.is_active !== false}>Active</option>
+              <option value="false" selected={product?.is_active === false}>Draft</option>
+            </select>
+            <p class="text-xs text-secondary/60">Draft products are hidden from the storefront.</p>
+          </div>
+        </div>
+
+        <!-- Organization (Brand & Tags) -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h2 class="text-lg font-bold text-secondary mb-4">Organization</h2>
+          <div class="space-y-4">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">Brand / Vendor</label>
+              <input type="text" id="vendor" value={product?.specifications?._vendor || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="e.g. Nike, Samsung" />
+            </div>
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">Product Tags</label>
+              <input type="text" id="tags" value={product?.specifications?._tags || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="e.g. summer-sale, new-arrival (comma separated)" />
+            </div>
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">Category <span class="text-red-500">*</span></label>
+              <select id="category" required class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50">
+                <option value="">Select Category</option>
+                {categories.map((cat: any) => (
+                  <option value={cat.slug} selected={product?.category === cat.slug || product?.category === cat.name || product?.category === cat.id}>{cat.name}</option>
+                ))}
+                {product?.category && !categories.some((c: any) => c.slug === product.category || c.name === product.category || c.id === product.category) && (
+                  <option value={product.category} selected>{product.category} (Current)</option>
+                )}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        
+        
+
+        <!-- Base Pricing & Shipping -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition-all" id="base-pricing-section">
+          <h2 class="text-lg font-bold text-secondary mb-4 flex items-center justify-between">
+            <span>Pricing & Inventory</span>
+          </h2>
+          <p class="text-xs text-secondary/60 mb-4" id="base-pricing-helper">Used when the product has no variants.</p>
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-secondary">Price (₹)</label>
+                <input type="number" step="0.01" id="base_price" value={product?.price || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="0.00" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-secondary">Compare at Price (₹)</label>
+                <input type="number" step="0.01" id="base_mrp" value={product?.original_price || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="0.00" />
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-secondary">SKU (Stock Keeping Unit)</label>
+                <input type="text" id="base_sku" value={product?.specifications?._base_sku || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="e.g. TSHIRT-RED-M" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-secondary">Barcode (ISBN, UPC, GTIN)</label>
+                <input type="text" id="base_barcode" value={product?.specifications?._base_barcode || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="e.g. 123456789012" />
+              </div>
+            </div>
+
+            <div class="pt-4 border-t border-gray-100">
+              <h3 class="text-sm font-medium text-secondary mb-3">Shipping Dimensions</h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <label class="text-xs font-medium text-secondary/80">Weight (kg)</label>
+                  <input type="number" step="0.01" id="base_weight_kg" value={product?.specifications?._base_weight_kg || ''} class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50 text-sm" placeholder="0.0" />
+                </div>
+                <div class="space-y-2">
+                  <label class="text-xs font-medium text-secondary/80">Dimensions (cm)</label>
+                  <div class="flex items-center gap-2">
+                    <input type="number" step="0.1" id="base_length" value={product?.specifications?._base_length || ''} class="w-full px-2 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50 text-sm" placeholder="L" />
+                    <span class="text-gray-400 text-xs">x</span>
+                    <input type="number" step="0.1" id="base_width" value={product?.specifications?._base_width || ''} class="w-full px-2 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50 text-sm" placeholder="W" />
+                    <span class="text-gray-400 text-xs">x</span>
+                    <input type="number" step="0.1" id="base_height" value={product?.specifications?._base_height || ''} class="w-full px-2 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50 text-sm" placeholder="H" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Inventory -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h2 class="text-lg font-bold text-secondary mb-4">Inventory</h2>
+          <div class="space-y-5">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">Stock Status</label>
+              <select id="is_in_stock" class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50">
+                <option value="true" selected={product?.is_in_stock !== false}>In Stock</option>
+                <option value="false" selected={product?.is_in_stock === false}>Out of Stock</option>
+              </select>
+            </div>
+            
+            <div class="flex items-center justify-between border-t border-gray-100 pt-4 cursor-pointer" onclick="document.getElementById('track_inventory').click()">
+              <div>
+                <span class="text-sm font-medium text-secondary block">Track Inventory</span>
+                <span class="text-xs text-secondary/60">Prevent overselling</span>
+              </div>
+              <label class="relative cursor-pointer" onclick="event.stopPropagation()">
+                <input type="checkbox" id="track_inventory" class="sr-only" checked={product?.track_inventory === true} />
+                <div class="toggle-bg w-11 h-6 bg-gray-200 rounded-full border border-gray-200 transition-colors"></div>
+                <div class="toggle-dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform shadow-sm"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Taxes -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h2 class="text-lg font-bold text-secondary mb-4">Taxes (GST)</h2>
+          <div class="space-y-4">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">HSN Code</label>
+              <input type="text" id="hsn_code" value={product?.hsn_code || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="e.g. 0813 (Leave blank for default)" />
+            </div>
+
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">GST Rate (%)</label>
+              <input type="number" step="0.1" id="gst_rate" value={product?.gst_rate || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="e.g. 5" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Rating Overrides -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h2 class="text-lg font-bold text-secondary mb-4">Ratings Data</h2>
+          <div class="space-y-4">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">Rating Value (0-5)</label>
+              <input type="number" step="0.1" min="0" max="5" id="rating_value" value={product?.rating?.value || product?.rating || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="4.5" />
+            </div>
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-secondary">Review Count</label>
+              <input type="number" step="1" min="0" id="rating_count" value={product?.rating?.count || product?.reviews_count || ''} class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-gray-50/50" placeholder="120" />
+            </div>
+          </div>
+        </div>
+        
+        <!-- ── MARKETPLACE ── -->
+        {isEditing && (
+        <div class="bg-indigo-50/50 p-6 rounded-2xl shadow-sm border border-indigo-100 flex flex-col gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-indigo-900 flex items-center gap-2">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              VyaparPe Marketplace
+            </h2>
+            <p class="text-sm text-indigo-700/80 mt-1">Submit this product to be featured on the main vyaparpe.com marketplace.</p>
+          </div>
+          <button type="button" id="btn-request-marketplace" class="w-full px-5 py-2.5 bg-indigo-600/50 cursor-not-allowed text-white text-sm font-medium rounded-lg shadow-sm focus:outline-none" title="Coming Soon" disabled>
+            Submit (Coming Soon)
+          </button>
+        </div>
+        )}
+
+      </div> <!-- END RIGHT COLUMN -->
+      
+      <!-- Mobile Delete Action (Desktop has it via Sticky header? Actually we moved Save up, let's put delete at the very bottom) -->
+      <div class="lg:col-span-12 pt-6 pb-6 flex items-center justify-center sm:justify-start">
+        {isEditing && (
+          <button type="button" id="delete-btn" class="text-sm text-red-500 hover:text-red-700 font-bold px-4 py-2 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            Delete this product
+          </button>
+        )}
+      </div>
+
+    </form>
+  </div>
+
+  <!-- ── VARIANT IMAGE MANAGER MODAL ── -->
+  <div id="variant-image-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden bg-black/50 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh]">
+      <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <div>
+          <h3 class="text-lg font-bold text-secondary" id="vim-title">Manage Variant Images</h3>
+          <p class="text-xs text-secondary/60 mt-1" id="vim-subtitle">Upload images specific to this variant.</p>
+        </div>
+        <button type="button" id="close-vim-btn" class="text-gray-400 hover:text-red-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 overflow-y-auto flex-1">
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-xs font-semibold text-secondary/80 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            Upload Images / Video
+          </label>
+          <span class="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full tracking-wide">Auto WebP ✨</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-gray-50 hover:bg-primary/5 hover:border-primary/40 cursor-pointer transition-all relative flex-shrink-0 group">
+            <svg class="w-6 h-6 text-gray-400 group-hover:text-primary transition-colors" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            <span class="text-[10px] font-medium text-gray-500 mt-1">Add File</span>
+            <input type="file" multiple accept="image/*,video/mp4,video/webm" class="absolute inset-0 opacity-0 cursor-pointer" id="vim-upload" />
+          </div>
+          <div class="flex-1 flex gap-3 overflow-x-auto pb-2 scrollbar-hide pt-2" id="vim-preview-container">
+            <!-- Images go here -->
+          </div>
+        </div>
+      </div>
+      <div class="p-5 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3">
+        <button type="button" id="done-vim-btn" class="px-8 py-2.5 text-sm font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors">Done</button>
+      </div>
+    </div>
+  </div>
+
+
+<div id="product-edit-data" class="hidden" data-product={JSON.stringify(product || {})} data-id={productId || ''} data-manage={canManage ? 'true' : 'false'}></div>
+<script is:inline>
+document.addEventListener('astro:page-load', () => {
+  const dataEl = document.getElementById('product-edit-data');
+  if (!dataEl) return; // Not on the edit page
+  const initialProduct = JSON.parse(dataEl.dataset.product || '{}');
+  const productId = dataEl.dataset.id;
+  const canManage = dataEl.dataset.manage === 'true';
+
+  // Move modal to body to prevent fixed positioning bugs inside scrolling containers with transforms
+  const vimModal = document.getElementById('variant-image-modal');
+  if (vimModal && vimModal.parentElement !== document.body) {
+    document.body.appendChild(vimModal);
+  }
+
+
+  // ── DIGITAL & CUSTOM PRODUCTS JS ────────────────────────────────────
+  
+  // Robust fallback for category selection if server-side matching failed
+  if (initialProduct && initialProduct.category) {
+    const catSelect = document.getElementById('category');
+    if (catSelect && !catSelect.value) {
+       const catVal = String(initialProduct.category).toLowerCase().trim();
+       const option = Array.from(catSelect.options).find(o => 
+         String(o.value).toLowerCase().trim() === catVal || 
+         String(o.text).toLowerCase().trim() === catVal ||
+         String(o.value).replace(/-/g, ' ') === catVal.replace(/-/g, ' ')
+       );
+       if (option) catSelect.value = option.value;
+    }
+  }
+  
+  const isDigitalToggle = document.getElementById('is_digital');
+  const deliveryTypeSelect = document.getElementById('delivery_type');
+  const digitalUrlContainer = document.getElementById('digital_url_container');
+  const digitalWarning = document.getElementById('digital_warning');
+
+  // Initial state logic
+  if (isDigitalToggle && isDigitalToggle.checked && deliveryTypeSelect) {
+      deliveryTypeSelect.value = 'std_only';
+      deliveryTypeSelect.disabled = true;
+      deliveryTypeSelect.title = "Digital products cannot be delivered via Q-Commerce";
+  }
+
+  if (isDigitalToggle) {
+    isDigitalToggle.addEventListener('change', (e) => {
+      const isChecked = e.target.checked;
+      
+      if (digitalUrlContainer) {
+        if (isChecked) {
+          digitalUrlContainer.classList.remove('hidden');
+        } else {
+          digitalUrlContainer.classList.add('hidden');
+        }
+      }
+      if (digitalWarning) {
+        if (isChecked) {
+          digitalWarning.classList.remove('hidden');
+        } else {
+          digitalWarning.classList.add('hidden');
+        }
+      }
+
+      if (deliveryTypeSelect) {
+        const container = document.getElementById('delivery_type_container');
+        const storeHasQc = container?.getAttribute('data-has-qc') === 'true';
+
+        if (isChecked) {
+          deliveryTypeSelect.value = 'std_only';
+          deliveryTypeSelect.disabled = true;
+          deliveryTypeSelect.title = "Digital products cannot be delivered via Q-Commerce";
+        } else {
+          if (storeHasQc) {
+            deliveryTypeSelect.disabled = false;
+            deliveryTypeSelect.title = "";
+          }
+        }
+      }
+    });
+  }
+
+  const customFieldsContainer = document.getElementById('custom-fields-container');
+  const addCustomFieldBtn = document.getElementById('add-custom-field-btn');
+  
+  function createCustomFieldRow(field = { id: '', label: '', type: 'text', required: false, options: '' }) {
+    const div = document.createElement('div');
+    div.className = 'custom-field-row flex gap-2 items-start bg-gray-50 border border-gray-200 p-3 rounded-lg relative group mb-3';
+    div.innerHTML = `
+      <div class="flex-1 space-y-2">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <input type="text" placeholder="Field ID (e.g. name_on_cake)" value="${field.id}" class="cf-id w-full px-2 py-1 text-xs border rounded" required />
+          <input type="text" placeholder="Label (e.g. Name on Cake)" value="${field.label}" class="cf-label w-full px-2 py-1 text-xs border rounded" required />
+          <select class="cf-type w-full px-2 py-1 text-xs border rounded bg-white">
+            <option value="text" ${field.type === 'text' ? 'selected' : ''}>Text Input</option>
+            <option value="textarea" ${field.type === 'textarea' ? 'selected' : ''}>Long Text</option>
+            <option value="select" ${field.type === 'select' ? 'selected' : ''}>Dropdown</option>
+            <option value="file" ${field.type === 'file' ? 'selected' : ''}>File Upload</option>
+          </select>
+          <label class="flex items-center gap-1 text-xs text-secondary/70 bg-white border px-2 rounded cursor-pointer"><input type="checkbox" class="cf-req" ${field.required ? 'checked' : ''} /> Required</label>
+        </div>
+        <div class="cf-options-container ${field.type === 'select' ? '' : 'hidden'}">
+          <input type="text" placeholder="Options (comma separated, e.g. Chocolate, Vanilla)" value="${field.options}" class="cf-options w-full px-2 py-1 text-xs border rounded" />
+        </div>
+      </div>
+      <button type="button" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded" onclick="this.parentElement.remove()">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+      </button>
+    `;
+    const typeSelect = div.querySelector('.cf-type');
+    const optionsContainer = div.querySelector('.cf-options-container');
+    typeSelect.addEventListener('change', (e) => {
+      if (e.target.value === 'select') optionsContainer.classList.remove('hidden');
+      else optionsContainer.classList.add('hidden');
+    });
+    if (customFieldsContainer) customFieldsContainer.appendChild(div);
+  }
+
+  if (addCustomFieldBtn) {
+    addCustomFieldBtn.addEventListener('click', () => createCustomFieldRow());
+  }
+
+  // Load existing custom fields
+  if (typeof initialProduct !== 'undefined' && initialProduct && initialProduct.custom_inputs) {
+    initialProduct.custom_inputs.forEach(f => {
+      let optionsStr = '';
+      if (f.options && Array.isArray(f.options)) optionsStr = f.options.join(', ');
+      createCustomFieldRow({ ...f, options: optionsStr });
+    });
+  }
+
+  // ── HELPERS ──────────────────────────────────────────────────────────
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1048576).toFixed(2) + ' MB';
+  }
+
+  function compressToWebP(file, maxW = 800, quality = 0.75) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > maxW) { h = Math.round(h * (maxW / w)); w = maxW; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Failed'));
+          const reader = new FileReader();
+          reader.onload = ev => resolve({ blob, dataUrl: ev.target.result, name: file.name.replace(/\.[^.]+$/, '') + '.webp', origSize: file.size, newSize: blob.size });
+          reader.readAsDataURL(blob);
+        }, 'image/webp', quality);
+      };
+      img.onerror = () => reject(new Error('Load failed'));
+      img.src = url;
+    });
+  }
+
+  async function uploadToBucket(fileOrBlob, filename) {
+    const formData = new FormData();
+    formData.append('file', fileOrBlob, filename);
+    const res = await fetch('/api/admin/upload', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error('Upload failed');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data.url;
+  }
+  // ── QUILL EDITOR INIT ────────────────────────────────────────────────
+  let quill = null;
+
+  if (typeof Quill !== 'undefined' && document.getElementById('long_description_editor')) {
+    quill = new Quill('#long_description_editor', {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ 'header': [1, 2, 3, false] }],
+          ['bold', 'italic', 'underline', 'strike'],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+          ['link', 'image', 'video'],
+          ['clean']
+        ]
+      },
+      placeholder: 'Write a detailed product description...'
+    });
+    
+    // Set initial content safely
+    const initialDesc = document.getElementById('long_description').value;
+    if (initialDesc) {
+      quill.clipboard.dangerouslyPasteHTML(initialDesc);
+    }
+
+    // Image Upload Interceptor to compress to WebP and prevent large base64 strings
+    quill.getModule('toolbar').addHandler('image', () => {
+      const input = document.createElement('input');
+      input.setAttribute('type', 'file');
+      input.setAttribute('accept', 'image/*');
+      input.click();
+      
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        
+        // Show loading state (placeholder text)
+        const range = quill.getSelection(true);
+        quill.insertText(range.index, 'Uploading image...', 'user');
+        
+        try {
+          const { blob, name } = await compressToWebP(file, 1200, 0.8);
+          const url = await uploadToBucket(blob, name);
+          
+          // Remove "Uploading image..." and insert actual image URL
+          quill.deleteText(range.index, 18);
+          quill.insertEmbed(range.index, 'image', url);
+        } catch (err) {
+          console.error('Quill image upload error:', err);
+          quill.deleteText(range.index, 18);
+          alert('Failed to upload image. Please try again.');
+        }
+      };
+    });
+    
+    // Sync text-change to hidden input
+    quill.on('text-change', () => { 
+      document.getElementById('long_description').value = quill.root.innerHTML; 
+    });
+  }
+
+  // ── COUNTERS ─────────────────────────────────────────────────────────
+  let variantCount = 0, specCount = 0, badgeCount = 0, bulletCount = 0, vGroupCount = 0;
+  const vgroupsContainer = document.getElementById('vgroups-container');
+  const variantsContainer = document.getElementById('variants-container');
+  const specsContainer = document.getElementById('specs-container');
+  const badgesContainer = document.getElementById('badges-container');
+  const bulletsContainer = document.getElementById('bullets-container');
+
+
+  // ── CUSTOM SECTIONS ──────────────────────────────────────────────────
+  let customSectionCount = 0;
+  const customSectionsContainer = document.getElementById('custom-sections-container');
+  
+  function createCustomSectionRow(heading = '', content = '') {
+    const id = 'csec_' + (customSectionCount++);
+    const safeHeading = heading.replace(/"/g, '&quot;');
+    const html = `
+      <div class="custom-section-row bg-gray-50/50 border border-gray-200 rounded-lg p-4 relative" id="${id}">
+        <button type="button" class="absolute top-2 right-2 p-1 text-red-500 hover:bg-red-50 rounded" onclick="document.getElementById('${id}').remove()">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <div class="mb-3 pr-8">
+          <label class="text-xs font-semibold text-gray-500 uppercase">Section Heading</label>
+          <input type="text" class="sec-heading w-full px-3 py-1.5 mt-1 text-sm border border-gray-200 rounded focus:border-primary outline-none bg-white" placeholder="e.g. Health Benefits" value="${safeHeading}" />
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-gray-500 uppercase">Content</label>
+          <div class="sec-content-editor bg-white mt-1 border border-gray-200 rounded" style="min-height: 120px;"></div>
+        </div>
+      </div>
+    `;
+    customSectionsContainer.insertAdjacentHTML('beforeend', html);
+    
+    const row = document.getElementById(id);
+    const editorDiv = row.querySelector('.sec-content-editor');
+    if (typeof Quill !== 'undefined') {
+      const q = new Quill(editorDiv, {
+        theme: 'snow',
+        modules: { toolbar: [ ['bold', 'italic', 'underline'], [{'list': 'ordered'}, {'list': 'bullet'}], ['clean'] ] },
+        placeholder: 'Write content here...'
+      });
+      row.__quill = q;
+      if (content) q.clipboard.dangerouslyPasteHTML(content);
+    }
+  }
+
+  // ── CREATE ROWS ──────────────────────────────────────────────────────
+  
+  function createVGroupRow(name = '', values = '') {
+    const id = 'vg_' + (vGroupCount++);
+    vgroupsContainer.insertAdjacentHTML('beforeend', "<div class='vgroup-row flex items-start gap-3' id='" + id + "'>" +
+      "<input type='text' value='" + name + "' class='vgroup-name w-1/3 px-3 py-2 text-sm border border-gray-200 rounded-md focus:border-primary outline-none' placeholder='Group (e.g. @Color, Size)' />" +
+      "<input type='text' value='" + values + "' class='vgroup-vals flex-1 px-3 py-2 text-sm border border-gray-200 rounded-md focus:border-primary outline-none' placeholder='Comma separated (e.g. Red, Blue, Green)' />" +
+      "<button type='button' class='p-2 text-red-500 hover:bg-red-50 rounded-md' onclick=\"document.getElementById('" + id + "').remove()\"><svg class='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M6 18L18 6M6 6l12 12'/></svg></button>" +
+    "</div>");
+  }
+
+  function getVGroups() {
+    const groups = [];
+    document.querySelectorAll('.vgroup-row').forEach(row => {
+      const name = row.querySelector('.vgroup-name').value.trim();
+      const valsStr = row.querySelector('.vgroup-vals').value;
+      const values = valsStr.split(',').map(v => v.trim()).filter(v => v);
+      if (values.length > 0) {
+        groups.push({ name: name || '', values });
+      }
+    });
+    return groups;
+  }
+
+  document.getElementById('add-vgroup-btn')?.addEventListener('click', () => createVGroupRow());
+
+  document.getElementById('generate-combinations-btn')?.addEventListener('click', () => {
+    const groups = getVGroups();
+    if (groups.length === 0) return alert('Add at least one option group with values.');
+    
+    // updateVariantHeader(); // Removed
+    
+    // Cartesian product
+    const cartesian = (a) => a.reduce((a, b) => a.flatMap(d => b.map(e => [d, e].flat())));
+    const valuesArrays = groups.map(g => g.values);
+    let combinations = [];
+    if (valuesArrays.length === 1) {
+      combinations = valuesArrays[0].map(v => [v]);
+    } else {
+      combinations = cartesian(valuesArrays);
+    }
+    
+    // Read existing variants to preserve data
+    const existingVariants = {};
+    document.querySelectorAll('.variant-row').forEach(row => {
+      const weight = row.querySelector('.variant-weight')?.value?.trim();
+      if (!weight) return;
+      existingVariants[weight] = true;
+    });
+
+    let added = 0;
+    combinations.forEach((combo) => {
+      const comboName = combo.join(' / ');
+      if (!existingVariants[comboName]) {
+        createVariantRow(comboName, '', '', '', [], 0, true);
+        added++;
+      }
+    });
+    
+    if (added > 0) alert('Generated ' + added + ' new combinations!');
+    else alert('All generated combinations already exist.');
+    
+    // Update grid container visibility
+    const gridContainer = document.getElementById('variants-grid-container');
+    const noMsg = document.getElementById('no-variants-msg');
+    if (variantsContainer.children.length > 0) {
+       if(gridContainer) gridContainer.classList.remove('hidden');
+       if(noMsg) noMsg.classList.add('hidden');
+    }
+  });
+
+  // Bulk Apply Logic
+  document.getElementById('apply-bulk-btn')?.addEventListener('click', () => {
+     const bulkPrice = document.getElementById('bulk-price-input').value;
+     document.querySelectorAll('.variant-row').forEach(row => {
+        if(bulkPrice) {
+           row.querySelector('.variant-price').value = bulkPrice;
+           row.querySelector('.variant-mrp').value = bulkPrice;
+        }
+     });
+  });
+
+  // Toggle All Variants
+  document.getElementById('toggle-all-variants')?.addEventListener('change', (e) => {
+     const isChecked = e.target.checked;
+     document.querySelectorAll('.variant-active').forEach(cb => {
+       if (cb.checked !== isChecked) {
+         cb.checked = isChecked;
+         cb.onchange(); // trigger style change
+       }
+     });
+  });
+
+  // Image Manager Logic
+  window.openImageManager = function(rowId, variantName) {
+    document.getElementById('vim-title').innerText = 'Images: ' + variantName;
+    document.getElementById('vim-upload').dataset.rowId = rowId;
+    
+    const previewContainer = document.getElementById('vim-preview-container');
+    previewContainer.innerHTML = '';
+    
+    // Copy images from row hidden container to modal
+    const rowImgContainer = document.getElementById('preview_' + rowId);
+    if(rowImgContainer) {
+       previewContainer.innerHTML = rowImgContainer.innerHTML;
+    }
+    
+    document.getElementById('variant-image-modal').classList.remove('hidden');
+  };
+
+  const closeVimModal = () => {
+    // Copy images BACK from modal to row hidden container
+    const rowId = document.getElementById('vim-upload').dataset.rowId;
+    if (rowId) {
+       const rowImgContainer = document.getElementById('preview_' + rowId);
+       const previewContainer = document.getElementById('vim-preview-container');
+       if(rowImgContainer) {
+          rowImgContainer.innerHTML = previewContainer.innerHTML;
+          // Update button text count
+          const count = previewContainer.querySelectorAll('img').length;
+          const btn = document.querySelector('#' + rowId + ' .btn-manage-images');
+          if(btn) btn.innerText = count > 0 ? count + ' Images' : 'Images';
+       }
+    }
+    document.getElementById('variant-image-modal').classList.add('hidden');
+  };
+  
+  document.getElementById('close-vim-btn')?.addEventListener('click', closeVimModal);
+  document.getElementById('done-vim-btn')?.addEventListener('click', closeVimModal);
+
+  // Handle uploading in Image Manager
+  document.getElementById('vim-upload')?.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    e.target.disabled = true;
+    const originalText = e.target.previousElementSibling.textContent;
+    e.target.previousElementSibling.textContent = 'Wait...';
+    
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      try {
+        const { blob, name } = await compressToWebP(file);
+        const url = await uploadToBucket(blob, name);
+        const escH = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const html = '<div class="relative flex-shrink-0 group"><img src="' + escH(url) + '" class="w-14 h-14 object-cover rounded-md border-2 border-gray-300" /><button type="button" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow" onclick="this.parentElement.remove()" title="Remove image"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button></div>';
+        document.getElementById('vim-preview-container').insertAdjacentHTML('beforeend', html);
+      } catch (err) {
+        alert('Failed to upload ' + file.name);
+      }
+    }
+    
+    e.target.value = '';
+    e.target.disabled = false;
+    e.target.previousElementSibling.textContent = originalText;
+  });
+
+  function createVariantRow(weight = '', price = '', mrp = '', varId = '', images = [], stock = 0, isActive = true, sku = '') {
+    const id = 'var_' + (variantCount++);
+    const escH = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const safeWeight = escH(weight), safePrice = escH(price), safeMrp = escH(mrp), safeSku = escH(sku);
+    
+    const existingImagesHtml = (Array.isArray(images) ? images : []).map(imgSrc => '<div class="relative flex-shrink-0 group"><img src="' + escH(imgSrc) + '" class="w-14 h-14 object-cover rounded-md border-2 border-gray-300" /><button type="button" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow" onclick="this.parentElement.remove()" title="Remove image"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button></div>').join('');
+    
+    const rowCls = isActive ? 'variant-row hover:bg-gray-50' : 'variant-row bg-gray-50 opacity-60';
+    const numImages = (Array.isArray(images) ? images : []).length;
+    const btnLabel = numImages > 0 ? numImages + ' Images' : 'Images';
+    
+    const tr = `
+      <tr class="${rowCls}" id="${id}" data-variant-id="${escH(varId)}">
+        <td class="p-3 text-center" data-label="Enabled">
+           <input type="checkbox" class="variant-active w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" ${isActive ? 'checked' : ''} onchange="this.closest('tr').className = this.checked ? 'variant-row hover:bg-gray-50' : 'variant-row bg-gray-50 opacity-60';" />
+        </td>
+        <td class="p-3" data-label="Variant">
+           <input type="text" required value="${safeWeight}" class="variant-weight w-full px-2 py-1.5 text-sm bg-transparent border border-transparent hover:border-gray-200 focus:bg-white focus:border-primary rounded outline-none transition-colors" placeholder="Variant name" />
+        </td>
+        <td class="p-3" data-label="Price (₹)">
+           <input type="number" required min="1" value="${safePrice}" class="variant-price w-full px-2 py-1.5 text-sm bg-white border border-gray-200 focus:border-primary rounded outline-none transition-colors" placeholder="0" />
+        </td>
+        <td class="p-3" data-label="MRP (₹)">
+           <input type="number" required min="1" value="${safeMrp}" class="variant-mrp w-full px-2 py-1.5 text-sm bg-white border border-gray-200 focus:border-primary rounded outline-none transition-colors" placeholder="0" />
+        </td>
+        <td class="p-3" data-label="SKU">
+           <input type="text" value="${safeSku}" class="variant-sku w-full px-2 py-1.5 text-sm bg-white border border-gray-200 focus:border-primary rounded outline-none transition-colors" placeholder="e.g. VAR-1" />
+        </td>
+        <td class="p-3 text-center" data-label="Images">
+           <button type="button" class="btn-manage-images text-xs font-bold bg-primary/10 text-primary px-3 py-1.5 rounded-lg hover:bg-primary/20 transition-colors" onclick="openImageManager('${id}', '${safeWeight}')">
+             ${btnLabel}
+           </button>
+           <div class="hidden scrollbar-hide preview-container" id="preview_${id}">${existingImagesHtml}</div>
+        </td>
+        <td class="p-3 text-right" data-label="">
+           <button type="button" class="text-gray-400 hover:text-red-500 transition-colors" onclick="document.getElementById('${id}').remove()" title="Remove Row">
+             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+           </button>
+        </td>
+      </tr>
+    `;
+    variantsContainer?.insertAdjacentHTML('beforeend', tr);
+    const gridContainer = document.getElementById('variants-grid-container');
+    const noMsg = document.getElementById('no-variants-msg');
+    if (gridContainer) gridContainer.classList.remove('hidden');
+    if (noMsg) noMsg.classList.add('hidden');
+  }
+
+  function createSpecRow(key = '', val = '') {
+    const id = 'spec_' + (specCount++);
+    specsContainer.insertAdjacentHTML('beforeend',
+      '<div class="spec-row flex items-center gap-3" id="' + id + '">' +
+        '<input type="text" value="' + (key||'') + '" class="spec-key flex-1 px-3 py-2 text-sm border border-gray-200 rounded-md focus:border-primary outline-none" placeholder="e.g. Shelf Life" />' +
+        '<input type="text" value="' + (val||'') + '" class="spec-val flex-1 px-3 py-2 text-sm border border-gray-200 rounded-md focus:border-primary outline-none" placeholder="e.g. 12 Months" />' +
+        '<button type="button" class="p-2 text-red-500 hover:bg-red-50 rounded-md transition-colors" onclick="document.getElementById(\'' + id + '\').remove()"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>' +
+      '</div>'
+    );
+  }
+
+
+  function createBadgeRow(val = '') {
+    const id = `badge_${badgeCount++}`;
+    badgesContainer.insertAdjacentHTML('beforeend', `
+      <div class="badge-row flex items-center gap-1 bg-primary/10 border border-primary/20 rounded-full pl-3 pr-1 py-1" id="${id}">
+        <input type="text" value="${val}" class="badge-val bg-transparent text-sm text-secondary outline-none w-36" placeholder="e.g. 100% Natural" />
+        <button type="button" class="p-1 text-secondary/50 hover:text-red-500 transition-colors" onclick="document.getElementById('${id}').remove()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    `);
+  }
+
+  function createBulletRow(val = '') {
+    const id = `bullet_${bulletCount++}`;
+    bulletsContainer.insertAdjacentHTML('beforeend', `
+      <div class="bullet-row flex items-start gap-3" id="${id}">
+        <div class="pt-2.5"><div class="w-1.5 h-1.5 rounded-full bg-primary/40 flex-shrink-0"></div></div>
+        <textarea rows="2" class="bullet-val flex-1 px-3 py-2 text-sm border border-gray-200 rounded-md focus:border-primary outline-none resize-none" placeholder="e.g. 100% Pure & Natural: No additives or preservatives.">${val}</textarea>
+        <button type="button" class="p-2 text-red-500 hover:bg-red-50 rounded-md mt-0.5" onclick="document.getElementById('${id}').remove()">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    `);
+  }
+
+
+
+  // SEO Preview removed
+  
+  // ── INITIALIZE FORM ──────────────────────────────────────────────────
+  document.getElementById('add-custom-variant-btn')?.addEventListener('click', () => createVariantRow());
+  document.getElementById('add-spec-btn')?.addEventListener('click', () => createSpecRow());
+  document.getElementById('add-badge-btn')?.addEventListener('click', () => createBadgeRow());
+  document.getElementById('add-bullet-btn')?.addEventListener('click', () => createBulletRow());
+  document.getElementById('add-custom-section-btn')?.addEventListener('click', () => createCustomSectionRow());
+
+  if (initialProduct) {
+    try {
+      const vGroupsRaw = initialProduct.variant_options;
+      const vGroups = Array.isArray(vGroupsRaw) ? vGroupsRaw : (typeof vGroupsRaw === 'string' && vGroupsRaw.trim() ? JSON.parse(vGroupsRaw) : []);
+      if (vGroups.length > 0 && typeof createVGroupRow === 'function') {
+        vGroups.forEach(g => createVGroupRow(g.name, g.values.join(', ')));
+      }
+    } catch (e) { console.error('vGroups error', e); }
+
+    try {
+      const vRaw = initialProduct.variants;
+      const variants = Array.isArray(vRaw) ? vRaw : (typeof vRaw === 'string' && vRaw.trim() ? JSON.parse(vRaw) : []);
+      if (variants.length > 0) variants.forEach(v => createVariantRow(v.weight || '', v.price || '', v.mrp || '', v.id || '', v.images || [], v.stock || 0, true, v.sku || ''));
+      else createVariantRow();
+    } catch (e) { console.error('variants error', e); createVariantRow(); }
+
+    try {
+      const specsRaw = initialProduct.specifications || initialProduct.specs;
+      const specsObj = (typeof specsRaw === 'string' && specsRaw.trim()) ? JSON.parse(specsRaw) : (specsRaw || {});
+      const specEntries = Object.entries(specsObj || {}).filter(([k]) => !k.startsWith('_'));
+      if (specEntries.length > 0) specEntries.forEach(([k, v]) => createSpecRow(k, String(v)));
+      else { createSpecRow('Shelf Life', '12 Months'); createSpecRow('Ingredients', '100% Pure'); }
+      
+      Object.entries(specsObj || {}).forEach(([k, v]) => {
+        if (k.startsWith('_section_')) {
+          createCustomSectionRow(k.replace('_section_', ''), v);
+        }
+      });
+    } catch (e) { console.error('specs error', e); createSpecRow('Shelf Life', '12 Months'); }
+
+    try {
+      const bRaw = initialProduct.badges;
+      const badges = Array.isArray(bRaw) ? bRaw : (typeof bRaw === 'string' && bRaw.trim() ? JSON.parse(bRaw) : []);
+      if (badges.length > 0) badges.forEach(b => createBadgeRow(b));
+      else createBadgeRow('100% Natural');
+    } catch (e) { console.error('badges error', e); createBadgeRow('100% Natural'); }
+
+    try {
+      const pRaw = initialProduct.bullet_points;
+      const bullets = Array.isArray(pRaw) ? pRaw : (typeof pRaw === 'string' && pRaw.trim() ? JSON.parse(pRaw) : []);
+      if (bullets.length > 0) bullets.forEach(b => createBulletRow(b));
+      else createBulletRow();
+    } catch (e) { console.error('bullets error', e); createBulletRow(); }
+  } else {
+    createVariantRow();
+    createSpecRow('Shelf Life', '12 Months');
+    createSpecRow('Ingredients', '100% Pure');
+    createBadgeRow('100% Natural');
+    createBulletRow();
+  }
+
+  // updateVariantHeader(); // Removed as it was causing a ReferenceError
+
+  // ── UI TOGGLE LOGIC ─────────────────────────────────────────────────
+  function updateBasePricingVisibility() {
+    const baseSection = document.getElementById('base-pricing-section');
+    // Check if any variant row has actual data (not just empty default rows)
+    let hasVariants = false;
+    document.querySelectorAll('.variant-row').forEach(row => {
+      const w = row.querySelector('.variant-weight')?.value?.trim();
+      const p = row.querySelector('.variant-price')?.value?.trim();
+      if (w || p) hasVariants = true;
+    });
+    if (baseSection) {
+      if (hasVariants) {
+        baseSection.classList.add('opacity-50', 'pointer-events-none', 'grayscale');
+        baseSection.querySelector('h2 span').textContent = "Pricing & Inventory (Disabled)";
+      } else {
+        baseSection.classList.remove('opacity-50', 'pointer-events-none', 'grayscale');
+        baseSection.querySelector('h2 span').textContent = "Pricing & Inventory";
+      }
+    }
+  }
+
+  // Monitor variants container for changes to trigger toggle
+  const variantsObserver = new MutationObserver(() => updateBasePricingVisibility());
+  if (variantsContainer) variantsObserver.observe(variantsContainer, { childList: true });
+  updateBasePricingVisibility();
+
+  // ── AUTO SLUG ────────────────────────────────────────────────────────
+  let slugEdited = false;
+  document.getElementById('slug')?.addEventListener('input', () => { slugEdited = true; });
+  document.getElementById('name')?.addEventListener('input', (e) => {
+    if (slugEdited) return;
+    document.getElementById('slug').value = e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  });
+
+  // ── TAB SWITCHING & TOGGLES ─────────────────────────────────────────────────────
+  const trackInventory = document.getElementById('track_inventory');
+  const trackInventoryLabel = document.getElementById('track_inventory_label');
+  const toggleBg = trackInventory?.parentElement.querySelector('.toggle-bg');
+  const toggleDot = trackInventory?.parentElement.querySelector('.toggle-dot');
+  
+  function updateToggleUI() {
+    if (trackInventory?.checked) {
+      toggleBg?.classList.replace('bg-gray-200', 'bg-primary');
+      toggleBg?.classList.replace('border-gray-200', 'border-primary');
+      toggleDot?.classList.add('translate-x-5');
+      if (trackInventoryLabel) trackInventoryLabel.textContent = 'Enabled';
+    } else {
+      toggleBg?.classList.replace('bg-primary', 'bg-gray-200');
+      toggleBg?.classList.replace('border-primary', 'border-gray-200');
+      toggleDot?.classList.remove('translate-x-5');
+      if (trackInventoryLabel) trackInventoryLabel.textContent = 'Disabled';
+    }
+  }
+  
+  trackInventory?.addEventListener('change', updateToggleUI);
+  updateToggleUI(); // Initialize
+
+  const tabUpload  = document.getElementById('tab-upload');
+  const tabGallery = document.getElementById('tab-gallery');
+  const panelUpload  = document.getElementById('panel-upload');
+  const panelGallery = document.getElementById('panel-gallery');
+  const galleryGrid  = document.getElementById('gallery-grid');
+  const galleryEmpty = document.getElementById('gallery-empty');
+
+  tabUpload?.addEventListener('click', () => {
+    tabUpload.className  = 'flex-1 py-2.5 text-sm font-medium bg-primary text-white transition-colors';
+    tabGallery.className = 'flex-1 py-2.5 text-sm font-medium bg-white text-secondary hover:bg-gray-50 transition-colors';
+    panelUpload.classList.remove('hidden');
+    panelGallery.classList.add('hidden');
+  });
+  tabGallery?.addEventListener('click', () => {
+    tabGallery.className = 'flex-1 py-2.5 text-sm font-medium bg-primary text-white transition-colors';
+    tabUpload.className  = 'flex-1 py-2.5 text-sm font-medium bg-white text-secondary hover:bg-gray-50 transition-colors';
+    panelGallery.classList.remove('hidden');
+    panelUpload.classList.add('hidden');
+  });
+
+  // ── THUMBNAIL HELPERS ─────────────────────────────────────────────────
+  const imageUrlInput    = document.getElementById('image_url');
+  const currentThumbBox  = document.getElementById('current-thumb-box');
+  const currentThumbImg  = document.getElementById('current-thumb-img');
+  const currentThumbLabel= document.getElementById('current-thumb-label');
+
+  function setThumbnail(dataUrl, label) {
+    imageUrlInput.value = dataUrl;
+    currentThumbImg.src = dataUrl;
+    // Show friendly label — never show raw base64 in the UI
+    const friendlyLabel = dataUrl.startsWith('data:')
+      ? `✅ ${label || 'Uploaded image (WebP)'}`
+      : (label || dataUrl);
+    currentThumbLabel.textContent = friendlyLabel;
+    currentThumbLabel.title = dataUrl.startsWith('data:') ? 'Compressed WebP image (stored as base64)' : dataUrl;
+    currentThumbBox.classList.remove('hidden');
+  }
+
+  // Remove thumbnail
+  document.getElementById('remove-thumb-btn')?.addEventListener('click', () => {
+    imageUrlInput.value = '';
+    currentThumbBox.classList.add('hidden');
+  });
+
+  // ── THUMBNAIL UPLOAD ─────────────────────────────────────────────────
+  const thumbUpload      = document.getElementById('thumbnail-upload');
+  const thumbText        = document.getElementById('thumbnail-upload-text');
+  const thumbPreviewBox  = document.getElementById('thumbnail-preview-box');
+  const thumbPreviewImg  = document.getElementById('thumbnail-preview-img');
+  const thumbPreviewName = document.getElementById('thumbnail-preview-name');
+  const thumbPreviewSize = document.getElementById('thumbnail-preview-size');
+  const thumbDownloadBtn = document.getElementById('thumbnail-download-btn');
+
+  if (thumbUpload) {
+    thumbUpload.addEventListener('change', async (e) => {
+      if (!canManage) {
+        alert("Currently editing is disabled by developer because of certain bug. Please try again later.");
+        e.target.value = '';
+        return;
+      }
+      const file = e.target.files?.[0];
+      if (!file) return;
+      thumbText.textContent = '⏳ Compressing...';
+      try {
+        const { blob, name, origSize, newSize } = await compressToWebP(file, 800, 0.75);
+        const saving = Math.round((1 - newSize / origSize) * 100);
+        thumbText.textContent = '⏳ Uploading to storage...';
+        
+        const url = await uploadToBucket(blob, name);
+        
+        thumbText.textContent = `✅ ${name}`;
+        thumbPreviewImg.src = url;
+        thumbPreviewName.textContent = name;
+        thumbPreviewSize.innerHTML = `${formatBytes(origSize)} → <strong class="text-green-700">${formatBytes(newSize)}</strong>${saving > 0 ? ` <span class="text-green-700 font-bold">(${saving}% smaller!)</span>` : ''}`;
+        thumbDownloadBtn.href = url;
+        thumbDownloadBtn.download = name;
+        thumbPreviewBox.classList.remove('hidden');
+        setThumbnail(url, name);
+      } catch (err) {
+        console.error(err);
+        thumbText.textContent = `❌ Upload failed for ${file.name}`;
+      }
+    });
+  }
+
+  // ── ADD IMAGE TO GALLERY WHEN VARIANT UPLOADS ─────────────────────────
+  function addToGallery(dataUrl, label) {
+    galleryEmpty?.classList.add('hidden');
+    galleryGrid?.classList.remove('hidden');
+    const id = 'gimg_' + Math.random().toString(36).substr(2, 7);
+    galleryGrid?.insertAdjacentHTML('beforeend', `
+      <div class="relative group cursor-pointer" id="${id}" title="Click to set as thumbnail">
+        <img src="${dataUrl}" class="w-full aspect-square object-cover rounded-xl border-2 border-transparent group-hover:border-primary transition-all" />
+        <div class="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center transition-all">
+          <span class="bg-white text-primary text-[10px] font-bold px-2 py-1 rounded-full shadow">✓ Set</span>
+        </div>
+      </div>
+    `);
+    document.getElementById(id)?.addEventListener('click', () => {
+      // Remove active border from others
+      galleryGrid?.querySelectorAll('img').forEach(img => img.classList.remove('border-primary', 'border-4'));
+      document.getElementById(id)?.querySelector('img')?.classList.add('border-primary', 'border-4');
+      setThumbnail(dataUrl, label || 'Variant image');
+    });
+  }
+
+  // ── VARIANT IMAGE UPLOADS ────────────────────────────────────────────
+  document.addEventListener('change', async (e) => {
+    if (!e.target?.classList.contains('variant-img-upload')) return;
+    if (!canManage) {
+      alert("Currently editing is disabled by developer because of certain bug. Please try again later.");
+      e.target.value = '';
+      return;
+    }
+    const files = e.target.files;
+    const rowId = e.target.getAttribute('data-row-id');
+    const previewEl = document.getElementById(`preview_${rowId}`);
+    if (!files || !previewEl) return;
+
+    for (const file of files) {
+      const isVideo = file.type.startsWith('video/');
+      if (isVideo) {
+        const videoUrl = URL.createObjectURL(file);
+        previewEl.insertAdjacentHTML('beforeend', `
+          <div class="relative flex-shrink-0">
+            <video src="${videoUrl}" class="w-14 h-14 object-cover rounded-md border-2 border-blue-300" muted playsinline onmouseenter="this.play()" onmouseleave="this.pause()"></video>
+            <span class="absolute top-0 left-0 text-[9px] bg-blue-600 text-white px-1 rounded font-bold">VID</span>
+          </div>
+        `);
+      } else {
+        try {
+          const tempId = 'up_' + Date.now() + Math.random().toString(36).substr(2,5);
+          previewEl.insertAdjacentHTML('beforeend', `<div id="${tempId}" class="w-14 h-14 bg-gray-100 animate-pulse rounded-md border-2 border-gray-200 flex items-center justify-center flex-shrink-0 text-[10px] text-gray-400">⏳</div>`);
+          
+          const { blob, name, origSize, newSize } = await compressToWebP(file, 800, 0.75);
+          const url = await uploadToBucket(blob, name);
+          
+          document.getElementById(tempId)?.remove();
+          
+          const saving = Math.round((1 - newSize / origSize) * 100);
+          previewEl.insertAdjacentHTML('beforeend', `
+            <div class="relative flex-shrink-0 group">
+              <img src="${url}" class="w-14 h-14 object-cover rounded-md border-2 border-green-300" />
+              <button type="button" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow" onclick="this.parentElement.remove()" title="Remove image">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+              ${saving > 0 ? `<span class="absolute top-0 right-0 text-[8px] bg-green-600 text-white px-1 rounded z-0">${saving}%</span>` : ''}
+            </div>
+          `);
+          // Auto-add to thumbnail gallery
+          addToGallery(url, name);
+          // ✅ Default: first variant's first image = thumbnail (if none set yet)
+          const currentThumb = document.getElementById('image_url')?.value;
+          const isFirstVariantRow = document.querySelectorAll('.variant-row')[0]?.id === rowId;
+          const isFirstFileInRow = previewEl.children.length === 1; // just added
+          if (!currentThumb && isFirstVariantRow && isFirstFileInRow) {
+            setThumbnail(url, `Default: ${name}`);
+          }
+        } catch (err) {
+          console.error('Variant image upload error:', err);
+          alert('Failed to upload image ' + file.name);
+          document.getElementById(tempId)?.remove();
+        }
+      }
+    }
+  });
+
+  // ── AI ASSISTANT ─────────────────────────────────────────────────────
+  document.getElementById('btn-generate-ai')?.addEventListener('click', async () => {
+    if (!canManage) {
+      alert("Currently editing is disabled by developer because of certain bug. Please try again later.");
+      return;
+    }
+    const prompt = document.getElementById('ai-prompt').value.trim();
+    if (!prompt) { alert('Please enter a prompt first.'); return; }
+    const btn = document.getElementById('btn-generate-ai');
+    const status = document.getElementById('ai-status');
+    btn.disabled = true; btn.classList.add('opacity-50'); status.classList.remove('hidden');
+    try {
+      // Pass existing data if any so AI can 'edit' rather than 'create' from scratch
+      const currentData = typeof collectFormData === 'function' ? collectFormData() : {};
+      const res = await fetch('/api/admin/generate-listing', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ prompt, currentData }) 
+      });
+      if (!res.ok) throw new Error('API failed');
+      const data = await res.json();
+      document.getElementById('name').value = data.name || '';
+      if (!slugEdited && data.name) {
+        document.getElementById('slug').value = data.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      }
+      if (data.category) {
+        const genCat = String(data.category).toLowerCase().trim();
+        const catSelect = document.getElementById('category');
+        if (catSelect) {
+          const option = Array.from(catSelect.options).find(o => 
+            String(o.value).toLowerCase().trim() === genCat || 
+            String(o.text).toLowerCase().trim() === genCat ||
+            String(o.value).replace(/-/g, ' ') === genCat.replace(/-/g, ' ')
+          );
+          if (option) {
+            catSelect.value = option.value;
+          } else {
+            catSelect.insertAdjacentHTML('beforeend', `<option value="${data.category}" selected>${data.category} (AI)</option>`);
+            catSelect.value = data.category;
+          }
+        }
+      }
+      document.getElementById('description').value = data.description || '';
+      document.getElementById('long_description').value = data.long_description || '';
+      if (typeof quill !== 'undefined' && quill) {
+        quill.root.innerHTML = data.long_description || '';
+      }
+      if (data.hsn_code) document.getElementById('hsn_code').value = data.hsn_code;
+      if (data.gst_rate !== undefined) document.getElementById('gst_rate').value = data.gst_rate;
+      
+      specsContainer.innerHTML = '';
+      if (customSectionsContainer) customSectionsContainer.innerHTML = '';
+      if (data.specifications) {
+        Object.entries(data.specifications).forEach(([k, v]) => {
+          if (k.startsWith('_section_')) {
+            createCustomSectionRow(k.replace('_section_', ''), v);
+          } else if (!k.startsWith('_')) {
+            createSpecRow(k, v);
+          }
+        });
+      }
+
+      bulletsContainer.innerHTML = ''; if (data.bullet_points) data.bullet_points.forEach(b => createBulletRow(b));
+      
+      if (data.badges && data.badges.length > 0) {
+        badgesContainer.innerHTML = '';
+        data.badges.forEach(b => createBadgeRow(b));
+      }
+      
+      // Apply SEO, Vendor, Tags from AI
+      if (data.seo_title) document.getElementById('seo_title').value = data.seo_title;
+      if (data.seo_description) document.getElementById('seo_description').value = data.seo_description;
+      if (data.seo_keywords) document.getElementById('seo_keywords').value = data.seo_keywords;
+      if (data.vendor) document.getElementById('vendor').value = data.vendor;
+      if (data.tags) document.getElementById('tags').value = Array.isArray(data.tags) ? data.tags.join(', ') : data.tags;
+      
+      
+      if (data.variants && data.variants.length > 0) {
+        // If variants container has only empty variants, clear it before adding AI generated ones
+        const existingRows = variantsContainer.querySelectorAll('.variant-row');
+        let hasData = false;
+        existingRows.forEach(row => {
+          if (row.querySelector('.variant-weight')?.value || row.querySelector('.variant-price')?.value || row.querySelector('.variant-img-upload')?.files?.length) hasData = true;
+        });
+        if (!hasData) variantsContainer.innerHTML = '';
+        
+        data.variants.forEach(v => createVariantRow(v.weight, v.price, v.mrp));
+      }
+    } catch (err) { alert('Failed to generate. Check console.'); console.error(err); }
+    finally { btn.disabled = false; btn.classList.remove('opacity-50'); status.classList.add('hidden'); }
+  });
+
+  // ── COLLECT & SUBMIT ─────────────────────────────────────────────────
+  function collectFormData() {
+    // Sync Quill content to textarea before collecting
+    if (typeof quill !== 'undefined' && quill) {
+      const html = quill.root.innerHTML;
+      document.getElementById('long_description').value = html === '<p><br></p>' ? '' : html;
+    }
+    
+    const variants = [];
+    document.querySelectorAll('.variant-row').forEach((row, i) => {
+      const weight = row.querySelector('.variant-weight')?.value?.trim();
+      const price = parseFloat(row.querySelector('.variant-price')?.value) || 0;
+      const mrp = parseFloat(row.querySelector('.variant-mrp')?.value) || 0;
+      const stock = 0; // Stock is managed entirely from the Inventory tab
+      const sku = row.querySelector('.variant-sku')?.value?.trim() || '';
+      // Gather all images in this variant's preview box
+      const images = Array.from(row.querySelectorAll('.scrollbar-hide img')).map(img => img.src).filter(src => !!src);
+      
+      if (!weight && price === 0 && mrp === 0) return;
+      
+      variants.push({ id: row.dataset.variantId || `v${i+1}`, weight: weight || `Variant ${i+1}`, price, mrp, stock, sku, images });
+    });
+    // Specs
+    const specifications = {};
+    document.querySelectorAll('.spec-row').forEach(row => {
+      const k = row.querySelector('.spec-key')?.value?.trim();
+      const v = row.querySelector('.spec-val')?.value?.trim();
+      if (k) specifications[k] = v || '';
+    });
+
+    document.querySelectorAll('.custom-section-row').forEach(row => {
+      const heading = row.querySelector('.sec-heading').value.trim();
+      if (!heading) return;
+      const q = row.__quill;
+      if (q) {
+        const html = q.root.innerHTML;
+        if (html !== '<p><br></p>' && html.trim()) {
+          specifications['_section_' + heading] = html;
+        }
+      }
+    });
+
+    // Badges
+    const badges = [];
+    document.querySelectorAll('.badge-val').forEach(el => { if (el.value.trim()) badges.push(el.value.trim()); });
+    // Bullets
+    const bullet_points = [];
+    document.querySelectorAll('.bullet-val').forEach(el => { if (el.value.trim()) bullet_points.push(el.value.trim()); });
+
+    
+    const variant_options = typeof getVGroups === 'function' ? getVGroups() : [];
+    // Only collect enabled variants
+    const activeVariants = variants.filter((_, i) => {
+      const rows = document.querySelectorAll('.variant-row');
+      const row = rows[i];
+      if (!row) return true;
+      const cb = row.querySelector('.variant-active');
+      return !cb || cb.checked;
+    });
+    let minPrice = 0, maxMrp = 0;
+    
+    // Read base pricing
+    const bPrice = parseFloat(document.getElementById('base_price')?.value) || 0;
+    const bMrp = parseFloat(document.getElementById('base_mrp')?.value) || 0;
+    const bSku = document.getElementById('base_sku')?.value?.trim() || '';
+    const bBarcode = document.getElementById('base_barcode')?.value?.trim() || '';
+    const bWeight = document.getElementById('base_weight_kg')?.value?.trim() || '';
+    const bLength = document.getElementById('base_length')?.value?.trim() || '';
+    const bWidth = document.getElementById('base_width')?.value?.trim() || '';
+    const bHeight = document.getElementById('base_height')?.value?.trim() || '';
+
+    if (bSku) specifications._base_sku = bSku;
+    if (bBarcode) specifications._base_barcode = bBarcode;
+    if (bWeight) specifications._base_weight_kg = bWeight;
+    if (bLength) specifications._base_length = bLength;
+    if (bWidth) specifications._base_width = bWidth;
+    if (bHeight) specifications._base_height = bHeight;
+
+    // SEO, Vendor, Tags → stored in specifications with _ prefix
+    const seoTitle = document.getElementById('seo_title')?.value?.trim() || '';
+    const seoDesc = document.getElementById('seo_description')?.value?.trim() || '';
+    const seoKeywords = document.getElementById('seo_keywords')?.value?.trim() || '';
+    const vendorVal = document.getElementById('vendor')?.value?.trim() || '';
+    const tagsVal = document.getElementById('tags')?.value?.trim() || '';
+    if (seoTitle) specifications._seo_title = seoTitle;
+    if (seoDesc) specifications._seo_description = seoDesc;
+    if (seoKeywords) specifications._seo_keywords = seoKeywords;
+    if (vendorVal) specifications._vendor = vendorVal;
+    if (tagsVal) specifications._tags = tagsVal;
+
+    if (activeVariants.length > 0) {
+      const validPrices = activeVariants.map(v => v.price).filter(p => !isNaN(p) && p > 0);
+      const validMrps = activeVariants.map(v => v.mrp).filter(m => !isNaN(m) && m > 0);
+      minPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
+      maxMrp = validMrps.length > 0 ? Math.max(...validMrps) : 0;
+      
+      // Clear base properties from spec when using variants to prevent data inconsistency
+      delete specifications._base_sku;
+      delete specifications._base_barcode;
+      delete specifications._base_weight_kg;
+      delete specifications._base_length;
+      delete specifications._base_width;
+      delete specifications._base_height;
+    } else {
+      minPrice = bPrice;
+      maxMrp = bMrp;
+    }
+
+
+    const isDigital = document.getElementById('is_digital')?.checked || false;
+    const deliveryType = document.getElementById('delivery_type')?.value || 'both';
+    const isQCommerceOnly = deliveryType === 'q_commerce_only';
+    const isStandardOnly = deliveryType === 'standard_only';
+
+    return {
+      name: document.getElementById('name').value.trim(),
+      slug: document.getElementById('slug').value.trim(),
+      category: document.getElementById('category').value,
+      description: document.getElementById('description').value.trim(),
+      long_description: document.getElementById('long_description').value.trim(),
+      rating_value: parseFloat(document.getElementById('rating_value').value) || 0,
+      rating_count: parseInt(document.getElementById('rating_count').value) || 0,
+      is_in_stock: document.getElementById('is_in_stock').value === 'true',
+      is_active: document.getElementById('is_active').value === 'true',
+      track_inventory: document.getElementById('track_inventory').checked,
+      image: document.getElementById('image_url').value || `/products/${document.getElementById('slug').value}.webp`,
+      price: minPrice,
+      original_price: maxMrp,
+      hsn_code: document.getElementById('hsn_code')?.value.trim() || null,
+      gst_rate: document.getElementById('gst_rate')?.value ? parseFloat(document.getElementById('gst_rate').value) : null,
+      variant_options,
+      variants: activeVariants,
+      specifications,
+      badges,
+      bullet_points,
+      is_digital: isDigital,
+      is_q_commerce_only: isQCommerceOnly,
+      is_standard_only: isStandardOnly,
+      digital_delivery_url: document.getElementById('digital_delivery_url')?.value?.trim() || null,
+      custom_inputs: Array.from(document.querySelectorAll('.custom-field-row')).map(row => {
+        const id = row.querySelector('.cf-id')?.value?.trim() || '';
+        const label = row.querySelector('.cf-label')?.value?.trim() || '';
+        const type = row.querySelector('.cf-type')?.value || 'text';
+        const required = row.querySelector('.cf-req')?.checked || false;
+        const optionsStr = row.querySelector('.cf-options')?.value?.trim() || '';
+        const options = type === 'select' ? optionsStr.split(',').map(o => o.trim()).filter(o => o) : [];
+        return id ? { id, label, type, required, options } : null;
+      }).filter(Boolean),
+    };
+  }
+
+  function showStatus(msg, isError = false) {
+    const el = document.getElementById('save-status');
+    el.className = `mb-6 p-4 rounded-xl text-sm font-medium flex items-center gap-2 ${isError ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`;
+    el.innerHTML = `<span>${isError ? '❌' : '✅'}</span> ${msg}`;
+    el.classList.remove('hidden');
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.getElementById('product-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!canManage) {
+      alert("Currently editing is disabled by developer because of certain bug. Please try again later.");
+      return;
+    }
+    const saveBtn = document.getElementById('save-btn-top');
+    saveBtn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Saving...`;
+    saveBtn.disabled = true;
+
+    const data = collectFormData();
+    let body = {};
+
+    if (productId && initialProduct) {
+      // Parse arrays that might be stored as strings in initialProduct
+      const parseJsonSafe = (val) => {
+        if (typeof val === 'string' && val.trim().startsWith('[')) { try { return JSON.parse(val); } catch (e) { return val; } }
+        if (typeof val === 'string' && val.trim().startsWith('{')) { try { return JSON.parse(val); } catch (e) { return val; } }
+        return val;
+      };
+
+      const oldData = {
+        name: initialProduct.name || '',
+        slug: initialProduct.slug || '',
+        category: initialProduct.category || '',
+        description: initialProduct.description || '',
+        long_description: initialProduct.long_description || '',
+        rating_value: parseFloat(initialProduct.rating?.value || initialProduct.rating) || 0,
+        rating_count: parseInt(initialProduct.rating?.count || initialProduct.reviews_count) || 0,
+        is_in_stock: initialProduct.is_in_stock !== false,
+        is_active: initialProduct.is_active !== false,
+        track_inventory: initialProduct.track_inventory === true,
+        image: initialProduct.image || `/products/${initialProduct.slug || ''}.webp`,
+        price: initialProduct.price || 0,
+        original_price: initialProduct.original_price || 0,
+        hsn_code: initialProduct.hsn_code || null,
+        gst_rate: initialProduct.gst_rate !== undefined && initialProduct.gst_rate !== null ? parseFloat(initialProduct.gst_rate) : null,
+        variant_options: parseJsonSafe(initialProduct.variant_options) || [],
+        variants: parseJsonSafe(initialProduct.variants) || [],
+        specifications: parseJsonSafe(initialProduct.specifications || initialProduct.specs) || {},
+        badges: parseJsonSafe(initialProduct.badges) || [],
+        bullet_points: parseJsonSafe(initialProduct.bullet_points) || [],
+        is_digital: initialProduct.is_digital === true,
+        digital_delivery_url: initialProduct.digital_delivery_url || null,
+        custom_inputs: parseJsonSafe(initialProduct.custom_inputs) || [],
+      };
+
+      // Find changed fields
+      for (const key in data) {
+        const newVal = data[key];
+        const oldVal = oldData[key];
+        if (typeof newVal === 'object' && newVal !== null) {
+          if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) body[key] = newVal;
+        } else if (newVal !== oldVal) {
+          body[key] = newVal;
+        }
+      }
+
+      if (Object.keys(body).length === 0) {
+        showStatus('No changes detected to save.', false);
+        saveBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Product`;
+        saveBtn.disabled = false;
+        return;
+      }
+      body.action = 'update';
+      body.id = productId;
+    } else {
+      body = { action: 'create', ...data };
+    }
+    
+    // Check total payload size to prevent Supabase 1MB limit error
+    const jsonString = JSON.stringify(body);
+    const payloadSizeInBytes = new Blob([jsonString]).size;
+    const maxPayloadSize = 850 * 1024; // 850 KB limit
+    
+    if (payloadSizeInBytes > maxPayloadSize) {
+      showStatus(`Error: Form data is too large (${(payloadSizeInBytes / 1024).toFixed(0)} KB).`, true);
+      saveBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Product`;
+      saveBtn.disabled = false;
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonString });
+      const result = await res.json();
+      if (result.success) {
+        showStatus(productId ? 'Product successfully updated in database!' : 'Product successfully created!');
+        setTimeout(() => window.location.href = '/admin/products', 1500);
+      } else {
+        showStatus(result.error || 'Failed to save product.', true);
+        if (result.error && result.error.includes('Currently editing is disabled')) {
+           alert(result.error.replace('Permission denied: ', ''));
+        }
+      }
+    } catch (err) {
+      showStatus('Network error occurred.', true);
+      console.error(err);
+    } finally {
+      saveBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> Save Product`;
+      saveBtn.disabled = false;
+    }
+  });
+
+  // ── DELETE ───────────────────────────────────────────────────────────
+  document.getElementById('delete-btn')?.addEventListener('click', async () => {
+    if (!canManage) {
+      alert("Currently editing is disabled by developer because of certain bug. Please try again later.");
+      return;
+    }
+    if (!confirm('Are you sure you want to delete this product? This action cannot be undone.')) return;
+    try {
+      const res = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id: productId }) });
+      const result = await res.json();
+      if (result.success) window.location.href = '/admin/products?deleted=true';
+      else showStatus('Delete failed: ' + result.error, true);
+    } catch { showStatus('Network error during delete.', true); }
+  });
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    } else if (action === 'generate_listing') {
+      if (params.prompt) {
+        document.getElementById('ai-prompt').value = params.prompt;
+        document.getElementById('btn-generate-ai')?.click();
+      }
+    }
+  });
+});
+
+
+</script>
+
+<style>
+  /* Mobile styles for the table removed to allow horizontal scrolling with headers */
+</style>
+
+<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+<script is:inline src="https://cdn.quilljs.com/1.3.7/quill.min.js" data-astro-rerun></script>
+</AdminLayout>

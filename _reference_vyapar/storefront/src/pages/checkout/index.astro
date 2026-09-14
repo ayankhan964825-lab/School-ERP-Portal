@@ -1,0 +1,1501 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import QCommerceLayout from '../../layouts/QCommerceLayout.astro';
+import { getSettings, getCustomerById, getEnrichedAddresses, getOrdersByEmail } from '../../lib/database';
+import { storeContext } from '../../lib/storeContext';
+import OTPCheckoutAuth from '../../components/react/OTPCheckoutAuth';
+import { verifyCustomerAuth, getEffectiveAuthMode } from '../../lib/auth';
+
+const settings = await getSettings(Astro.locals?.storeId);
+let qcThemeActive = false;
+try {
+  if (settings?.website_configuration) {
+    const parsed = typeof settings.website_configuration === 'string'
+      ? JSON.parse(settings.website_configuration)
+      : settings.website_configuration;
+    if (parsed.theme === 'qcommerce') qcThemeActive = true;
+  }
+} catch (e) {}
+
+const ActiveLayout = qcThemeActive ? QCommerceLayout : Layout;
+
+const { authMode, otpLength } = await getEffectiveAuthMode(Astro.locals?.storeId);
+
+const FREE_SHIP_THRESHOLD = settings?.free_shipping_threshold !== undefined ? Number(settings.free_shipping_threshold) : 499;
+const FLAT_SHIP = settings?.flat_shipping_rate !== undefined ? Number(settings.flat_shipping_rate) : 60;
+
+const customerId = verifyCustomerAuth(Astro.cookies.get('customer_auth')?.value) || '';
+
+let defaultCustomer = null;
+let phone = '';
+let savedAddresses: any[] = [];
+
+await storeContext.run({ storeId: Astro.locals.storeId as string }, async () => {
+  if (customerId) {
+    defaultCustomer = await getCustomerById(customerId);
+    phone = defaultCustomer?.phone || '';
+  }
+  
+  if (phone) {
+    savedAddresses = await getEnrichedAddresses(phone, Astro.locals.storeId as string);
+  }
+});
+
+const isPrepaidEnabled = settings?.prepaid_discount_enabled === 'true' || settings?.prepaid_discount_enabled === true;
+const pType = settings?.prepaid_discount_type || 'percentage';
+const pVal = Number(settings?.prepaid_discount_value || 0);
+const discountText = pType === 'percentage' ? `${pVal}%` : `₹${pVal}`;
+const minOrderText = Number(settings?.prepaid_discount_min_order || 0) > 0 ? ` on orders above ₹${settings.prepaid_discount_min_order}` : '';
+const hasPrepaidGateway = (settings?.razorpay_enabled !== false && settings?.razorpay_enabled !== 'false') || (settings?.phonepe_enabled !== false && settings?.phonepe_enabled !== 'false');
+const brandName = settings?.brand_name || settings?.store_name || 'Your Brand';
+
+---
+
+<ActiveLayout bodyClass="bg-surface" title="Secure Checkout" description="Complete your secure purchase. Choose from COD, Razorpay or PhonePe.">
+  <style is:global>
+    /* Bulletproof pull-to-refresh & swipe-back prevention for iOS and Android */
+    html, body {
+      overscroll-behavior-y: none !important;
+      background-color: #f8fafc;
+    }
+  </style>
+  <script is:inline define:vars={{ hasPrepaidGateway, brandName, customerId }}>
+    window.hasPrepaidGateway = hasPrepaidGateway;
+    window.brandName = brandName;
+    window.customerId = customerId;
+  </script>
+  <style>
+    /* Sticky mobile bottom bar */
+    .mobile-checkout-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 40;
+      background: white;
+      border-top: 1px solid #e5e7eb;
+      padding: 12px 16px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    @media (min-width: 1024px) {
+      .mobile-checkout-bar { display: none; }
+    }
+    /* Add bottom padding on mobile so content isn't hidden behind sticky bar */
+    @media (max-width: 1023px) {
+      .checkout-content { padding-bottom: 90px; }
+      /* Desktop place order is unhidden so user sees button at bottom of summary too */
+    }
+  </style>
+  <div class="min-h-screen pb-10 pt-12 pb-12">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6">
+
+      <!-- Page Header -->
+      <div class="mb-8 flex items-center gap-3">
+        <a href="/products" class="text-secondary/50 hover:text-secondary transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+        </a>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Secure Checkout</h1>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start checkout-content">
+
+        <!-- Mobile: Compact Order Summary (shown first on mobile, hidden on desktop) -->
+        <div class="lg:hidden bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <details class="group">
+            <summary class="px-5 py-3.5 flex items-center justify-between cursor-pointer select-none">
+              <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+                <span class="font-semibold text-secondary text-sm">Order Summary</span>
+                <span id="mobile-item-count" class="bg-primary/10 text-primary text-xs font-bold px-2 py-0.5 rounded-full">0 items</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="mobile-total-preview" class="font-bold text-secondary">₹0</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-secondary/50 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+              </div>
+            </summary>
+            <div class="px-5 pb-4 border-t border-gray-100 pt-3">
+              <div id="mobile-order-items" class="space-y-2.5 max-h-40 overflow-y-auto"></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Left Column: Form -->
+        <div class="lg:col-span-2 space-y-6">
+
+          {!customerId ? (
+            <OTPCheckoutAuth authMode={authMode} otpLength={otpLength} client:load />
+          ) : (
+            <>
+              <!-- 1. Delivery Details -->
+              <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">1</div>
+                    <div>
+                      <h2 class="font-bold text-secondary">Delivery Details</h2>
+                      <p class="text-xs text-secondary/50">Where should we deliver your order?</p>
+                    </div>
+                  </div>
+                  <div class="flex flex-col items-end">
+                    <span class="text-xs font-medium text-secondary">{phone || defaultCustomer?.email || ''}</span>
+                    <button id="btn-change-number" class="text-[10px] font-bold text-primary hover:underline mt-0.5">Change</button>
+                  </div>
+                </div>
+                <div class="p-6">
+              {savedAddresses.length > 0 && (
+                <div class="mb-6">
+                  <label class="block text-sm font-medium text-secondary mb-2">Select Delivery Address</label>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    {savedAddresses.map((addr: any) => (
+                      <div 
+                        class="address-card p-4 rounded-xl border-2 border-gray-100 hover:border-primary/50 cursor-pointer transition-all bg-white"
+                        data-name={addr.name}
+                        data-phone={addr.contact_phone || phone}
+                        data-address={addr.street_address}
+                        data-city={addr.city}
+                        data-state={addr.state}
+                        data-pincode={addr.pincode}
+                      >
+                        <div class="flex justify-between items-start mb-1">
+                          <span class="font-semibold text-secondary text-sm">{addr.name}</span>
+                          <span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase">{addr.label}</span>
+                        </div>
+                        <p class="text-xs text-secondary/70 line-clamp-2">{addr.street_address}, {addr.city}, {addr.state} - {addr.pincode}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <button id="btn-show-new-address" class="text-sm font-medium text-primary hover:underline flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                    Add New Address
+                  </button>
+                </div>
+              )}
+
+              <div id="address-form-container" class={savedAddresses.length > 0 ? 'hidden' : 'block'}>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-secondary mb-1">Full Name <span class="text-red-500">*</span></label>
+                  <input type="text" id="delivery-name" required value={defaultCustomer?.name || ''} placeholder="John Doe" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-secondary mb-1">Phone Number <span class="text-red-500">*</span></label>
+                  <input type="tel" id="delivery-phone" required value={phone} placeholder="+91 XXXXX XXXXX" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-sm font-medium text-secondary mb-1">Email</label>
+                  <input type="email" id="delivery-email" value={defaultCustomer?.email || ''} placeholder="your@email.com" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+                </div>
+                <div id="physical-address-fields" class="contents">
+                <div class="sm:col-span-2">
+                  <label class="block text-sm font-medium text-secondary mb-1">Street Address <span class="text-red-500">*</span></label>
+                  <input type="text" id="delivery-address" required placeholder="House/Flat No., Street, Colony" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-secondary mb-1">Pincode <span class="text-red-500">*</span></label>
+                  <input type="text" id="delivery-pincode" required maxlength="6" placeholder="226001" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-secondary mb-1">City <span class="text-red-500">*</span></label>
+                  <input type="text" id="delivery-city" required placeholder="City Name" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors" />
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-sm font-medium text-secondary mb-1">State <span class="text-red-500">*</span></label>
+                  <select id="delivery-state" class="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm transition-colors">
+                    <option value="">Select State</option>
+                    {['Andhra Pradesh','Assam','Bihar','Chhattisgarh','Delhi','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Odisha','Punjab','Rajasthan','Tamil Nadu','Telangana','Uttar Pradesh','Uttarakhand','West Bengal'].map(s => (
+                      <option value={s} selected={s === 'Uttar Pradesh'}>{s}</option>
+                    ))}
+                  </select>
+                  <!-- Hidden input mirrors state so it's submitted even when select is disabled for Q-Commerce orders -->
+                  <input type="hidden" id="delivery-state-hidden" />
+                </div>
+                </div>
+              </div>
+              </div> <!-- close address-form-container -->
+            </div>
+          </div>
+
+          <!-- 2. Coupon Code -->
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-3">
+              <div class="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">2</div>
+              <div>
+                <h2 class="font-bold text-secondary">Coupon Code</h2>
+                <p class="text-xs text-secondary/50">Have a promo code? Enter it here.</p>
+              </div>
+            </div>
+            <div class="p-6">
+                <div class="flex gap-3 relative">
+                  <input type="text" id="coupon-input" placeholder="Enter coupon code (try: NUTRI10)" class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm uppercase tracking-widest font-mono transition-colors" />
+                  <button id="btn-remove-coupon" class="hidden absolute right-24 top-1/2 -translate-y-1/2 text-xs font-medium text-red-500 hover:text-red-700 px-2 py-1">Remove</button>
+                  <button id="btn-apply-coupon" class="bg-secondary hover:bg-secondary/90 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap">Apply</button>
+                </div>
+                <div id="coupon-msg" class="mt-3 hidden text-sm font-medium"></div>
+              </div>
+          </div>
+
+          <!-- 3. Payment Method -->
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-3">
+              <div class="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">3</div>
+              <div>
+                <h2 class="font-bold text-secondary">Payment Method</h2>
+                <p class="text-xs text-secondary/50">All payments are 100% secure.</p>
+              </div>
+            </div>
+            <div class="p-6 space-y-3">
+              {isPrepaidEnabled && pVal > 0 && (
+                  <div class="mb-1 bg-green-50 border border-green-200 text-green-700 rounded-xl p-3.5 flex items-start gap-3 shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mt-0.5 flex-shrink-0 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" /></svg>
+                    <div class="text-sm">
+                      <strong class="font-bold">Special Offer!</strong> Pay online via Razorpay or PhonePe to get an extra <span class="font-bold">{discountText}</span> discount{minOrderText}.
+                    </div>
+                  </div>
+              )}
+
+              <!-- COD -->
+              {settings?.cod_enabled !== false && settings?.cod_enabled !== 'false' && (
+                <label class={`payment-option flex items-center gap-4 p-4 border-2 rounded-2xl cursor-pointer transition-all ${hasPrepaidGateway ? 'border-gray-200 bg-white' : 'border-amber-400 bg-amber-50'}`} data-method="cod">
+                  <input type="radio" name="payment_method" value="cod" checked={!hasPrepaidGateway} class="sr-only" />
+                  <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-2xl font-bold text-amber-600 shrink-0">₹</div>
+                  <div class="flex-1">
+                    <p class="font-semibold text-secondary text-sm">Cash on Delivery (COD)</p>
+                    <p class="text-xs text-secondary/60">Pay with cash when your order arrives. No extra charges.</p>
+                  </div>
+                  <div class={`w-5 h-5 border-2 rounded-full flex items-center justify-center shrink-0 ${hasPrepaidGateway ? 'border-gray-300' : 'border-amber-500'}`}>
+                    {!hasPrepaidGateway && <div class="w-2.5 h-2.5 bg-amber-500 rounded-full"></div>}
+                  </div>
+                </label>
+              )}
+
+              <!-- Pay Online Unified -->
+              {hasPrepaidGateway && (
+                <label class="payment-option flex items-center gap-4 p-4 border-2 border-blue-400 bg-blue-50 rounded-2xl cursor-pointer hover:border-blue-300 transition-all" data-method="pay_online">
+                  <input type="radio" name="payment_method" value="pay_online" checked class="sr-only" />
+                  <div class="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+                    <svg class="h-6 w-6 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z"/></svg>
+                  </div>
+                  <div class="flex-1">
+                    <p class="font-semibold text-secondary text-sm">Pay Online</p>
+                    <p class="text-xs text-secondary/60">UPI, Cards, Wallets, NetBanking</p>
+                  </div>
+                  <div class="w-5 h-5 border-2 border-blue-500 rounded-full flex items-center justify-center shrink-0">
+                    <div class="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>
+                  </div>
+                </label>
+              )}
+
+            </div>
+          </div>
+          </>
+          )}
+        </div>
+
+        <!-- Right Column: Order Summary -->
+        <div class="lg:col-span-1">
+          <div id="digital-block-banner" class="mb-4 bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm hidden shadow-sm"></div>
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden sticky top-24">
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+              <h2 class="font-bold text-secondary">Order Summary</h2>
+            </div>
+            <div class="p-6 space-y-4">
+
+              <!-- Cart Items (read from localStorage) -->
+              <div id="order-items" class="space-y-3">
+                <div class="text-center py-4">
+                  <div class="w-8 h-8 border-2 border-gray-200 border-t-primary rounded-full animate-spin mx-auto"></div>
+                  <p class="text-xs text-secondary/40 mt-2">Loading cart...</p>
+                </div>
+              </div>
+              
+              <div id="free-gift-container" class="mt-3"></div>
+
+              <hr class="border-gray-100" />
+
+              <!-- Price Breakdown -->
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between text-secondary/70">
+                  <span>Subtotal</span>
+                  <span id="summary-subtotal">₹0</span>
+                </div>
+                <div class="flex justify-between text-secondary/70">
+                  <span>Shipping</span>
+                  <span id="summary-shipping" class="text-green-600 font-medium">FREE</span>
+                </div>
+                <div id="coupon-discount-row" class="hidden flex justify-between text-green-600 font-medium">
+                  <span id="coupon-label">Coupon (NUTRI10)</span>
+                  <span id="coupon-amount">-₹0</span>
+                </div>
+                <div id="milestone-discount-row" class="hidden flex justify-between text-green-600 font-medium">
+                    <span id="milestone-label">Milestone Offer</span>
+                    <span id="milestone-amount">-₹0</span>
+                </div>
+                <div id="prepaid-discount-row" class="hidden flex justify-between text-green-600 font-medium">
+                  <span id="prepaid-label">Prepaid Offer</span>
+                  <span id="prepaid-amount">-₹0</span>
+                </div>
+                <hr class="border-gray-100" />
+                <div class="flex justify-between font-bold text-base text-secondary">
+                  <span>Total</span>
+                  <span id="summary-total">₹0</span>
+                </div>
+              </div>
+
+              <!-- Trust badges -->
+              <div class="grid grid-cols-3 gap-2 pt-2">
+                <div class="text-center">
+                  <div class="text-primary mb-0.5 flex justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+                  <p class="text-xs text-secondary/50">Secure</p>
+                </div>
+                <div class="text-center">
+                  <div class="text-primary mb-0.5 flex justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
+                  <p class="text-xs text-secondary/50">Fast Ship</p>
+                </div>
+                <div class="text-center">
+                  <div class="text-primary mb-0.5 flex justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+                  <p class="text-xs text-secondary/50">FSSAI</p>
+                </div>
+              </div>
+
+              <!-- Place Order (Desktop only — mobile uses sticky bar) -->
+              <div class="desktop-place-order">
+                {customerId ? (
+                  <button id="btn-place-order" class="w-full btn-primary !py-3.5 !rounded-xl text-base font-bold flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    Place Order
+                  </button>
+                ) : (
+                  <button disabled class="w-full bg-gray-100 text-gray-400 !py-3.5 !rounded-xl text-base font-bold flex items-center justify-center gap-2 cursor-not-allowed">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    Login to Place Order
+                  </button>
+                )}
+              </div>
+              <p class="text-xs text-center text-secondary/40">By placing order, you agree to our <a href="/terms" class="underline hover:text-secondary">Terms & Conditions</a></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Sticky Bottom Bar -->
+  <div class="mobile-checkout-bar">
+    <div class="min-w-0">
+      <p class="text-xs text-secondary/50 leading-none">Total</p>
+      <p id="mobile-bar-total" class="text-lg font-bold text-secondary leading-tight">₹0</p>
+    </div>
+    {customerId ? (
+      <button id="btn-place-order-mobile" class="btn-primary !py-3 !px-6 !rounded-xl text-sm font-bold flex items-center gap-2 shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+        Place Order
+      </button>
+    ) : (
+      <button disabled class="bg-gray-100 text-gray-400 !py-3 !px-6 !rounded-xl text-sm font-bold flex items-center gap-2 shrink-0 cursor-not-allowed">
+        Login
+      </button>
+    )}
+  </div>
+<script is:inline>
+  // ── Aggressive Mobile Swipe Prevention ──
+  // Native overscroll-behavior handles pull-to-refresh.
+  (function preventGestures() {
+    let startX = 0;
+    document.addEventListener('touchstart', function(e) {
+      if(e.touches.length > 0) startX = e.touches[0].pageX;
+    }, { passive: false });
+    document.addEventListener('touchmove', function(e) {
+      if(e.touches.length > 0 && startX < 30) {
+        e.preventDefault(); // Block left edge swipe (iOS Safari back gesture)
+      }
+    }, { passive: false });
+  })();
+
+  // ── Hydrate Cart Data ──
+</script>
+
+<script is:inline define:vars={{ FREE_SHIP_THRESHOLD, FLAT_SHIP }}>
+  window.CHECKOUT_FREE_SHIP = FREE_SHIP_THRESHOLD;
+  window.CHECKOUT_FLAT_SHIP = FLAT_SHIP;
+</script>
+<script>
+  document.addEventListener('astro:page-load', () => {
+    if (!window.location.pathname.includes('/checkout')) return;
+    
+    const FREE_SHIP_THRESHOLD = window.CHECKOUT_FREE_SHIP;
+    const FLAT_SHIP = window.CHECKOUT_FLAT_SHIP;
+    let appliedCoupons = [];
+    try {
+      const savedCouponsStr = localStorage.getItem(`vyaparpe-coupons-${window.location.hostname}`);
+      if (savedCouponsStr) {
+        try {
+          const codes = JSON.parse(savedCouponsStr);
+          if (codes && codes.length > 0) {
+            appliedCoupons = [{ code: codes[0] }];
+            if (codes.length > 1) {
+              localStorage.setItem(`vyaparpe-coupons-${window.location.hostname}`, JSON.stringify([codes[0]]));
+            }
+          }
+        } catch(e) {}
+      }
+    } catch(e) {
+      console.warn('localStorage not accessible', e);
+    }
+  
+  // Auto-apply affiliate ref if no coupons applied
+  if (appliedCoupons.length === 0) {
+    try {
+      const affiliateRef = localStorage.getItem('vyaparpe_affiliate_ref');
+      if (affiliateRef) {
+        appliedCoupons.push({ code: affiliateRef.toUpperCase() });
+        localStorage.setItem(`vyaparpe-coupons-${window.location.hostname}`, JSON.stringify([affiliateRef.toUpperCase()]));
+      }
+    } catch(e) {
+      console.warn('localStorage not accessible', e);
+    }
+  }
+
+  let verifiedTotals = null; // Store backend validated totals
+
+  // Read cart — uses same hostname-based key as cartStore.ts
+  function getCartStorageKey() {
+    return 'vyaparpe-cart-' + window.location.hostname;
+  }
+
+  function getCart() {
+    try {
+      const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+      let raw = null;
+      if (isBuyNow) {
+        raw = sessionStorage.getItem('buy-now-cart');
+        if (!raw) {
+          const item = sessionStorage.getItem('buy-now-item');
+          if (item) raw = '[' + item + ']';
+        }
+      }
+      if (!raw) {
+        raw = localStorage.getItem(getCartStorageKey());
+      }
+      const parsed = JSON.parse(raw || '[]');
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch { return []; }
+  }
+
+  function clearCartData() {
+    const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+    if (isBuyNow) {
+      sessionStorage.removeItem('buy-now-item');
+      sessionStorage.removeItem('buy-now-cart');
+    } else {
+      localStorage.removeItem(getCartStorageKey());
+    }
+  }
+
+  function renderCart() {
+    const cart = getCart();
+    const container = document.getElementById('order-items');
+    if (!container) return;
+
+    if (cart.length === 0) {
+      container.innerHTML = `<div class="text-center py-4"><p class="text-sm text-secondary/60">Your cart is empty.</p><a href="/products" class="text-primary text-sm font-medium hover:underline">Shop now →</a></div>`;
+      updateTotals(0);
+      // Only redirect if the user is logged in (customerId is truthy server-side).
+      // We detect login by checking if the place-order button exists (it's only rendered when logged in).
+      const isLoggedIn = !!document.getElementById('btn-place-order') || !!document.getElementById('btn-place-order-mobile');
+      if (isLoggedIn) {
+        // Use a longer timeout so the cart has time to hydrate from storage.
+        // If the cart is genuinely empty (not a race condition), we redirect.
+        setTimeout(() => { window.location.href = '/products'; }, 3000);
+      }
+      return;
+    }
+
+    container.innerHTML = cart.map(item => `
+      <div class="flex gap-3 items-start">
+        <img src="${item.image || 'https://placehold.co/60x60/e2e8f0/64748b?text=P'}" alt="${item.name}" class="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-100" onerror="this.src='https://placehold.co/60x60/e2e8f0/64748b?text=P'" />
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-secondary leading-tight truncate">${item.name}</p>
+          <p class="text-xs text-secondary/50">${item.weight || ''}</p>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-xs text-secondary/50">Qty: ${item.quantity || 1}</span>
+            <span class="text-sm font-bold text-secondary">₹${((item.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    // Also populate mobile compact summary
+    const mobileItems = document.getElementById('mobile-order-items');
+    if (mobileItems) {
+      mobileItems.innerHTML = cart.map(item => `
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <img src="${item.image || 'https://placehold.co/32x32/e2e8f0/64748b?text=P'}" alt="${item.name}" class="w-8 h-8 rounded-lg object-cover shrink-0" onerror="this.src='https://placehold.co/32x32/e2e8f0/64748b?text=P'" />
+            <div class="min-w-0">
+              <p class="text-xs font-medium text-secondary truncate">${item.name}</p>
+              <p class="text-[10px] text-secondary/40">${item.weight || ''} × ${item.quantity || 1}</p>
+            </div>
+          </div>
+          <span class="text-xs font-bold text-secondary shrink-0">₹${((item.price || 0) * (item.quantity || 1)).toLocaleString('en-IN')}</span>
+        </div>
+      `).join('');
+    }
+    const mobileCount = document.getElementById('mobile-item-count');
+    
+    // Auto-fill coupon input if we have a saved coupon
+    const couponInput = document.getElementById('coupon-input');
+    if (couponInput && appliedCoupons.length > 0) {
+      couponInput.value = appliedCoupons.map(c => c.code).join(', ');
+      document.getElementById('btn-remove-coupon')?.classList.remove('hidden');
+    }
+    if (mobileCount) mobileCount.textContent = cart.reduce((s, i) => s + (i.quantity || i.qty || 1), 0) + ' items';
+
+    const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+    if (isBuyNow) {
+      try {
+        const regularCart = JSON.parse(localStorage.getItem(getCartStorageKey()) || '[]');
+        if (regularCart.length > 0) {
+          const mergePrompt = document.createElement('div');
+          mergePrompt.className = 'mt-3 p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between gap-3';
+          mergePrompt.innerHTML = `
+            <div>
+              <p class="text-xs font-bold text-secondary">You have ${regularCart.length} item(s) in your cart.</p>
+              <p class="text-[10px] text-secondary/60">Add them to this order to save on shipping!</p>
+            </div>
+            <button id="btn-merge-cart" class="text-xs font-bold bg-primary text-white px-3 py-1.5 rounded-lg shrink-0 hover:bg-primary/90 transition-colors">Add Items</button>
+          `;
+          container.appendChild(mergePrompt);
+          
+          document.getElementById('btn-merge-cart')?.addEventListener('click', () => {
+            const merged = [...regularCart];
+            cart.forEach(item => {
+              const existing = merged.find(i => i.id === item.id);
+              if (existing) {
+                existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
+              } else {
+                merged.push(item);
+              }
+            });
+            localStorage.setItem(getCartStorageKey(), JSON.stringify(merged));
+            sessionStorage.removeItem('buy-now-item');
+            sessionStorage.removeItem('buy-now-cart');
+            
+            window.history.replaceState({}, '', window.location.pathname);
+            window.dispatchEvent(new CustomEvent('cartUpdated'));
+            renderCart();
+          });
+        }
+      } catch (e) {}
+    }
+
+    // Read Location Cookies for all users
+    const pinMatch = document.cookie.match(new RegExp('(^| )delivery_pincode=([^;]+)'));
+    const cityMatch = document.cookie.match(new RegExp('(^| )delivery_city=([^;]+)'));
+    const qPin = pinMatch ? pinMatch[2] : '';
+    const qCity = cityMatch ? decodeURIComponent(cityMatch[2]) : '';
+
+    const pinField = document.getElementById('delivery-pincode');
+    const cityField = document.getElementById('delivery-city');
+    const stateField = document.getElementById('delivery-state');
+    
+    // Auto-fill if empty (Trigger React onChange events)
+    if (pinField && qPin && !pinField.value) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      if (nativeSetter) {
+        nativeSetter.call(pinField, qPin);
+        pinField.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        pinField.value = qPin;
+      }
+    }
+    if (cityField && qCity && !cityField.value) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      if (nativeSetter) {
+        nativeSetter.call(cityField, qCity);
+        cityField.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        cityField.value = qCity;
+      }
+    }
+
+    const subtotal = cart.reduce((s, i) => s + ((i.price || 0) * (i.quantity || i.qty || 1)), 0);
+    updateTotals();
+    // Q-Commerce Address Lock Logic
+    const hasQCommerce = cart.some(item => item.is_q_commerce_only);
+    if (hasQCommerce) {
+      if (pinField) {
+        pinField.setAttribute('readonly', 'true');
+        pinField.classList.add('bg-gray-100', 'cursor-pointer');
+        pinField.onclick = () => showQCommercePopup();
+      }
+      if (cityField) {
+        cityField.setAttribute('readonly', 'true');
+        cityField.classList.add('bg-gray-100', 'cursor-pointer');
+        cityField.onclick = () => showQCommercePopup();
+      }
+      if (stateField) {
+        stateField.setAttribute('disabled', 'true');
+        stateField.classList.add('bg-gray-100');
+        // Mirror value into the hidden input so it's submitted correctly
+        const hiddenState = document.getElementById('delivery-state-hidden');
+        if (hiddenState) hiddenState.value = stateField.value;
+      }
+    }
+  }
+
+  function showQCommercePopup() {
+    if (document.getElementById('qcom-popup')) return;
+    
+    const popup = document.createElement('div');
+    popup.id = 'qcom-popup';
+    popup.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm opacity-0 transition-opacity';
+    
+    const qItem = getCart().find(i => i.is_q_commerce_only);
+    const rawItemName = qItem ? qItem.name : 'a Quick-Commerce item';
+    // Sanitize to prevent Self-XSS from malicious product names
+    const itemName = rawItemName.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    
+    popup.innerHTML = `
+      <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl transform scale-95 transition-transform" id="qcom-popup-inner">
+        <div class="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+        </div>
+        <h3 class="text-lg font-bold text-secondary text-center mb-2">Location Locked</h3>
+        <p class="text-sm text-secondary/70 text-center mb-6">Your cart contains <strong>${itemName}</strong> which is only deliverable to your current selected location. To change your delivery area, please remove it.</p>
+        <div class="flex flex-col gap-2">
+          <button id="btn-remove-qcom" class="w-full bg-red-500 text-white font-medium py-3 rounded-xl hover:bg-red-600 transition-colors">Remove Q-Commerce Item(s)</button>
+          <button id="btn-close-qcom" class="w-full bg-gray-100 text-secondary font-medium py-3 rounded-xl hover:bg-gray-200 transition-colors">Keep Item & Go Back</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    requestAnimationFrame(() => {
+      popup.classList.remove('opacity-0');
+      document.getElementById('qcom-popup-inner')?.classList.remove('scale-95');
+    });
+    
+    document.getElementById('btn-close-qcom')?.addEventListener('click', () => {
+      popup.classList.add('opacity-0');
+      document.getElementById('qcom-popup-inner')?.classList.add('scale-95');
+      setTimeout(() => popup.remove(), 200);
+    });
+    
+    document.getElementById('btn-remove-qcom')?.addEventListener('click', () => {
+      const cart = getCart().filter(i => !i.is_q_commerce_only);
+      localStorage.setItem(getCartStorageKey(), JSON.stringify(cart));
+      window.location.reload();
+    });
+  }
+
+  async function updateTotals() {
+    const cart = getCart();
+    if (cart.length === 0) return;
+    
+    const stateElement = document.getElementById('delivery-state');
+    const state = stateElement ? stateElement.value.trim() : null;
+    
+    const pincodeElement = document.getElementById('delivery-pincode');
+    const pincode = pincodeElement ? pincodeElement.value.trim() : null;
+    
+    const method = document.querySelector('input[name="payment_method"]:checked')?.value || 'cod';
+    
+    const phoneInput = document.getElementById('delivery-phone');
+    const phone = phoneInput ? phoneInput.value.trim() : null;
+    
+    // Call backend validation API
+    try {
+      const res = await fetch('/api/checkout/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: cart, couponCodes: appliedCoupons.map(c => c.code), state, pincode, paymentMethod: method, customerPhone: phone })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        if (data.wasAdjusted) {
+          alert('Cart Updated:\n' + data.adjustedMessage);
+          
+          let localCart = getCart();
+          let needsUpdate = false;
+          
+          if (localCart.length !== data.validatedItems.length) {
+             needsUpdate = true;
+             localCart = localCart.filter(li => 
+                data.validatedItems.some((vi: any) => vi.id === li.id)
+             );
+          }
+
+          data.validatedItems.forEach((vi: any) => {
+            if (vi._adjusted_qty) {
+              const match = localCart.find((li) => li.id === vi.id || `${li.product_id}-${li.variant_id}` === vi.id);
+              if (match) {
+                match.quantity = vi.quantity;
+                needsUpdate = true;
+              }
+            }
+          });
+          
+          if (needsUpdate) {
+             localCart = localCart.filter((li) => li.quantity > 0);
+             const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+             if (isBuyNow) {
+               sessionStorage.setItem('buy-now-cart', JSON.stringify(localCart));
+             } else {
+               localStorage.setItem(getCartStorageKey(), JSON.stringify(localCart));
+             }
+             
+             // Update global cart store if possible, but dispatching a custom event is safest
+             window.dispatchEvent(new CustomEvent('cartUpdated'));
+             
+             renderCart();
+             return; // renderCart will recall updateTotals with the corrected items
+          }
+        }
+        
+        verifiedTotals = data; // Store it for place order step
+
+        // SAFE DIGITAL LOGIC: Evaluated from server-validated items, not raw localStorage
+        const hasDigitalProduct = data.validatedItems?.some(i => i.is_digital) || false;
+        const isDigitalOnly = data.validatedItems?.length > 0 && data.validatedItems.every(i => i.is_digital);
+
+        // Hide physical address fields if digital only
+        const physicalFields = document.getElementById('physical-address-fields');
+        if (physicalFields) {
+          physicalFields.classList.toggle('hidden', isDigitalOnly);
+          physicalFields.classList.toggle('contents', !isDigitalOnly);
+          
+          if (isDigitalOnly) {
+            document.getElementById('delivery-address')?.removeAttribute('required');
+            document.getElementById('delivery-city')?.removeAttribute('required');
+            document.getElementById('delivery-pincode')?.removeAttribute('required');
+          } else {
+            document.getElementById('delivery-address')?.setAttribute('required', 'true');
+            document.getElementById('delivery-city')?.setAttribute('required', 'true');
+            document.getElementById('delivery-pincode')?.setAttribute('required', 'true');
+          }
+        }
+
+        // Hide COD if digital product present AND prepaid gateway is available
+        const codOption = document.querySelector('.payment-option[data-method="cod"]');
+        if (codOption) {
+          const titleEl = codOption.querySelector('.font-medium');
+          const subtitleEl = codOption.querySelector('.text-xs');
+          
+          if (hasDigitalProduct) {
+            if (window.hasPrepaidGateway) {
+              codOption.style.display = 'none';
+              const codRadio = codOption.querySelector('input[type="radio"]');
+              if (codRadio && codRadio.checked) {
+                codRadio.checked = false;
+                const altRadio = document.querySelector('.payment-option:not([data-method="cod"]) input[type="radio"]');
+                if (altRadio) altRadio.checked = true;
+              }
+            } else {
+              // NO Prepaid Gateway: Allow checkout but rename COD to Pay on WhatsApp
+              codOption.style.display = 'flex';
+              if (titleEl) titleEl.textContent = 'Pay on WhatsApp';
+              if (subtitleEl) subtitleEl.textContent = 'Complete your payment directly with the seller.';
+              
+              // Ensure it's checked if it's the only option
+              const codRadio = codOption.querySelector('input[type="radio"]');
+              if (codRadio && !codRadio.checked) codRadio.checked = true;
+            }
+          } else {
+            codOption.style.display = 'flex';
+            if (titleEl) titleEl.textContent = 'Cash on Delivery';
+            if (subtitleEl) subtitleEl.textContent = 'Pay when your order arrives.';
+          }
+        }
+
+        // Show warning banner if digital and no prepaid gateway
+        let digitalBlockBanner = document.getElementById('digital-block-banner');
+        if (digitalBlockBanner) {
+            if (hasDigitalProduct && !window.hasPrepaidGateway) {
+                digitalBlockBanner.innerHTML = '<strong>Note:</strong> Online payments are currently unavailable. You can place the order and pay directly via WhatsApp.';
+                digitalBlockBanner.classList.remove('hidden');
+                digitalBlockBanner.classList.replace('bg-red-50', 'bg-blue-50');
+                digitalBlockBanner.classList.replace('border-red-200', 'border-blue-200');
+                digitalBlockBanner.classList.replace('text-red-700', 'text-blue-700');
+            } else {
+                digitalBlockBanner.classList.add('hidden');
+            }
+            // Ensure buttons remain enabled
+            document.querySelectorAll('#btn-place-order, #btn-place-order-mobile').forEach(b => {
+               const btn = b;
+               btn.disabled = false;
+               btn.classList.remove('opacity-50', 'cursor-not-allowed');
+               if (btn.id === 'btn-place-order' && btn.innerText.includes('Checkout Unavailable')) {
+                   btn.innerHTML = '<span>Place Order &rarr;</span>';
+               }
+               if (btn.id === 'btn-place-order-mobile' && btn.innerText.includes('Checkout Unavailable')) {
+                   btn.innerHTML = '<span>Place Order</span>';
+               }
+            });
+        }
+        
+        document.getElementById('summary-subtotal').textContent = '₹' + data.subtotal.toLocaleString('en-IN');
+        document.getElementById('summary-shipping').textContent = data.shipping === 0 ? 'FREE' : '₹' + data.shipping;
+        document.getElementById('summary-shipping').className = data.shipping === 0 ? 'text-green-600 font-medium' : 'text-secondary/70';
+        document.getElementById('summary-total').textContent = '₹' + data.finalAmount.toLocaleString('en-IN');
+
+        // Update mobile elements
+        const mobileBarTotal = document.getElementById('mobile-bar-total');
+        if (mobileBarTotal) mobileBarTotal.textContent = '₹' + data.finalAmount.toLocaleString('en-IN');
+        const mobilePreview = document.getElementById('mobile-total-preview');
+        if (mobilePreview) mobilePreview.textContent = '₹' + data.finalAmount.toLocaleString('en-IN');
+
+        // Clear any checkout errors
+        const checkoutErr = document.getElementById('checkout-error-msg');
+        if (checkoutErr) checkoutErr.classList.add('hidden');
+
+        const discRow = document.getElementById('coupon-discount-row');
+        const mileRow = document.getElementById('milestone-discount-row');
+        
+        // Auto-remove invalid coupon on load or check
+        if (data.couponResult && !data.couponResult.valid) {
+          appliedCoupons = [];
+          localStorage.removeItem(`vyaparpe-coupons-${window.location.hostname}`);
+          const cInput = document.getElementById('coupon-input');
+          if (cInput) cInput.value = '';
+          const msgEl = document.getElementById('coupon-msg');
+          if (msgEl) {
+            msgEl.className = 'mt-3 text-sm font-medium text-red-600';
+            msgEl.textContent = data.couponResult.error || 'Coupon is no longer valid and was removed.';
+            msgEl.classList.remove('hidden');
+            document.getElementById('coupon-input').classList.remove('border-green-400', 'bg-green-50');
+            document.getElementById('btn-remove-coupon')?.classList.add('hidden');
+          }
+        } else if (data.couponResult && data.couponResult.valid) {
+          // Provide visual feedback for auto-applied coupons
+          const msgEl = document.getElementById('coupon-msg');
+          if (msgEl) {
+            msgEl.className = 'mt-3 text-sm font-medium text-green-600';
+            msgEl.textContent = `✓ Coupon applied!`;
+            msgEl.classList.remove('hidden');
+          }
+          const cInput = document.getElementById('coupon-input');
+          if (cInput) cInput.classList.add('border-green-400', 'bg-green-50');
+          document.getElementById('btn-remove-coupon')?.classList.remove('hidden');
+        }
+        
+        const displayCouponAmount = data.couponDiscount || 0;
+        if (displayCouponAmount > 0) {
+          discRow.classList.remove('hidden');
+          discRow.classList.add('flex');
+          if (data.couponResult && data.couponResult.valid && data.couponResult.coupons && data.couponResult.coupons.length > 0) {
+            const couponCodes = data.couponResult.coupons.map(c => c.code).join(', ');
+            document.getElementById('coupon-label').textContent = `Coupons (${couponCodes})`;
+          } else {
+            document.getElementById('coupon-label').textContent = `Coupon Discount`;
+          }
+          document.getElementById('coupon-amount').textContent = '-₹' + displayCouponAmount.toLocaleString('en-IN');
+        } else {
+          discRow.classList.add('hidden');
+          discRow.classList.remove('flex');
+        }
+
+        const displayMilestoneAmount = data.milestoneDiscount || 0;
+        if (displayMilestoneAmount > 0) {
+          mileRow.classList.remove('hidden');
+          mileRow.classList.add('flex');
+          document.getElementById('milestone-amount').textContent = '-₹' + displayMilestoneAmount.toLocaleString('en-IN');
+        } else {
+          mileRow.classList.add('hidden');
+          mileRow.classList.remove('flex');
+        }
+
+        const prepaidRow = document.getElementById('prepaid-discount-row');
+        if (data.prepaidDiscount && data.prepaidDiscount > 0) {
+          prepaidRow.classList.remove('hidden');
+          prepaidRow.classList.add('flex');
+          document.getElementById('prepaid-amount').textContent = '-₹' + data.prepaidDiscount.toLocaleString('en-IN');
+        } else {
+          prepaidRow.classList.add('hidden');
+          prepaidRow.classList.remove('flex');
+        }
+
+        const giftContainer = document.getElementById('free-gift-container');
+        if (giftContainer) {
+          if (data.freeGifts && data.freeGifts.length > 0) {
+            const firstGift = data.freeGifts[0];
+            const extraCount = data.freeGifts.length - 1;
+            const countBadge = extraCount > 0 ? `<span class="bg-blue-100 text-blue-700 text-[9px] px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap">+${extraCount} More</span>` : '';
+            
+            giftContainer.innerHTML = `
+              <div class="flex gap-3 bg-primary/5 p-2 rounded-xl border border-primary/20 items-center">
+                <img src="${firstGift.image || 'https://placehold.co/40x40/e2e8f0/64748b?text=Gift'}" alt="Gift" class="w-10 h-10 rounded-lg object-cover border border-gray-200" />
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-bold text-secondary flex items-center gap-1 truncate">
+                    <span class="bg-primary text-white text-[8px] px-1 py-0.5 rounded uppercase">Gift</span>
+                    ${firstGift.name} ${countBadge}
+                  </p>
+                  <p class="text-[10px] text-secondary/60">${firstGift.variantName || ''}</p>
+                </div>
+                <span class="text-xs font-bold text-primary pr-2">FREE</span>
+              </div>
+            `;
+          } else if (data.freeGift) {
+            giftContainer.innerHTML = `
+              <div class="flex gap-3 bg-primary/5 p-2 rounded-xl border border-primary/20 items-center">
+                <img src="${data.freeGift.image || 'https://placehold.co/40x40/e2e8f0/64748b?text=Gift'}" alt="Gift" class="w-10 h-10 rounded-lg object-cover border border-gray-200" />
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-bold text-secondary flex items-center gap-1 truncate">
+                    <span class="bg-primary text-white text-[8px] px-1 py-0.5 rounded uppercase">Gift</span>
+                    ${data.freeGift.name}
+                  </p>
+                  <p class="text-[10px] text-secondary/60">${data.freeGift.variantName || ''}</p>
+                </div>
+                <span class="text-xs font-bold text-primary pr-2">FREE</span>
+              </div>
+            `;
+          } else {
+            giftContainer.innerHTML = '';
+          }
+        }
+      } else {
+        console.error('Validation error:', data.error);
+        alert(data.error || 'Cart validation failed. Please check your items.');
+        
+        // Reset totals to prevent old totals from remaining on screen
+        verifiedTotals = null;
+        const totalEl = document.getElementById('summary-total');
+        if (totalEl) totalEl.textContent = 'Error';
+        const mobileTotalEl = document.getElementById('mobile-bar-total');
+        if (mobileTotalEl) mobileTotalEl.textContent = 'Error';
+
+        // Reset state dropdown if shipping is blocked
+        const stateSelect = document.getElementById('delivery-state');
+        if (stateSelect) stateSelect.value = '';
+      }
+    } catch (e) {
+      console.error('Failed to validate totals', e);
+    }
+  }
+
+  // ── Coupon Logic ──────────────────────────────────────────────
+  document.getElementById('btn-apply-coupon')?.addEventListener('click', async () => {
+    const code = document.getElementById('coupon-input').value.trim().toUpperCase();
+    const msgEl = document.getElementById('coupon-msg');
+    
+    if (!code) {
+      msgEl.className = 'mt-3 text-sm font-medium text-red-600';
+      msgEl.textContent = 'Please enter a coupon code.';
+      msgEl.classList.remove('hidden');
+      return;
+    }
+    
+    const btn = document.getElementById('btn-apply-coupon');
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    msgEl.className = 'mt-3 text-sm font-medium text-secondary/60 animate-pulse';
+    msgEl.textContent = 'Checking...';
+    msgEl.classList.remove('hidden');
+    
+    appliedCoupons = [{ code }];
+    localStorage.setItem(`vyaparpe-coupons-${window.location.hostname}`, JSON.stringify([code]));
+    
+    await updateTotals();
+    
+    if (verifiedTotals && verifiedTotals.couponResult?.valid) {
+      msgEl.className = 'mt-3 text-sm font-medium text-green-600';
+      msgEl.textContent = `✓ Coupon applied!`;
+      document.getElementById('coupon-input').classList.add('border-green-400', 'bg-green-50');
+      document.getElementById('btn-remove-coupon')?.classList.remove('hidden');
+    } else {
+      appliedCoupons = []; // unset
+      localStorage.removeItem(`vyaparpe-coupons-${window.location.hostname}`);
+      document.getElementById('btn-remove-coupon')?.classList.add('hidden');
+      msgEl.className = 'mt-3 text-sm font-medium text-red-600';
+      msgEl.textContent = verifiedTotals?.couponResult?.error || '❌ Invalid or expired coupon code.';
+      document.getElementById('coupon-input').classList.remove('border-green-400', 'bg-green-50');
+    }
+    
+    msgEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Apply';
+  });
+
+  document.getElementById('btn-remove-coupon')?.addEventListener('click', async () => {
+    appliedCoupons = [];
+    localStorage.removeItem(`vyaparpe-coupons-${window.location.hostname}`);
+    const cInput = document.getElementById('coupon-input');
+    if (cInput) cInput.value = '';
+    const msgEl = document.getElementById('coupon-msg');
+    if (msgEl) {
+      msgEl.classList.add('hidden');
+    }
+    document.getElementById('coupon-input')?.classList.remove('border-green-400', 'bg-green-50');
+    document.getElementById('btn-remove-coupon')?.classList.add('hidden');
+    await updateTotals();
+  });
+
+  // ── Payment Option Cards ──────────────────────────────────────
+  document.querySelectorAll('.payment-option').forEach(card => {
+    card.addEventListener('click', function() {
+      document.querySelectorAll('.payment-option').forEach(c => {
+        c.className = 'payment-option flex items-center gap-4 p-4 border-2 border-gray-200 bg-white rounded-2xl cursor-pointer hover:border-blue-300 transition-all';
+        const dot = c.querySelector('.w-5.h-5 div');
+        if (dot) dot.remove();
+        const circle = c.querySelector('.w-5.h-5');
+        if (circle) circle.className = 'w-5 h-5 border-2 border-gray-300 rounded-full shrink-0';
+      });
+
+      const method = this.dataset.method;
+      const colors = { cod: 'border-amber-400 bg-amber-50', pay_online: 'border-blue-400 bg-blue-50' };
+      this.className = `payment-option flex items-center gap-4 p-4 border-2 ${colors[method] || 'border-primary bg-primary/5'} rounded-2xl cursor-pointer transition-all`;
+
+      const accentColors = { cod: 'border-amber-500', pay_online: 'border-blue-500' };
+      const dotColors = { cod: 'bg-amber-500', pay_online: 'bg-blue-500' };
+      const circle = this.querySelector('.w-5.h-5');
+      if (circle) {
+        circle.className = `w-5 h-5 border-2 ${accentColors[method]} rounded-full flex items-center justify-center shrink-0`;
+        circle.innerHTML = `<div class="w-2.5 h-2.5 ${dotColors[method]} rounded-full"></div>`;
+      }
+
+      this.querySelector('input[type="radio"]').checked = true;
+      updateTotals(); // Recalculate if prepaid discount applies
+    });
+  });
+
+  // Auto-select if only 1 payment option is available, or default to Pay Online
+  const availablePaymentOptions = document.querySelectorAll('.payment-option');
+  if (availablePaymentOptions.length === 1) {
+    availablePaymentOptions[0].click();
+  } else if (availablePaymentOptions.length > 1) {
+    const payOnline = document.querySelector('.payment-option[data-method="pay_online"]');
+    if (payOnline) {
+      payOnline.click();
+    }
+  }
+
+  // ── Saved Address Cards ───────────────────────────────────────
+  document.querySelectorAll('.address-card').forEach(card => {
+    card.addEventListener('click', function() {
+      document.querySelectorAll('.address-card').forEach(c => {
+        c.classList.remove('border-primary', 'bg-primary/5');
+        c.classList.add('border-gray-100', 'bg-white');
+      });
+      this.classList.remove('border-gray-100', 'bg-white');
+      this.classList.add('border-primary', 'bg-primary/5');
+
+      const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val || '';
+      };
+
+      setVal('delivery-name', this.dataset.name);
+      setVal('delivery-phone', this.dataset.phone);
+      setVal('delivery-address', this.dataset.address);
+      setVal('delivery-city', this.dataset.city);
+      setVal('delivery-pincode', this.dataset.pincode);
+      
+      const stateSelect = document.getElementById('delivery-state');
+      if (stateSelect) {
+        let stateValue = this.dataset.state;
+        if (stateValue && stateValue !== 'undefined') stateValue = stateValue.trim();
+        else stateValue = '';
+        let found = false;
+        for (let i = 0; i < stateSelect.options.length; i++) {
+          if (stateSelect.options[i].value === stateValue) {
+            stateSelect.selectedIndex = i;
+            found = true;
+            break;
+          }
+        }
+        // If state is not in the dropdown but is in the database, add it dynamically
+        if (!found && stateValue) {
+          const opt = document.createElement('option');
+          opt.value = stateValue;
+          opt.text = stateValue;
+          stateSelect.add(opt);
+          stateSelect.value = stateValue;
+        } else if (!found) {
+          stateSelect.value = '';
+        }
+        updateTotals(); // recalculate shipping if state changed
+      }
+    });
+  });
+
+  // Auto-select the first saved address if available
+  const firstAddress = document.querySelector('.address-card');
+  if (firstAddress) {
+    firstAddress.click();
+  }
+
+  // Update totals when state changes
+  document.getElementById('delivery-state')?.addEventListener('change', () => {
+    updateTotals();
+  });
+
+    // Add phone formatting listener
+    const phoneInputEl = document.getElementById('delivery-phone');
+    if (phoneInputEl) {
+      phoneInputEl.addEventListener('input', function() {
+        let val = this.value.replace(/\D/g, '');
+        if (val.length > 10 && val.startsWith('91')) {
+          val = val.slice(-10);
+        }
+        this.value = val;
+      });
+      // Re-validate totals (and coupons) when phone number is typed
+      phoneInputEl.addEventListener('blur', () => {
+        updateTotals();
+      });
+    }
+
+  // Toggle new address form
+  document.getElementById('btn-show-new-address')?.addEventListener('click', function() {
+    const container = document.getElementById('address-form-container');
+    if (container) {
+      container.classList.remove('hidden');
+      container.classList.add('block');
+      this.classList.add('hidden'); // Hide the button itself after clicking
+      // Clear selections on cards
+      document.querySelectorAll('.address-card').forEach(c => {
+        c.classList.remove('border-primary', 'bg-primary/5');
+        c.classList.add('border-gray-100', 'bg-white');
+      });
+      // Clear form so user can type
+      document.getElementById('delivery-name').value = '';
+      document.getElementById('delivery-address').value = '';
+      document.getElementById('delivery-city').value = '';
+      document.getElementById('delivery-pincode').value = '';
+      document.getElementById('delivery-state').value = '';
+    }
+  });
+
+  document.getElementById('btn-change-number')?.addEventListener('click', async () => {
+    // Clear cookie logic is easiest via an API call, but we can do a simple browser-side clearing
+    document.cookie = 'customer_auth=; Max-Age=0; path=/;';
+    window.location.reload();
+  });
+
+  // ── Place Order ───────────────────────────────────────────────
+  async function handlePlaceOrder(event) {
+    const btn = event.currentTarget;
+    const name = document.getElementById('delivery-name')?.value.trim();
+    const phone = document.getElementById('delivery-phone')?.value.trim();
+    const email = document.getElementById('delivery-email')?.value.trim();
+    const address = document.getElementById('delivery-address')?.value.trim();
+    const pincode = document.getElementById('delivery-pincode')?.value.trim();
+    const city = document.getElementById('delivery-city')?.value.trim();
+    
+    // Note: State might be disabled due to Q-Commerce, so read from hidden input as fallback
+    const stateEl = document.getElementById('delivery-state') as HTMLSelectElement;
+    const hiddenStateEl = document.getElementById('delivery-state-hidden') as HTMLInputElement;
+    const isStateDisabled = stateEl?.disabled;
+    const stateParam = (isStateDisabled && hiddenStateEl?.value) ? hiddenStateEl.value.trim() : (stateEl ? stateEl.value.trim() : '');
+    const state = stateParam;
+
+    const isDigitalOnly = verifiedTotals?.validatedItems?.length > 0 && verifiedTotals.validatedItems.every(item => item.is_digital);
+
+    if (!name || !phone || (!isDigitalOnly && (!address || !pincode || !city || (!stateParam && !isStateDisabled)))) {
+      alert('Please fill in all required delivery details.');
+      const container = document.getElementById('address-form-container');
+      if (container) {
+        container.classList.remove('hidden');
+        container.classList.add('block');
+        document.getElementById('btn-show-new-address')?.classList.add('hidden');
+      }
+      document.getElementById('delivery-name')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // Validate phone number (10 digits for Indian numbers)
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      alert('Please enter a valid 10-digit Indian mobile number.');
+      document.getElementById('delivery-phone')?.focus();
+      return;
+    }
+
+    const method = document.querySelector('input[name="payment_method"]:checked')?.value;
+    if (!method) {
+      alert('Please select a payment method.');
+      document.querySelector('.payment-option')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    
+    // Store original text to reset later if needed
+    const originalText = btn.innerHTML;
+    
+    function resetButtons() {
+      document.querySelectorAll('#btn-place-order, #btn-place-order-mobile').forEach(b => {
+        b.disabled = false;
+        b.innerHTML = originalText;
+      });
+    }
+
+    function showCheckoutError(msg) {
+      resetButtons();
+      let errEl = document.getElementById('checkout-error-msg');
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.id = 'checkout-error-msg';
+        errEl.className = 'text-red-600 bg-red-50 p-3 rounded-xl border border-red-200 text-sm font-medium mb-4';
+        
+        // Insert above the Place Order button container
+        const btnContainer = document.querySelector('.mt-6.flex.gap-4') || document.querySelector('#btn-place-order').parentElement;
+        if (btnContainer && btnContainer.parentNode) {
+          btnContainer.parentNode.insertBefore(errEl, btnContainer);
+        }
+      }
+      errEl.textContent = msg;
+      errEl.classList.remove('hidden');
+      errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      try { alert(msg); } catch(e) {}
+    }
+
+    // Disable both buttons to prevent double-clicks
+    document.querySelectorAll('#btn-place-order, #btn-place-order-mobile').forEach(b => {
+      b.disabled = true;
+      b.innerHTML = `<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Processing...`;
+    });
+
+    const cart = getCart();
+    
+    // Ensure we have verified totals
+    if (!verifiedTotals) {
+      await updateTotals();
+    }
+    
+    if (!verifiedTotals || !verifiedTotals.success) {
+      showCheckoutError('Failed to validate cart. Please try again.');
+      return;
+    }
+
+    const amount = verifiedTotals.finalAmount;
+
+    const orderPayload = {
+      customer: { id: window.customerId || null, name, phone, email, address: `${address}, ${city}, ${state} - ${pincode}` },
+      rawAddress: { name, contact_phone: phone, street_address: address, city, state, pincode },
+      items: cart,
+      couponCodes: appliedCoupons.map(c => c.code),
+      amount: amount,
+      paymentMethod: method
+    };
+
+    try {
+      if (amount === 0) {
+        const res = await fetch('/api/checkout/zero', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...orderPayload, state })
+        });
+        const data = await res.json();
+        if (data.success) {
+          const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+          localStorage.setItem(`vyaparpe-last-order-${window.location.hostname}`, JSON.stringify({
+            items: cart.map(i => {
+              const verified = verifiedTotals?.validatedItems?.find(v => v.product_id === i.id || v.product_name === i.name);
+              return { id: i.id, name: i.name, weight: i.weight, quantity: i.quantity || i.qty || 1, price: i.price, image: i.image, is_digital: verified?.is_digital || false, digital_delivery_url: verified?.digital_delivery_url || null };
+            }),
+            total: amount,
+            paymentMethod: method,
+            isBuyNow: isBuyNow,
+            customer: { name, email, phone, city, state, pincode }
+          }));
+          clearCartData();
+          window.location.href = '/order-success?id=' + data.orderId;
+        } else {
+          showCheckoutError('Failed to place order: ' + data.error);
+        }
+      } else if (method === 'cod') {
+        const res = await fetch('/api/checkout/cod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+          localStorage.setItem(`vyaparpe-last-order-${window.location.hostname}`, JSON.stringify({
+            items: cart.map(i => { const verified = verifiedTotals?.validatedItems?.find(v => (v.product_id === i.id || v.product_name === i.name) && (v.variant_name === i.weight || (!v.variant_name && !i.weight))); return { id: i.id, name: i.name, weight: i.weight, quantity: i.quantity || i.qty || 1, price: i.price, image: i.image, is_digital: verified?.is_digital || false, digital_delivery_url: verified?.digital_delivery_url || null }; }),
+            total: amount,
+            paymentMethod: method,
+            isBuyNow: isBuyNow,
+            customer: { name, email, phone, city, state, pincode }
+          }));
+          clearCartData();
+          window.location.href = '/order-success?id=' + data.orderId;
+        } else {
+          showCheckoutError('Failed to place COD order: ' + data.error);
+        }
+      } else if (method === 'pay_online') {
+        const res = await fetch('/api/checkout/pay-online', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload)
+        });
+        const data = await res.json();
+        
+        if (!data.success) {
+          showCheckoutError('Failed to initialize payment: ' + data.error);
+          return;
+        }
+
+        if (data.gateway === 'razorpay') {
+          if (data.mock) {
+            // Verify Mock
+            const verifyRes = await fetch('/api/checkout/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...orderPayload,
+                razorpay_order_id: data.id,
+                razorpay_payment_id: 'pay_mock_' + Date.now(),
+                razorpay_signature: ''
+              })
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyData.success) {
+              const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+              localStorage.setItem(`vyaparpe-last-order-${window.location.hostname}`, JSON.stringify({
+                items: cart.map(i => { const verified = verifiedTotals?.validatedItems?.find(v => (v.product_id === i.id || v.product_name === i.name) && (v.variant_name === i.weight || (!v.variant_name && !i.weight))); return { name: i.name, weight: i.weight, quantity: i.quantity || i.qty || 1, price: i.price, image: i.image, is_digital: verified?.is_digital || false, digital_delivery_url: verified?.digital_delivery_url || null }; }),
+                total: amount,
+                paymentMethod: data.gateway,
+                isBuyNow: isBuyNow
+              }));
+              clearCartData();
+              window.location.href = '/order-success?id=' + verifyData.orderId;
+            } else {
+              showCheckoutError('Failed to verify mock payment.');
+            }
+            return;
+          }
+
+          // Real Razorpay integration
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.onload = () => {
+            const options = {
+              key: data.key_id,
+              amount: data.amount,
+              currency: data.currency,
+              name: window.brandName || 'Your Brand',
+              description: 'Order Payment',
+              order_id: data.id,
+              handler: async function (response) {
+                btn.innerHTML = 'Verifying...';
+                const verifyRes = await fetch('/api/checkout/verify-payment', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    ...orderPayload,
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature
+                  })
+                });
+                const verifyData = await verifyRes.json();
+                if (verifyData.success) {
+                  const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+                  localStorage.setItem(`vyaparpe-last-order-${window.location.hostname}`, JSON.stringify({
+                    items: cart.map(i => { const verified = verifiedTotals?.validatedItems?.find(v => (v.product_id === i.id || v.product_name === i.name) && (v.variant_name === i.weight || (!v.variant_name && !i.weight))); return { name: i.name, weight: i.weight, quantity: i.quantity || i.qty || 1, price: i.price, image: i.image, is_digital: verified?.is_digital || false, digital_delivery_url: verified?.digital_delivery_url || null }; }),
+                    total: amount,
+                    paymentMethod: data.gateway,
+                    isBuyNow: isBuyNow
+                  }));
+                  clearCartData();
+                  window.location.href = '/order-success?id=' + verifyData.orderId;
+                } else {
+                  showCheckoutError(verifyData.error || 'Payment verification failed.');
+                }
+              },
+              prefill: {
+                name: name,
+                email: email,
+                contact: phone
+              },
+              theme: {
+                color: '#16a34a' // primary color
+              },
+              modal: {
+                ondismiss: function() {
+                  resetButtons();
+                }
+              }
+            };
+            const rzp = new window.Razorpay(options);
+            rzp.on('payment.failed', function (response){
+              showCheckoutError('Payment Failed. Please try again.');
+            });
+            rzp.open();
+          };
+          document.body.appendChild(script);
+
+        } else if (data.gateway === 'phonepe') {
+          if (data.redirectUrl) {
+            const isBuyNow = new URLSearchParams(window.location.search).get('buyNow') === 'true';
+            localStorage.setItem(`vyaparpe-last-order-${window.location.hostname}`, JSON.stringify({
+              items: cart.map(i => { const verified = verifiedTotals?.validatedItems?.find(v => (v.product_id === i.id || v.product_name === i.name) && (v.variant_name === i.weight || (!v.variant_name && !i.weight))); return { id: i.id, name: i.name, weight: i.weight, quantity: i.quantity || i.qty || 1, price: i.price, image: i.image, is_digital: verified?.is_digital || false, digital_delivery_url: verified?.digital_delivery_url || null }; }),
+              total: amount,
+              paymentMethod: data.gateway,
+              isBuyNow: isBuyNow
+            }));
+            clearCartData(); // Clear cart as we are redirecting away
+            window.location.href = data.redirectUrl;
+          } else {
+            showCheckoutError('Failed to redirect to PhonePe.');
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      showCheckoutError(err.message || 'An error occurred while processing checkout.');
+    }
+  }
+
+  // Attach Place Order event listeners
+  document.getElementById('btn-place-order')?.addEventListener('click', handlePlaceOrder);
+  document.getElementById('btn-place-order-mobile')?.addEventListener('click', handlePlaceOrder);
+
+  // ── Init ──────────────────────────────────────────────────────
+  // Use requestAnimationFrame + a small delay to ensure localStorage is
+  // fully accessible after React hydration. Without this, the cart reads
+  // as empty on some iOS/Android browsers and triggers the products redirect.
+  requestAnimationFrame(() => {
+    setTimeout(renderCart, 100);
+  });
+
+  // ── dataLayer: InitiateCheckout (GTM → Meta Pixel + Google Ads) ──
+  (function() {
+    const cart = getCart();
+    const subtotal = cart.reduce((s, i) => s + ((i.price || 0) * (i.quantity || i.qty || 1)), 0);
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ ecommerce: null });
+    window.dataLayer.push({
+      event: 'begin_checkout',
+      event_id: `checkout_${Date.now()}`,
+      ecommerce: {
+        currency: 'INR',
+        value: subtotal,
+        items: cart.map((item, idx) => ({ item_id: item.id || `item_${idx}`, item_name: item.name, price: item.price, quantity: item.quantity || item.qty || 1 })),
+      },
+      content_ids: cart.map(i => i.id),
+      content_type: 'product',
+      value: subtotal,
+      currency: 'INR',
+      num_items: cart.reduce((s, i) => s + (i.quantity || i.qty || 1), 0),
+    });
+    if (typeof fbq === 'function') fbq('track', 'InitiateCheckout', { 
+      value: subtotal, 
+      currency: 'INR', 
+      content_ids: cart.map(i => i.id),
+      content_type: 'product',
+      num_items: cart.reduce((s, i) => s + (i.quantity || i.qty || 1), 0) 
+    });
+  })();
+});
+</script>
+
+</ActiveLayout>

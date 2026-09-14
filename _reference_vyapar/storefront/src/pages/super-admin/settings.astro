@@ -1,0 +1,445 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+import type { PlatformSettings } from '../../lib/platform-settings';
+const ctx = getPermissionContext(Astro.cookies);
+
+// Only Original Super Admin can access Global Platform Settings
+if (ctx.adminRole !== 'super_admin' || !ctx.isOriginalSuperAdmin) {
+  return new Response("Forbidden: Requires Original Super Admin Access", { status: 403 });
+}
+
+import SuperAdminLayout from '../../layouts/SuperAdminLayout.astro';
+import { getPlatformSettings } from '../../lib/platform-settings';
+import { getCsrfToken } from '../../lib/csrf';
+
+let platformSettings: PlatformSettings = {};
+try {
+  platformSettings = await getPlatformSettings();
+} catch (error) {
+  console.error("Failed to load platform settings:", error);
+}
+const csrfToken = getCsrfToken(Astro.cookies);
+
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+---
+
+<SuperAdminLayout title="Global Settings | Platform">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Global Settings</h1>
+      <p class="text-sm text-gray-500 mt-1">Manage platform-wide configurations, keys, and master defaults.</p>
+    </div>
+    <button id="save-settings-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-sm">
+      <span class="btn-text">Save Changes</span>
+      <svg class="w-4 h-4 hidden spinner" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+    </button>
+  </div>
+
+  {success && (
+    <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+      Platform Settings saved successfully.
+    </div>
+  )}
+  {error && (
+    <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+      Failed to save platform settings.
+    </div>
+  )}
+
+  <form id="platform-settings-form" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <input type="hidden" name="_csrf" value={csrfToken} />
+    
+    <!-- Left Col: Main Settings -->
+    <div class="lg:col-span-2 space-y-6">
+      
+      <!-- General Platform Settings -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+            Platform Branding
+          </h2>
+        </div>
+        <div class="p-6 space-y-5">
+          <div class="grid grid-cols-2 gap-5">
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Platform Name</label>
+              <input type="text" name="platform_name" value={platformSettings.platform_name || 'VyapaarPe'} class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Support Email</label>
+              <input type="email" name="support_email" value={platformSettings.support_email || 'support@vyaparpe.com'} class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50">
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Platform Domain</label>
+            <input type="text" name="platform_domain" value={platformSettings.platform_domain || 'https://vyaparpe.com'} class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50">
+          </div>
+        </div>
+      </div>
+
+      <!-- Financials & Commission -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-emerald-50/30">
+          <h2 class="font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3h12M6 8h12m-6 5l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10"></path></svg>
+            Financial Defaults
+          </h2>
+        </div>
+        <div class="p-6 space-y-5">
+          <div class="grid grid-cols-2 gap-5">
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Default Commission (%)</label>
+              <div class="relative">
+                <input type="number" step="0.01" name="default_commission" value={platformSettings.default_commission ?? 2.0} class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 pl-3">
+                <span class="absolute right-3 top-2.5 text-gray-400">%</span>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">Base rate. Can be overridden per plan/seller.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Platform Tax (GST %)</label>
+              <div class="relative">
+                <input type="number" step="0.01" name="platform_tax" value={platformSettings.platform_tax ?? 18} class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 pl-3">
+                <span class="absolute right-3 top-2.5 text-gray-400">%</span>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">Applied to platform fees and commissions.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Master Payment Gateway -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-blue-50/30 flex justify-between items-center">
+          <h2 class="font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+            Master Payment Gateway
+          </h2>
+          <span class="bg-green-100 text-green-800 text-xs px-2.5 py-0.5 rounded-full font-semibold">Active</span>
+        </div>
+        <div class="p-6 space-y-4">
+          <p class="text-sm text-gray-600 mb-2">Used for collecting platform fees, deposits, and subscriptions.</p>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Razorpay API Key</label>
+            <input type="text" name="razorpay_api_key" value={platformSettings.razorpay_api_key ? '[HIDDEN]' : ''} placeholder="rzp_live_..." class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 font-mono text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Razorpay API Secret</label>
+            <input type="password" name="razorpay_api_secret" value={platformSettings.razorpay_api_secret ? '[HIDDEN]' : ''} placeholder="••••••••" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 font-mono text-sm">
+          </div>
+          <div class="pt-2">
+            <button class="text-sm text-blue-600 font-semibold hover:underline">Verify Connection</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Col: Sidebar Settings -->
+    <div class="space-y-6">
+      
+      <!-- Customer Login Mode -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="font-bold text-gray-800">Primary Authentication Mode</h2>
+          <p class="text-xs text-gray-500 mt-1">Controls how sellers and users login to the platform globally.</p>
+        </div>
+        <div class="p-6">
+            <input type="hidden" name="auth_mode" id="auth-mode-input" value={platformSettings.auth_mode || 'phone_only'} />
+            <div class="grid grid-cols-1 gap-3" id="auth-mode-cards">
+
+              <!-- Phone Only -->
+              <label id="auth-card-phone" data-mode="phone_only"
+                class={`auth-mode-card flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 select-none
+                  ${!(platformSettings.twilio_account_sid && platformSettings.twilio_auth_token && platformSettings.twilio_phone_number)
+                    ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                    : (platformSettings.auth_mode || 'phone_only') === 'phone_only'
+                      ? 'border-indigo-600 bg-indigo-50 cursor-pointer'
+                      : 'border-gray-200 bg-white hover:border-indigo-400 cursor-pointer'}`}
+              >
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${(platformSettings.auth_mode || 'phone_only') === 'phone_only' ? 'bg-indigo-100' : 'bg-gray-100'}`}>📱</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-gray-900">Phone Only</p>
+                  <p class="text-xs text-gray-500">SMS OTP via Twilio.</p>
+                  {!(platformSettings.twilio_account_sid && platformSettings.twilio_auth_token && platformSettings.twilio_phone_number) && (
+                    <p class="text-xs text-amber-600 mt-0.5">⚠ Configure Twilio</p>
+                  )}
+                </div>
+                <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${(platformSettings.auth_mode || 'phone_only') === 'phone_only' ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'}`}>
+                  {(platformSettings.auth_mode || 'phone_only') === 'phone_only' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                </div>
+              </label>
+
+              <!-- Email Only -->
+              <label id="auth-card-email" data-mode="email_only"
+                class={`auth-mode-card flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 select-none
+                  ${!platformSettings.resend_api_key
+                    ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                    : platformSettings.auth_mode === 'email_only'
+                      ? 'border-indigo-600 bg-indigo-50 cursor-pointer'
+                      : 'border-gray-200 bg-white hover:border-indigo-400 cursor-pointer'}`}
+              >
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${platformSettings.auth_mode === 'email_only' ? 'bg-indigo-100' : 'bg-gray-100'}`}>📧</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-gray-900">Email Only</p>
+                  <p class="text-xs text-gray-500">Email OTP via Resend.</p>
+                  {!platformSettings.resend_api_key && <p class="text-xs text-amber-600 mt-0.5">⚠ Configure Resend API key first</p>}
+                </div>
+                <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${platformSettings.auth_mode === 'email_only' ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'}`}>
+                  {platformSettings.auth_mode === 'email_only' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                </div>
+              </label>
+
+              <!-- Both -->
+              <label id="auth-card-both" data-mode="both"
+                class={`auth-mode-card flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-200 select-none
+                  ${!((platformSettings.twilio_account_sid && platformSettings.twilio_auth_token && platformSettings.twilio_phone_number)) || !(platformSettings.resend_api_key)
+                    ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                    : platformSettings.auth_mode === 'both'
+                      ? 'border-indigo-600 bg-indigo-50 cursor-pointer'
+                      : 'border-gray-200 bg-white hover:border-indigo-400 cursor-pointer'}`}
+              >
+                <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${platformSettings.auth_mode === 'both' ? 'bg-indigo-100' : 'bg-gray-100'}`}>🔄</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-gray-900">Phone + Email</p>
+                  <p class="text-xs text-gray-500">Allow both OTP methods.</p>
+                  {!(platformSettings.resend_api_key && platformSettings.twilio_account_sid && platformSettings.twilio_phone_number) && <p class="text-xs text-amber-600 mt-0.5">⚠ Requires Twilio + Resend both configured</p>}
+                </div>
+                <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${platformSettings.auth_mode === 'both' ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'}`}>
+                  {platformSettings.auth_mode === 'both' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                </div>
+              </label>
+
+            </div>
+        </div>
+      </div>
+
+      <!-- OTP Length Settings -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="font-bold text-gray-800">OTP Configuration</h2>
+          <p class="text-xs text-gray-500 mt-1">Configure OTP length globally for the platform.</p>
+        </div>
+        <div class="p-6">
+            <div class="flex gap-4">
+              <label class={`flex-1 relative border rounded-2xl p-4 cursor-pointer transition-all ${platformSettings.otp_length === '6' ? 'border-gray-200 bg-gray-50' : 'border-indigo-600 bg-indigo-50 ring-1 ring-indigo-500/20'}`}>
+                <input type="radio" name="otp_length" value="4" class="sr-only" checked={platformSettings.otp_length !== '6'} />
+                <div class="flex items-center justify-between">
+                  <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${platformSettings.otp_length !== '6' ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'}`}>
+                    {platformSettings.otp_length !== '6' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                  </div>
+                </div>
+                <div class="mt-4">
+                  <p class="text-sm font-semibold text-gray-900">4 Digits</p>
+                  <p class="text-xs text-gray-500 mt-1">Standard length</p>
+                </div>
+              </label>
+
+              <label class={`flex-1 relative border rounded-2xl p-4 cursor-pointer transition-all ${platformSettings.otp_length === '6' ? 'border-indigo-600 bg-indigo-50 ring-1 ring-indigo-500/20' : 'border-gray-200 bg-gray-50'}`}>
+                <input type="radio" name="otp_length" value="6" class="sr-only" checked={platformSettings.otp_length === '6' ? true : undefined} />
+                <div class="flex items-center justify-between">
+                  <div class={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${platformSettings.otp_length === '6' ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'}`}>
+                    {platformSettings.otp_length === '6' && <div class="w-2 h-2 bg-white rounded-full"></div>}
+                  </div>
+                </div>
+                <div class="mt-4">
+                  <p class="text-sm font-semibold text-gray-900">6 Digits</p>
+                  <p class="text-xs text-gray-500 mt-1">More secure</p>
+                </div>
+              </label>
+            </div>
+        </div>
+      </div>
+
+
+      <!-- Integrations -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="font-bold text-gray-800">3rd Party APIs</h2>
+          <p class="text-xs text-gray-500 mt-1">Keys used for platform-wide transactional messaging.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Resend API Key</label>
+            <input type="password" name="resend_api_key" value={platformSettings.resend_api_key ? '[HIDDEN]' : ''} placeholder="re_..." class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 font-mono text-xs">
+            <p class="text-xs text-gray-500 mt-1">Required for Email OTP.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Twilio Account SID</label>
+            <input type="text" name="twilio_account_sid" value={platformSettings.twilio_account_sid ? '[HIDDEN]' : ''} placeholder="AC..." class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 font-mono text-xs">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Twilio Auth Token</label>
+            <input type="password" name="twilio_auth_token" value={platformSettings.twilio_auth_token ? '[HIDDEN]' : ''} placeholder="••••••••" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 font-mono text-xs">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Twilio Phone Number</label>
+            <input type="text" name="twilio_phone_number" value={platformSettings.twilio_phone_number || ''} placeholder="+1234567890" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2.5 bg-gray-50 font-mono text-xs">
+          </div>
+        </div>
+      </div>
+
+      <!-- Root Admin Security -->
+      <div class="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-red-100 bg-red-50/30">
+          <h2 class="font-bold text-red-800">Root Admin Security</h2>
+          <p class="text-xs text-red-600 mt-1">Change your Master Admin password here. Ensure the DB is configured.</p>
+        </div>
+        <div class="p-6 space-y-4 relative">
+          <form id="master-password-form" class="space-y-4">
+            <input type="hidden" name="_csrf" value={csrfToken} />
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">New Master Password</label>
+              <input type="password" name="new_master_password" required placeholder="••••••••" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-red-500 focus:ring-red-500 p-2.5 bg-gray-50 font-mono text-sm">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Confirm New Password</label>
+              <input type="password" name="confirm_master_password" required placeholder="••••••••" class="w-full border-gray-300 rounded-lg shadow-sm focus:border-red-500 focus:ring-red-500 p-2.5 bg-gray-50 font-mono text-sm">
+            </div>
+            <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm">
+              Update Master Password
+            </button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </form>
+</SuperAdminLayout>
+
+<script>
+  // UI logic for toggling Auth Mode cards
+  const cards = document.querySelectorAll('.auth-mode-card');
+  const input = document.getElementById('auth-mode-input') as HTMLInputElement;
+
+  cards.forEach(card => {
+    card.addEventListener('click', (e) => {
+      // Prevent selecting disabled cards
+      if (card.classList.contains('cursor-not-allowed')) return;
+      
+      const mode = card.getAttribute('data-mode');
+      if (mode) {
+        input.value = mode;
+        
+        // Reset all cards
+        cards.forEach(c => {
+          c.classList.remove('border-indigo-600', 'bg-indigo-50');
+          c.classList.add('border-gray-200', 'bg-white');
+          
+          const iconContainer = c.querySelector('div:first-of-type');
+          iconContainer?.classList.replace('bg-indigo-100', 'bg-gray-100');
+          
+          const radioContainer = c.querySelector('div:last-of-type');
+          radioContainer?.classList.replace('border-indigo-600', 'border-gray-300');
+          radioContainer?.classList.replace('bg-indigo-600', 'border-gray-300');
+          if (radioContainer) radioContainer.innerHTML = '';
+        });
+        
+        // Highlight active card
+        card.classList.remove('border-gray-200', 'bg-white');
+        card.classList.add('border-indigo-600', 'bg-indigo-50');
+        
+        const activeIcon = card.querySelector('div:first-of-type');
+        activeIcon?.classList.replace('bg-gray-100', 'bg-indigo-100');
+        
+        const activeRadio = card.querySelector('div:last-of-type');
+        activeRadio?.classList.replace('border-gray-300', 'border-indigo-600');
+        activeRadio?.classList.replace('border-gray-300', 'bg-indigo-600');
+        if (activeRadio) activeRadio.innerHTML = '<div class="w-2 h-2 bg-white rounded-full"></div>';
+      }
+    });
+  });
+
+  // UI logic for toggling OTP Length cards
+  const otpCards = document.querySelectorAll('label:has(input[name="otp_length"])');
+  otpCards.forEach(card => {
+    const input = card.querySelector('input');
+    input?.addEventListener('change', () => {
+      otpCards.forEach(c => {
+        c.classList.remove('border-indigo-600', 'bg-indigo-50', 'ring-1', 'ring-indigo-500/20');
+        c.classList.add('border-gray-200', 'bg-gray-50');
+        const outerCircle = c.querySelector('div.rounded-full');
+        outerCircle?.classList.replace('border-indigo-600', 'border-gray-300');
+        outerCircle?.classList.replace('bg-indigo-600', 'border-gray-300');
+        if (outerCircle) outerCircle.innerHTML = '';
+      });
+
+      card.classList.remove('border-gray-200', 'bg-gray-50');
+      card.classList.add('border-indigo-600', 'bg-indigo-50', 'ring-1', 'ring-indigo-500/20');
+      const outerCircle = card.querySelector('div.rounded-full');
+      outerCircle?.classList.replace('border-gray-300', 'border-indigo-600');
+      outerCircle?.classList.replace('border-gray-300', 'bg-indigo-600');
+      if (outerCircle) outerCircle.innerHTML = '<div class="w-2 h-2 bg-white rounded-full"></div>';
+    });
+  });
+
+  // Save Settings Logic
+  const btn = document.getElementById('save-settings-btn');
+  const form = document.getElementById('platform-settings-form') as HTMLFormElement;
+
+  btn?.addEventListener('click', async () => {
+    if (!form) return;
+    
+    // UI Loading state
+    btn.setAttribute('disabled', 'true');
+    const btnText = btn.querySelector('.btn-text');
+    const spinner = btn.querySelector('.spinner');
+    if (btnText) btnText.textContent = 'Saving...';
+    spinner?.classList.remove('hidden');
+
+    try {
+      const formData = new FormData(form);
+      const res = await fetch('/api/super-admin/update-platform-settings', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (res.ok) {
+        window.location.href = '?success=true';
+      } else {
+        window.location.href = '?error=true';
+      }
+    } catch (err) {
+      console.error(err);
+      window.location.href = '?error=true';
+    }
+  });
+
+  // Save Master Password Logic
+  const passForm = document.getElementById('master-password-form') as HTMLFormElement;
+  passForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(passForm);
+    const p1 = formData.get('new_master_password')?.toString();
+    const p2 = formData.get('confirm_master_password')?.toString();
+    
+    if (p1 !== p2) {
+      alert("Passwords do not match!");
+      return;
+    }
+
+    const btn = passForm.querySelector('button[type="submit"]');
+    if (btn) btn.textContent = 'Updating...';
+
+    try {
+      const res = await fetch('/api/super-admin/update-master-password', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const result = await res.json();
+      if (res.ok) {
+        alert("Master password updated successfully! Next time you login, use your new password.");
+        passForm.reset();
+      } else {
+        alert("Error: " + (result.error || "Failed to update master password. Make sure the database column exists."));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update master password.");
+    } finally {
+      if (btn) btn.textContent = 'Update Master Password';
+    }
+  });
+</script>

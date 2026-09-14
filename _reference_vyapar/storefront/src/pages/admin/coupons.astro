@@ -1,0 +1,497 @@
+---
+import { getPermissionContext, canManageSection } from '../../lib/permissions';
+const ctx = getPermissionContext(Astro.cookies);
+
+if (Astro.request.method === "POST" && !canManageSection(ctx, "coupons")) {
+  return new Response("Forbidden", { status: 403 });
+}
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import PageAiPanel from '../../components/admin/PageAiPanel.astro';
+import { getCoupons, getAffiliates } from '../../lib/database';
+
+const coupons = await getCoupons();
+const affiliates = await getAffiliates();
+const success = Astro.url.searchParams.get('success') === 'true';
+const error = Astro.url.searchParams.get('error') === 'true';
+
+const totalCouponsCount = coupons.length;
+const page = parseInt(Astro.url.searchParams.get('page') || '1');
+const limit = 50;
+const totalPages = Math.max(1, Math.ceil(totalCouponsCount / limit));
+const paginatedCoupons = coupons.slice((page - 1) * limit, page * limit);
+
+const couponsForAI = JSON.stringify(paginatedCoupons.slice(0, 100).map((c: any) => ({
+  code: c.code,
+  discount: c.discount_type === 'percentage' ? `${c.discount_value}%` : `₹${c.discount_value}`,
+  status: c.is_active ? 'Active' : 'Inactive',
+  usage: `${c.used_count}/${c.usage_limit > 0 ? c.usage_limit : '∞'}`,
+  affiliate: c.affiliate_id ? 'Partner Coupon' : 'Standard'
+})));
+---
+
+<AdminLayout title="Coupons | Admin Panel" description="Manage discount codes.">
+  <div class="max-w-5xl">
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-serif font-bold text-secondary">Coupon Manager</h1>
+        <p class="text-sm text-secondary/60 mt-1">Create and manage discount codes for your store.</p>
+      </div>
+      <div class="flex gap-3 items-center">
+        <a href="/admin/bulk-upload/coupons" class="btn-primary !py-2.5 flex items-center gap-2 shrink-0 whitespace-nowrap text-xs font-medium bg-secondary text-white hover:bg-secondary/90">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Bulk Upload
+        </a>
+        <button id="toggle-form-btn" class="btn-primary text-sm shrink-0 whitespace-nowrap">+ New Coupon</button>
+      </div>
+    </div>
+
+    {error && (
+      <div class="mb-6 bg-red-50 text-red-800 p-4 rounded-lg border border-red-200 text-sm font-medium">
+        Failed to create coupon. Ensure the code is unique and all fields are correct.
+      </div>
+    )}
+    {success && (
+      <div class="mb-6 bg-green-50 text-green-800 p-4 rounded-lg border border-green-200 text-sm font-medium">
+        Coupon created successfully!
+      </div>
+    )}
+
+    <!-- AI Assistant Panel -->
+    <PageAiPanel
+    page="coupons"
+    title="Coupons Assistant"
+      pageDataJson={couponsForAI}
+      guideTitleEn="Coupons Guide"
+      guideTitleHi="Coupons Guide"
+      guideHtml={`<ul class="space-y-2">
+        <li><strong>Create:</strong> Click "+ New Coupon" to generate discount codes. You can use AI to suggest a code name.</li>
+        <li><strong>Limits:</strong> Set minimum order amounts, maximum discount caps, and usage limits.</li>
+        <li><strong>Tracking:</strong> Monitor how many times a coupon has been used in the table below.</li>
+      </ul>`}
+      guideHtmlHi={`<ul class="space-y-2">
+        <li><strong>Create:</strong> Naya discount code banane ke liye "+ New Coupon" pe click karein. AI se naam bhi generate karwa sakte hain.</li>
+        <li><strong>Limits:</strong> Kam se kam kitne ka order hona chahiye ya maximum kitna discount dena hai, ye sab set kar sakte hain.</li>
+        <li><strong>Tracking:</strong> Niche table me dekhein ki kaun sa coupon kitni baar use hua hai.</li>
+      </ul>`}
+      quickActions={[
+        { label: '➕ New Coupon', query: 'naya coupon banana hai' },
+        { label: '✨ Suggest Coupon', query: 'ek 15% off coupon banao new users ke liye' },
+        { label: '📊 Active Coupons', query: 'kitne active coupons hain' }
+      ]}
+    />
+
+    <!-- Create Coupon Form -->
+    <div id="coupon-form" class="hidden mb-6">
+      <form action="/api/admin/save-coupon" method="POST" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h3 id="form-title" class="font-bold text-secondary mb-4">Create New Coupon</h3>
+        <input type="hidden" name="coupon_id" id="coupon_id_input" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label class="flex justify-between items-center text-xs font-medium text-secondary mb-1">
+              <span>Coupon Code</span>
+              <button type="button" id="ai-coupon-btn" class="text-primary hover:text-primary/80 font-bold text-[10px] flex items-center gap-1">
+                <span>✨</span> AI Gen
+              </button>
+            </label>
+            <input aria-label="Coupon Code" type="text" name="code" id="coupon-code-input" required placeholder="e.g. WELCOME10" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm uppercase focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Discount Type</label>
+            <select aria-label="Discount Type" name="discount_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors">
+              <option value="percentage">Percentage (%)</option>
+              <option value="fixed">Fixed Amount (₹)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Discount Value</label>
+            <input aria-label="Discount Value" type="number" name="discount_value" required min="1" placeholder="e.g. 10" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Min Order Amount (₹)</label>
+            <input aria-label="Min Order Amount" type="number" name="min_order_amount" min="0" value="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Max Discount (₹)</label>
+            <input aria-label="Max Discount Amount" type="number" name="max_discount_amount" min="0" value="0" placeholder="0 = no cap" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Usage Limit</label>
+            <input aria-label="Usage Limit" type="number" name="usage_limit" min="0" value="0" placeholder="0 = unlimited" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Valid From</label>
+            <input aria-label="Valid From" type="date" name="valid_from" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-secondary mb-1">Valid Until</label>
+            <input aria-label="Valid Until" type="date" name="valid_until" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors" />
+          </div>
+          <div class="flex items-end pb-1 gap-4">
+            <label class="flex items-center gap-2 text-sm text-secondary">
+              <input aria-label="First order only" type="checkbox" name="first_order_only" id="first_order_only" class="rounded border-gray-300 text-primary focus:ring-primary transition-colors" />
+              First order only
+            </label>
+            <label class="flex items-center gap-2 text-sm text-secondary">
+              <input aria-label="One Time Use" type="checkbox" name="one_time_per_user" id="one_time_per_user" class="rounded border-gray-300 text-primary focus:ring-primary transition-colors" />
+              One Time Use
+            </label>
+            <label class="flex items-center gap-2 text-sm text-secondary">
+              <input aria-label="Show in public cart drawer" type="checkbox" name="is_public" checked class="rounded border-gray-300 text-primary focus:ring-primary transition-colors" />
+              Public
+            </label>
+            <label class="flex items-center gap-2 text-sm text-secondary">
+              <input aria-label="Allow stacking with other stackable coupons" type="checkbox" name="is_stackable" class="rounded border-gray-300 text-primary focus:ring-primary transition-colors" />
+              Stackable
+            </label>
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button type="submit" class="btn-primary text-sm">Create Coupon</button>
+          <button type="button" id="cancel-form-btn" class="text-sm text-secondary/70 hover:text-secondary">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Coupons Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {coupons.length === 0 ? (
+        <div class="p-12 text-center text-secondary/60">
+          <p class="mb-2">No coupons created yet.</p>
+          <p class="text-xs">Click "+ New Coupon" to create your first discount code.</p>
+        </div>
+      ) : (
+        <div class="overflow-x-auto w-full">
+          <table class="min-w-full text-sm text-left">
+            <thead class="text-xs text-secondary/70 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th class="px-5 py-3">Code</th>
+                <th class="px-5 py-3">Discount</th>
+                <th class="px-5 py-3">Min Order</th>
+                <th class="px-5 py-3">Usage</th>
+                <th class="px-5 py-3">Validity</th>
+                <th class="px-5 py-3">Status</th>
+                <th class="px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {coupons.map((c: any) => {
+                const affiliate = c.affiliate_id ? affiliates.find((a: any) => a.id === c.affiliate_id) : null;
+                return (
+                <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                  <td class="px-5 py-4">
+                    <div class="flex flex-col items-start gap-1">
+                      <span class="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{c.code}</span>
+                      {affiliate && (
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                          Partner: {affiliate.name}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td class="px-5 py-4 font-medium">
+                    {c.discount_type === 'percentage' ? `${c.discount_value}%` : `₹${c.discount_value}`}
+                    {c.max_discount_amount > 0 && <span class="text-xs text-secondary/50 ml-1">(max ₹{c.max_discount_amount})</span>}
+                  </td>
+                  <td class="px-5 py-4 text-secondary/70">
+                    {c.min_order_amount > 0 ? `₹${c.min_order_amount}` : '—'}
+                  </td>
+                  <td class="px-5 py-4 text-secondary/70">
+                    {c.used_count}/{c.usage_limit > 0 ? c.usage_limit : '∞'}
+                  </td>
+                  <td class="px-5 py-4 text-xs text-secondary/60">
+                    {c.valid_from && c.valid_until ? `${c.valid_from} — ${c.valid_until}` : 'No expiry'}
+                  </td>
+                  <td class="px-5 py-4 flex flex-col gap-1 items-start">
+                    <span class={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {c.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                    <span class={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.is_public !== false ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {c.is_public !== false ? 'Public' : 'Private'}
+                    </span>
+                    {c.is_stackable && (
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                        Stackable
+                      </span>
+                    )}
+                  </td>
+                  <td class="px-5 py-4 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                      <button type="button" class="toggle-coupon-btn text-xs font-medium px-3 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors" data-id={c.id} data-active={c.is_active ? 'true' : 'false'}>
+                        {c.is_active ? 'Disable' : 'Enable'}
+                      </button>
+                      <button type="button" class="edit-coupon-btn text-xs font-medium px-3 py-1 rounded bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors" data-coupon={JSON.stringify(c)}>
+                        Edit
+                      </button>
+                      <button type="button" class="delete-coupon-btn text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors" data-id={c.id} aria-label="Delete">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )})}
+            </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  {totalPages > 1 && (
+    <div class="flex items-center justify-between border-t border-gray-100 bg-white px-4 py-3 sm:px-6 rounded-2xl shadow-sm mb-6">
+      <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-gray-700">
+            Showing <span class="font-medium">{Math.min(1 + (page - 1) * limit, totalCouponsCount)}</span> to <span class="font-medium">{Math.min(page * limit, totalCouponsCount)}</span> of <span class="font-medium">{totalCouponsCount}</span> coupons
+          </p>
+        </div>
+        <div>
+          <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <a href={`?page=${Math.max(1, page - 1)}`} class={`relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${1 >= page ? 'pointer-events-none opacity-50' : ''}`}>
+              <span class="sr-only">Previous</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" /></svg>
+            </a>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((num) => {
+              if (num === 1 || num === totalPages || (num >= page - 2 && page + 2 >= num)) {
+                return (
+                  <a href={`?page=${num}`} class={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${num === page ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}`}>
+                    {num}
+                  </a>
+                );
+              } else if (num === page - 3 || num === page + 3) {
+                return <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>;
+              }
+              return null;
+            })}
+            <a href={`?page=${Math.min(totalPages, page + 1)}`} class={`relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${page >= totalPages ? 'pointer-events-none opacity-50' : ''}`}>
+              <span class="sr-only">Next</span>
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" /></svg>
+            </a>
+          </nav>
+        </div>
+      </div>
+    </div>
+    </div>
+  )}
+  </div>
+
+
+<script data-astro-rerun>
+  const form = document.getElementById('coupon-form');
+  const formTitle = document.getElementById('form-title');
+  const couponIdInput = document.getElementById('coupon_id_input');
+
+  document.getElementById('toggle-form-btn').addEventListener('click', () => {
+    form.classList.toggle('hidden');
+    if (!form.classList.contains('hidden')) {
+      (form.querySelector('form')).reset();
+      couponIdInput.value = '';
+      formTitle.textContent = 'Create New Coupon';
+    }
+  });
+
+  document.getElementById('cancel-form-btn').addEventListener('click', () => {
+    form.classList.add('hidden');
+    (form.querySelector('form')).reset();
+    couponIdInput.value = '';
+    formTitle.textContent = 'Create New Coupon';
+  });
+
+  const formElement = form.querySelector('form');
+  formElement.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = formElement.querySelector('button[type="submit"]');
+    const origText = btn.textContent;
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+
+    try {
+      const formData = new FormData(formElement);
+      const res = await fetch(formElement.action, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        body: formData
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.success) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Failed to save coupon');
+      }
+    } catch (err) {
+      alert('An error occurred');
+    } finally {
+      btn.textContent = origText;
+      btn.disabled = false;
+    }
+  });
+
+  const aiBtn = document.getElementById('ai-coupon-btn');
+  const codeInput = document.getElementById('coupon-code-input');
+
+  if (aiBtn && codeInput) {
+    aiBtn.addEventListener('click', async () => {
+      const originalHtml = aiBtn.innerHTML;
+      aiBtn.innerHTML = `<svg class="animate-spin h-3 w-3 inline mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>Gen...`;
+      
+      try {
+        const res = await fetch('/api/admin/generate-ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'coupon', prompt: 'Generate a new coupon code for a healthy food brand' })
+        });
+        const data = await res.json();
+        
+        if (data && data.code) {
+          codeInput.value = data.code;
+          codeInput.classList.add('bg-violet-50', 'border-violet-400');
+          setTimeout(() => codeInput.classList.remove('bg-violet-50', 'border-violet-400'), 1500);
+        } else {
+          // fallback
+          codeInput.value = 'ND' + Math.random().toString(36).substring(2, 6).toUpperCase() + 'OFF';
+        }
+      } catch(e) {
+        codeInput.value = 'ND' + Math.random().toString(36).substring(2, 6).toUpperCase() + 'OFF';
+      } finally {
+        aiBtn.innerHTML = originalHtml;
+      }
+    });
+  }
+
+  // ── AI Action Handler (from PageAiPanel) ──────────────────────────────
+  document.addEventListener('ai-action', function(e) {
+    var action = e.detail.action;
+    var params = e.detail.params || {};
+
+    if (action === 'open_add_form') {
+      if (form && form.classList.contains('hidden')) {
+        document.getElementById('toggle-form-btn')?.click();
+      }
+    }
+    else if (action === 'generate_coupon_code') {
+      if (form && form.classList.contains('hidden')) {
+        document.getElementById('toggle-form-btn')?.click();
+      }
+      setTimeout(function() {
+        document.getElementById('ai-coupon-btn')?.click();
+      }, 100);
+    }
+    else if (action === 'fill_coupon_form') {
+      if (form && form.classList.contains('hidden')) {
+        document.getElementById('toggle-form-btn')?.click();
+      }
+      setTimeout(() => {
+        if (params.code) document.querySelector('input[name="code"]').value = params.code;
+        if (params.discount_type) document.querySelector('select[name="discount_type"]').value = params.discount_type;
+        if (params.discount_value) document.querySelector('input[name="discount_value"]').value = params.discount_value;
+        if (params.min_order_amount) document.querySelector('input[name="min_order_amount"]').value = params.min_order_amount;
+        if (params.max_discount_amount) document.querySelector('input[name="max_discount_amount"]').value = params.max_discount_amount;
+        if (params.usage_limit) document.querySelector('input[name="usage_limit"]').value = params.usage_limit;
+        if (params.valid_from) document.querySelector('input[name="valid_from"]').value = params.valid_from;
+        if (params.valid_until) document.querySelector('input[name="valid_until"]').value = params.valid_until;
+        if (params.first_order_only !== undefined) document.querySelector('input[name="first_order_only"]').checked = params.first_order_only;
+        if (params.is_public !== undefined) document.querySelector('input[name="is_public"]').checked = params.is_public;
+        if (params.is_stackable !== undefined) document.querySelector('input[name="is_stackable"]').checked = params.is_stackable;
+        
+        // Notify user to review
+        const saveBtn = document.querySelector('#coupon-form button[type="submit"]');
+        if (saveBtn) {
+          const orig = saveBtn.innerHTML;
+          saveBtn.innerHTML = '✨ Review & Save';
+          saveBtn.classList.add('ring-2', 'ring-violet-500', 'ring-offset-2');
+          setTimeout(() => {
+            saveBtn.innerHTML = orig;
+            saveBtn.classList.remove('ring-2', 'ring-violet-500', 'ring-offset-2');
+          }, 3000);
+        }
+      }, 100);
+    }
+    else if (action === 'navigate') {
+      if (params.url) window.location.href = params.url;
+    }
+  });
+
+  document.querySelectorAll('.toggle-coupon-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget).dataset.id;
+      const currentActive = (e.currentTarget).dataset.active === 'true';
+      if (!confirm(`Are you sure you want to ${currentActive ? 'disable' : 'enable'} this coupon?`)) return;
+      
+      try {
+        const res = await fetch('/api/admin/coupons', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'toggle_active', id, is_active: !currentActive })
+        });
+        if (res.ok) window.location.reload();
+        else alert('Failed to toggle coupon.');
+      } catch (err) { alert('Network error'); }
+    });
+  });
+
+  document.querySelectorAll('.delete-coupon-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = (e.currentTarget).dataset.id;
+      if (!confirm('Are you sure you want to delete this coupon forever? This cannot be undone.')) return;
+      
+      try {
+        const res = await fetch('/api/admin/coupons', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', id })
+        });
+        if (res.ok) window.location.reload();
+        else alert('Failed to delete coupon.');
+      } catch (err) { alert('Network error'); }
+    });
+  });
+
+  document.querySelectorAll('.edit-coupon-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const couponStr = (e.currentTarget).dataset.coupon;
+      if (!couponStr) return;
+      const c = JSON.parse(couponStr);
+      
+      form.classList.remove('hidden');
+      formTitle.textContent = 'Edit Coupon: ' + c.code;
+      couponIdInput.value = c.id;
+      
+      (document.querySelector('input[name="code"]')).value = c.code || '';
+      (document.querySelector('select[name="discount_type"]')).value = c.discount_type || 'percentage';
+      (document.querySelector('input[name="discount_value"]')).value = c.discount_value || 0;
+      (document.querySelector('input[name="min_order_amount"]')).value = c.min_order_amount || 0;
+      (document.querySelector('input[name="max_discount_amount"]')).value = c.max_discount_amount || 0;
+      (document.querySelector('input[name="usage_limit"]')).value = c.usage_limit || 0;
+      (document.querySelector('input[name="valid_from"]')).value = c.valid_from ? c.valid_from.split('T')[0] : '';
+      (document.querySelector('input[name="valid_until"]')).value = c.valid_until ? c.valid_until.split('T')[0] : '';
+      
+      const firstOrderCb = document.querySelector('input[name="first_order_only"]');
+      if (firstOrderCb) firstOrderCb.checked = !!c.first_order_only;
+      
+      const oneTimeCb = document.querySelector('input[name="one_time_per_user"]');
+      if (oneTimeCb) oneTimeCb.checked = !!c.one_time_per_user;
+      
+      const isPublicCb = document.querySelector('input[name="is_public"]');
+      if (isPublicCb) isPublicCb.checked = c.is_public !== false;
+      
+      const isStackableCb = document.querySelector('input[name="is_stackable"]');
+      if (isStackableCb) isStackableCb.checked = !!c.is_stackable;
+      
+      form.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+
+  const firstOrderInput = document.getElementById('first_order_only');
+  const oneTimeInput = document.getElementById('one_time_per_user');
+  if (firstOrderInput && oneTimeInput) {
+    firstOrderInput.addEventListener('change', () => {
+      if (firstOrderInput.checked) oneTimeInput.checked = false;
+    });
+    oneTimeInput.addEventListener('change', () => {
+      if (oneTimeInput.checked) firstOrderInput.checked = false;
+    });
+  }
+</script>
+
+</AdminLayout>

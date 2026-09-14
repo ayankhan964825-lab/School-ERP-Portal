@@ -1,0 +1,375 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getSettings, getProducts } from '../../../lib/database';
+import { getPermissionContext, canViewSection } from '../../../lib/permissions';
+
+const ctx = getPermissionContext(Astro.cookies);
+if (!canViewSection(ctx, 'website_videos')) {
+  return Astro.redirect('/admin');
+}
+import { randomUUID } from 'node:crypto';
+
+const settings = await getSettings(Astro.locals?.storeId);
+const products = await getProducts(Astro.locals?.storeId);
+
+let featuredVideos = settings.featured_videos || [];
+// Auto-heal legacy videos that don't have an ID
+let needsSave = false;
+featuredVideos = featuredVideos.map((v: any) => {
+  if (!v.id) {
+    needsSave = true;
+    return { ...v, id: randomUUID() };
+  }
+  return v;
+});
+
+// Optionally, we could save it back immediately, but it's fine if they get saved on next edit.
+---
+
+<AdminLayout title="Featured Videos">
+  <div class="mb-8 flex justify-between items-end">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">Featured Videos</h1>
+      <p class="text-gray-500">Manage shoppable vertical videos for the homepage.</p>
+    </div>
+    <button onclick="openAddModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm">
+      + Add Video
+    </button>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm mb-8 flex flex-col sm:flex-row sm:items-end gap-4">
+    <div class="flex-1 max-w-md">
+      <label for="section-title" class="block text-sm font-bold text-gray-700 mb-1">Section Title</label>
+      <input type="text" id="section-title" value={settings.featured_videos_title || 'Featured Videos'} placeholder="e.g. Featured Videos" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+    </div>
+    <button onclick="saveSectionTitle()" id="save-title-btn" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border border-gray-200">
+      Save Title
+    </button>
+  </div>
+
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+    {featuredVideos.length === 0 ? (
+      <div class="p-12 text-center text-gray-500">
+        <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+        <h3 class="text-lg font-medium text-gray-900 mb-1">No featured videos</h3>
+        <p>Click "Add Video" to create your first shoppable reel.</p>
+      </div>
+    ) : (
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-500 uppercase tracking-wider">
+              <th class="p-4 pl-6">Thumbnail</th>
+              <th class="p-4">Views Text</th>
+              <th class="p-4">Linked Product</th>
+              <th class="p-4 text-right pr-6">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {featuredVideos.map((video: any) => {
+              const product = products.find((p: any) => p.id === video.product_id);
+              return (
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="p-4 pl-6">
+                    {video.thumbnail_url ? (
+                      <img src={video.thumbnail_url} alt="Video Thumbnail" class="w-12 h-20 object-cover rounded shadow-sm" />
+                    ) : (
+                      <video src={video.video_url} class="w-12 h-20 object-cover rounded shadow-sm bg-gray-900" preload="metadata" muted playsinline></video>
+                    )}
+                  </td>
+                  <td class="p-4 text-sm text-gray-900 font-medium">
+                    {video.views_text}
+                  </td>
+                  <td class="p-4 text-sm text-gray-600">
+                    {product ? product.name : <span class="text-red-500">Product not found</span>}
+                  </td>
+                  <td class="p-4 pr-6 text-right space-x-2">
+                    <button onclick={`editVideo('${video.id}')`} class="text-blue-600 hover:text-blue-900 font-medium text-sm">Edit</button>
+                    <button onclick={`deleteVideo('${video.id}')`} class="text-red-600 hover:text-red-900 font-medium text-sm">Delete</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- Add Video Modal -->
+  <div id="add-video-modal" class="fixed inset-0 z-[100] hidden">
+    <div class="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" onclick="document.getElementById('add-video-modal').classList.add('hidden')"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+        <h3 id="modal-title" class="text-xl font-bold text-gray-900">Add Shoppable Video</h3>
+        <button onclick="document.getElementById('add-video-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">✕</button>
+      </div>
+      
+      <div class="p-6 overflow-y-auto">
+        <form id="add-video-form" class="space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Video File (MP4)</label>
+            <input type="file" id="video-file" accept="video/mp4,video/quicktime" required class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-lg p-2" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Thumbnail Image (9:16) <span class="text-gray-400 font-normal">(Optional)</span></label>
+            <input type="file" id="thumbnail-file" accept="image/jpeg,image/png,image/webp" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-lg p-2" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Views Text</label>
+            <input type="text" id="views-text" placeholder="e.g. 76K Views" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+            <p class="text-xs text-gray-500 mt-1">This appears on the bottom left of the thumbnail.</p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Linked Product</label>
+            <select id="product-id" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+              <option value="">Select a product...</option>
+              {products.map((p: any) => (
+                <option value={p.id}>{p.name} - ₹{p.base_price}</option>
+              ))}
+            </select>
+          </div>
+        </form>
+      </div>
+      
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+        <button onclick="document.getElementById('add-video-modal').classList.add('hidden')" class="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg font-medium transition-colors">Cancel</button>
+        <button onclick="submitVideo()" id="submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+          Save Video
+        </button>
+      </div>
+    </div>
+  <script id="videos-data" type="application/json" set:html={JSON.stringify(featuredVideos)}></script>
+
+
+</AdminLayout>
+
+<script data-astro-rerun>
+  import { createClient } from '@supabase/supabase-js';
+
+  const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+  const supabaseKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  function compressToWebP(file, maxW = 800, quality = 0.75) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > maxW) { h = Math.round(h * (maxW / w)); w = maxW; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Failed to get canvas context'));
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          if (!blob) return reject(new Error('Failed to compress image'));
+          const name = file.name.replace(/\.[^.]+$/, '') + '.webp';
+          resolve({ blob, name });
+        }, 'image/webp', quality);
+      };
+      img.onerror = () => reject(new Error('Failed to load image for compression'));
+      img.src = url;
+    });
+  }
+
+  async function uploadFile(file, folder) {
+    // 1. Get signed upload URL
+    const res = await fetch('/api/admin/upload-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder, filename: file.name })
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to get upload URL');
+
+    // 2. Upload directly to Supabase using the signed URL and token
+    const { error } = await supabase.storage
+      .from('products')
+      .uploadToSignedUrl(data.path, data.token, file);
+
+    if (error) throw error;
+    
+    return data.publicUrl;
+  }
+
+  window.editingVideoId = null;
+
+  window.openAddModal = function() {
+    window.editingVideoId = null;
+    (document.getElementById('add-video-form') ).reset();
+    const title = document.getElementById('modal-title');
+    if (title) title.textContent = 'Add Shoppable Video';
+    (document.getElementById('video-file') ).required = true;
+    document.getElementById('add-video-modal')?.classList.remove('hidden');
+  };
+
+  window.editVideo = function(id) {
+    const currentVideosText = document.getElementById('videos-data')?.textContent || '[]';
+    const currentVideosList = JSON.parse(currentVideosText);
+    const video = currentVideosList.find((v) => String(v.id) === String(id));
+    if (!video) return;
+
+    window.editingVideoId = id;
+    const title = document.getElementById('modal-title');
+    if (title) title.textContent = 'Edit Shoppable Video';
+    
+    (document.getElementById('views-text') ).value = video.views_text || '';
+    (document.getElementById('product-id') ).value = video.product_id || '';
+    
+    (document.getElementById('video-file') ).required = false;
+    
+    document.getElementById('add-video-modal')?.classList.remove('hidden');
+  };
+
+  window.submitVideo = async function() {
+    const btn = document.getElementById('submit-btn') ;
+    const form = document.getElementById('add-video-form') ;
+    if (!form.checkValidity()) {
+      form.reportValidity();
+      return;
+    }
+
+    const videoFile = (document.getElementById('video-file') ).files?.[0];
+    const thumbFile = (document.getElementById('thumbnail-file') ).files?.[0];
+    const viewsText = (document.getElementById('views-text') ).value;
+    const productId = (document.getElementById('product-id') ).value;
+
+    if (!window.editingVideoId && !videoFile) return alert('Please select a video file.');
+
+    btn.disabled = true;
+    btn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Uploading...';
+
+    try {
+      let thumbUrl = '';
+      if (thumbFile) {
+        btn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Compressing Thumbnail...';
+        const { blob, name } = await compressToWebP(thumbFile, 800, 0.75);
+        const webpFile = new File([blob], name, { type: 'image/webp' });
+        
+        btn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Uploading Thumbnail...';
+        thumbUrl = await uploadFile(webpFile, 'videos/thumbnails');
+      }
+
+      let videoUrl = '';
+      if (videoFile) {
+        btn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Uploading Video...';
+        videoUrl = await uploadFile(videoFile, 'videos');
+      }
+
+      // Read current videos safely at runtime
+      const currentVideosText = document.getElementById('videos-data')?.textContent || '[]';
+      const currentVideosList = JSON.parse(currentVideosText);
+
+      let updatedVideos;
+      if (window.editingVideoId) {
+        updatedVideos = currentVideosList.map((v) => {
+          if (String(v.id) === String(window.editingVideoId)) {
+            return {
+              ...v,
+              video_url: videoUrl || v.video_url,
+              thumbnail_url: thumbUrl || v.thumbnail_url,
+              views_text: viewsText,
+              product_id: productId
+            };
+          }
+          return v;
+        });
+      } else {
+        const newVideo = {
+          id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+              video_url: videoUrl,
+          thumbnail_url: thumbUrl,
+          views_text: viewsText,
+          product_id: productId,
+          is_active: true,
+          sort_order: currentVideosList.length
+        };
+        updatedVideos = [...currentVideosList, newVideo];
+      }
+      
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured_videos: updatedVideos })
+      });
+
+      if (!res.ok) throw new Error('Failed to save settings');
+
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert('Error saving video: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Save Video';
+    }
+  };
+
+  window.deleteVideo = async function(id) {
+    if (!confirm('Are you sure you want to delete this video?')) return;
+    
+    const btn = event?.currentTarget ;
+    const oldText = btn.textContent;
+    btn.textContent = '...';
+    btn.disabled = true;
+
+    try {
+      const currentVideosText = document.getElementById('videos-data')?.textContent || '[]';
+      const currentVideosList = JSON.parse(currentVideosText);
+      const updatedVideos = currentVideosList.filter((v) => String(v.id) !== String(id));
+      
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured_videos: updatedVideos })
+      });
+
+      if (!res.ok) throw new Error('Failed to delete');
+      window.location.reload();
+    } catch (err) {
+      alert('Error deleting video: ' + err.message);
+      btn.textContent = oldText;
+      btn.disabled = false;
+    }
+  };
+
+  window.saveSectionTitle = async function() {
+    const btn = document.getElementById('save-title-btn') ;
+    const titleInput = document.getElementById('section-title') ;
+    const oldText = btn.textContent;
+    
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured_videos_title: titleInput.value.trim() })
+      });
+
+      if (!res.ok) throw new Error('Failed to save title');
+      
+      btn.textContent = 'Saved!';
+      btn.classList.add('bg-green-100', 'text-green-800', 'border-green-200');
+      setTimeout(() => {
+        btn.textContent = oldText;
+        btn.disabled = false;
+        btn.classList.remove('bg-green-100', 'text-green-800', 'border-green-200');
+      }, 2000);
+    } catch (err) {
+      alert('Error saving title: ' + err.message);
+      btn.textContent = oldText;
+      btn.disabled = false;
+    }
+  };
+</script>
