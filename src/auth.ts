@@ -3,10 +3,12 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import { PrismaClient } from "@prisma/client"
 import bcrypt from "bcryptjs"
+import { authConfig } from "./auth.config"
 
 const prisma = new PrismaClient()
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   providers: [
@@ -51,27 +53,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         };
       }
     })
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      // If user logs in, inject role and schoolId into the token
-      if (user) {
-        token.role = user.role;
-        token.schoolId = user.schoolId;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      // Pass the fields to the session so the frontend can access them
-      if (token && session.user) {
-        session.user.id = token.sub as string;
-        session.user.role = token.role as string;
-        session.user.schoolId = token.schoolId as string;
-      }
-      return session;
-    }
-  },
-  pages: {
-    signIn: "/login",
-  },
+  ]
 })
