@@ -53,9 +53,17 @@
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-school-primary-300: var(--school-primary-light);
+  --color-school-primary-400: var(--school-primary-light);
+  --color-school-primary-500: var(--school-primary);
+  --color-school-primary-600: var(--school-primary);
+  --color-school-primary-700: var(--school-primary-dark);
+  --color-school-primary-950: var(--school-primary-dark);
+  
+  --color-school-accent-300: var(--school-accent);
+  --color-school-accent-400: var(--school-accent);
+  --color-school-accent-500: var(--school-accent);
+  --color-school-accent-600: var(--school-accent);
 }
 
 :root {

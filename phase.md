@@ -78,7 +78,7 @@ Source: Implementation Plan Lines 366-394
 - [ ] Quick action buttons: "Broadcast Notice", "Generate Timetable"
 
 **Task 7: Class Management (CRUD)**
-- [ ] Build tRPC router: `class.ts` (create, getAll, update, delete)
+- [ ] Build tRPC router: `class.ts` (create, getAll, dekupdate, delete)
 - [ ] Build UI: `<ClassManagementTable />` with shadcn DataTable
 - [ ] Pagination, sorting, search functionality
 - [ ] Fields: name (e.g., "10th"), section (e.g., "A"), academicYear
@@ -482,3 +482,12 @@ Source: Implementation Plan Lines 496-508
 - [ ] AI feature accuracy testing (Gemini output quality review)
 - [ ] Mobile responsiveness check (Chrome DevTools + real devices)
 - [ ] Load testing for concurrent users (k6/Artillery — simulate 1000 users)
+
+## [v2.0 SaaS Architecture Upgrades]
+This document has been upgraded with the following SaaS features:
+1. **ERPVyapar Rebranding**: The platform is now named ERPVyapar.
+2. **Multi-School Login Logic**: Users belonging to multiple schools will be prompted with a "Select School" box upon logging in.
+3. **Dedicated School Login Panels**: Generic login is deprecated. Each school has dedicated URLs (`/school/[slug]/staff-login` and `/school/[slug]/student-login`).
+4. **Custom Domains**: Schools can attach custom domains (e.g., `gmacademy.com`) stored in the `customDomain` field, routed dynamically via Next.js middleware.
+5. **Custom Roles (RBAC)**: The hardcoded Role enum is replaced by a dynamic `SystemRole` table allowing Super Admins to create customized roles combining multiple permissions (e.g., Admissions + Transport).
+6. **Master Admin Portal**: The developer/agency portal is strictly isolated at a secret `/hq` route. Master Admins cannot use school login pages.

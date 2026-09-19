@@ -1,52 +1,51 @@
-import NextAuth from "next-auth"
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { authConfig } from "./auth.config"
-import { NextResponse } from "next/server"
+import NextAuth from "next-auth"
 
 const { auth } = NextAuth(authConfig)
 
-// Add routes that don't require authentication
-const publicRoutes = ["/login", "/api/auth"]
-
 export default auth((req) => {
-  const isLoggedIn = !!req.auth
-  const { nextUrl } = req
-
-  const isPublicRoute = publicRoutes.some((route) => nextUrl.pathname.startsWith(route))
-
-  if (isPublicRoute) {
-    if (isLoggedIn && nextUrl.pathname === "/login") {
-      // If logged in and trying to access login page, redirect to dashboard
-      return NextResponse.redirect(new URL("/dashboard", nextUrl))
-    }
-    return NextResponse.next()
+  const url = req.nextUrl;
+  
+  // Get hostname of request (e.g. gmacademy.erpvyapar.com, gmacademy.localhost:3000)
+  const hostname = req.headers.get("host") || "";
+  
+  // Determine if it's local development
+  const isLocal = hostname.includes("localhost");
+  const baseDomain = isLocal ? "localhost:3000" : "erpvyapar.com";
+  
+  // Extract subdomain
+  let subdomain = "";
+  if (hostname !== baseDomain && hostname.endsWith(`.${baseDomain}`)) {
+    subdomain = hostname.replace(`.${baseDomain}`, "");
   }
 
-  if (!isLoggedIn) {
-    // Redirect unauthenticated users to login page
-    let from = nextUrl.pathname
-    if (nextUrl.search) {
-      from += nextUrl.search
-    }
-    return NextResponse.redirect(
-      new URL(`/login?from=${encodeURIComponent(from)}`, nextUrl)
-    )
+  // We are using wildcard subdomains. 
+  // Next.js App Router will map rewrites to the folder structure.
+
+  // --- 1. Root Domain (Main Landing & HQ) ---
+  if (!subdomain || hostname === baseDomain) {
+    // Next.js App Router automatically handles route groups like (main)
+    return NextResponse.next();
   }
 
-  const role = (req.auth as any)?.user?.role;
+  // --- 2. Subdomain Routing (Schools) ---
+  // If they are on a subdomain (e.g., gmacademy.erpvyapar.com)
+  // Rewrite to /[domain]/path so Next.js matches `app/[domain]/...`
+  return NextResponse.rewrite(new URL(`/${subdomain}${url.pathname}`, req.url));
+});
 
-  // Basic Role-based routing (Expand as needed)
-  if (nextUrl.pathname.startsWith("/admin") && role !== "MASTER_ADMIN" && role !== "SUPER_ADMIN" && role !== "ADMIN_STAFF") {
-    return NextResponse.redirect(new URL("/dashboard", nextUrl))
-  }
-
-  if (nextUrl.pathname.startsWith("/teacher") && role !== "TEACHER" && role !== "MASTER_ADMIN" && role !== "SUPER_ADMIN") {
-    return NextResponse.redirect(new URL("/dashboard", nextUrl))
-  }
-
-  return NextResponse.next()
-})
-
-// Optionally, don't invoke Middleware on some paths
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|images).*)"],
-}
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - images, svg, etc
+     */
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
+};
