@@ -23,6 +23,12 @@ export default auth((req) => {
     subdomain = hostname.replace(`.${baseDomain}`, "");
   }
 
+  // --- VERCEL FREE TIER HACK ---
+  // If the user visits the main Vercel project URL, treat it as the root domain (Landing Page)
+  if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app") {
+    subdomain = "";
+  }
+
   // We are using wildcard subdomains. 
   // Next.js App Router will map rewrites to the folder structure.
 
