@@ -85,3 +85,59 @@ export async function deleteClass(schoolId: string, id: string) {
     return { error: "Failed to delete class." };
   }
 }
+
+export async function getClassDetails(schoolId: string, classId: string) {
+  try {
+    const classData = await db.class.findUnique({
+      where: { id: classId, schoolId },
+      include: {
+        _count: {
+          select: { students: true, subjects: true },
+        },
+        students: {
+          include: {
+            user: {
+              select: { name: true, email: true, phone: true, isActive: true },
+            },
+            parent: {
+              include: {
+                user: {
+                  select: { name: true, phone: true },
+                },
+              },
+            },
+          },
+          orderBy: { rollNumber: "asc" },
+        },
+        subjects: {
+          include: {
+            subjectMaster: true,
+            classTeachers: {
+              include: {
+                teacher: {
+                  include: {
+                    user: {
+                      select: { name: true, email: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            subjectMaster: { name: "asc" },
+          },
+        },
+      },
+    });
+
+    if (!classData) {
+      return { error: "Class not found." };
+    }
+
+    return { success: true, data: classData };
+  } catch (error) {
+    console.error("Error fetching class details:", error);
+    return { error: "Failed to fetch class details." };
+  }
+}
