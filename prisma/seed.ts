@@ -28,18 +28,7 @@ async function main() {
     }
   })
 
-  const school2 = await prisma.school.create({
-    data: {
-      name: "GM Academy",
-      address: "456 GM Lane, Salempur",
-      contact: "contact@gmacademy.com",
-      academicYearStart: new Date("2025-04-01"),
-      academicYearEnd: new Date("2026-03-31"),
-      subscriptionPlan: "PREMIUM",
-      subdomain: "gmacademy",
-      customDomain: "gmacademy.com",
-    }
-  })
+
 
   // 2. Create System Roles (RBAC)
   const roleSuperAdminS1 = await prisma.systemRole.create({
@@ -51,14 +40,7 @@ async function main() {
     }
   })
   
-  const roleSuperAdminS2 = await prisma.systemRole.create({
-    data: {
-      schoolId: school2.id,
-      name: "Super Admin",
-      permissions: ["ALL"],
-      isSystem: true
-    }
-  })
+
 
   const roleAdmissionsTransport = await prisma.systemRole.create({
     data: {
@@ -90,15 +72,7 @@ async function main() {
     }
   })
   
-  await prisma.user.create({
-    data: {
-      schoolId: school2.id,
-      email: "owner@erpvyapar.com",
-      passwordHash,
-      userType: UserType.SUPER_ADMIN,
-      systemRoleId: roleSuperAdminS2.id
-    }
-  })
+
 
   // 5. Create Staff with Custom Role
   await prisma.user.create({
@@ -150,7 +124,7 @@ async function main() {
   console.log('Seeding completed successfully!')
   console.log('--- TEST ACCOUNTS (Password: password123) ---')
   console.log('Master Admin:     master@erpvyapar.com')
-  console.log('Multi-School Org: owner@erpvyapar.com (Has RL & GM Academy)')
+  console.log('Multi-School Org: owner@erpvyapar.com')
   console.log('Custom RBAC:      staff@rlacademy.in (Admissions + Transport)')
   console.log('Teacher:          teacher@rlacademy.in')
   console.log('Student:          student@rlacademy.in')

@@ -12,7 +12,7 @@ export default async function SubdomainGatewayPage({ params }: { params: Promise
   }
 
   // User is authenticated! Route them to their specific dashboard based on their role
-  const role = session.user.userType;
+  const role = (session.user as any).userType;
   
   switch (role) {
     case UserType.SUPER_ADMIN:

@@ -1,15 +1,13 @@
 import NextAuth from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@auth/prisma-adapter"
-import { PrismaClient } from "@prisma/client"
+import { db } from "@/lib/db"
 import bcrypt from "bcryptjs"
 import { authConfig } from "./auth.config"
 
-const prisma = new PrismaClient()
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
-  adapter: PrismaAdapter(prisma),
+  adapter: PrismaAdapter(db),
   session: { strategy: "jwt" },
   providers: [
     CredentialsProvider({
@@ -24,7 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           throw new Error("Invalid credentials payload");
         }
 
-        const user = await prisma.user.findUnique({
+        const user = await db.user.findUnique({
           where: { 
              schoolId_email: { 
                  schoolId: credentials.schoolId as string, 
@@ -55,7 +53,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           userType: user.userType,
           schoolId: user.schoolId,
-        };
+          role: user.userType,
+        } as any;
       }
     })
   ]

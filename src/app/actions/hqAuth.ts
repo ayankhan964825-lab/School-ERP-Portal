@@ -1,10 +1,10 @@
 "use server";
 
+import { UserType } from "@prisma/client";
+import { db } from "@/lib/db";
+import bcrypt from "bcryptjs";
 import { signIn } from "@/auth";
 import { AuthError } from "next-auth";
-import { PrismaClient, UserType } from "@prisma/client";
-
-const prisma = new PrismaClient();
 
 export async function authenticateMaster(
   prevState: any,
@@ -17,7 +17,7 @@ export async function authenticateMaster(
     
     console.log("HQ AUTH ATTEMPT:", { rawEmail, email, passwordLength: password?.length });
 
-    const user = await prisma.user.findFirst({
+    const user = await db.user.findFirst({
       where: { 
         email,
       },

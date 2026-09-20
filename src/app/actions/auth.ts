@@ -2,9 +2,7 @@
 
 import { signIn } from "@/auth";
 import { AuthError } from "next-auth";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { db } from "@/lib/db";
 
 export async function authenticateStaff(
   prevState: any,
@@ -18,7 +16,7 @@ export async function authenticateStaff(
     const subdomain = formData.get("subdomain") as string; // From the URL
 
     // Step 1: Verify the school exists for this subdomain
-    const currentSchool = await prisma.school.findUnique({
+    const currentSchool = await db.school.findUnique({
       where: { subdomain },
     });
 
@@ -28,7 +26,7 @@ export async function authenticateStaff(
 
     // Step 2: If no specific schoolId is chosen yet, check how many schools this email belongs to
     if (!schoolId) {
-      const userAccounts = await prisma.user.findMany({
+      const userAccounts = await db.user.findMany({
         where: { email },
         include: { school: true },
       });

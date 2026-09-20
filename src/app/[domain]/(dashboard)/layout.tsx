@@ -11,7 +11,7 @@ export default async function DashboardLayout({
   const session = await auth()
 
   if (!session?.user) {
-    redirect("/login")
+    redirect("/staff-login")
   }
 
   // NextAuth stores the role as `userType` in the session (see auth.config.ts jwt/session callbacks)

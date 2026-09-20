@@ -13,7 +13,9 @@ export default auth((req) => {
   
   // Determine if it's local development
   const isLocal = hostname.includes("localhost");
-  const baseDomain = isLocal ? "localhost:3000" : "erpvyapar.com";
+  const baseDomain = isLocal 
+    ? "localhost:3000" 
+    : process.env.NEXT_PUBLIC_ROOT_DOMAIN || "erpvyapar.com"; // Fallback to erpvyapar.com if env is missing
   
   // Extract subdomain
   let subdomain = "";

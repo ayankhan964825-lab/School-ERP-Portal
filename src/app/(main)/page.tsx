@@ -3,13 +3,23 @@ import { redirect } from "next/navigation";
 import { UserType } from "@prisma/client";
 import { ShieldCheck, Server, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { db } from "@/lib/db";
 
 export default async function MainGatewayPage() {
   const session = await auth();
   
   // If Master Admin is logged in, redirect them to the HQ dashboard
-  if (session?.user?.userType === UserType.MASTER_ADMIN) {
+  if ((session?.user as any)?.userType === "MASTER_ADMIN") {
     redirect("/master");
+  } else if (session?.user) {
+    // If a school user logs in on the main domain, redirect them to their school's subdomain
+    const userSchool = await db.school.findUnique({
+      where: { id: (session.user as any).schoolId },
+      select: { subdomain: true }
+    });
+    if (userSchool) {
+      redirect(`http://${userSchool.subdomain}.localhost:3000/admin`);
+    }
   }
 
   // Public Landing Page for ERPVyapar

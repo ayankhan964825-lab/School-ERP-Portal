@@ -45,6 +45,7 @@ const roleNavMapping: Record<Role, SidebarItem[]> = {
     { title: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { title: "Classes", href: "/admin/classes", icon: BookOpen },
     { title: "Teachers", href: "/admin/teachers", icon: Users },
+    { title: "Admissions", href: "/admin/admissions", icon: ClipboardList },
     { title: "Students", href: "/admin/students", icon: GraduationCap },
     { title: "Notice Board", href: "/admin/notices", icon: Bell },
     { title: "Timetable", href: "/admin/timetable", icon: CalendarDays },
