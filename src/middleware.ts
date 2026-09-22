@@ -46,7 +46,9 @@ export default auth((req) => {
   // --- 2. Subdomain Routing (Schools) ---
   // If they are on a subdomain (e.g., rlacademy.schoolsaathi.dpdns.org)
   // Rewrite to /[domain]/path so Next.js matches `app/[domain]/...`
-  return NextResponse.rewrite(new URL(`/${subdomain}${url.pathname}`, req.url));
+  const rewriteUrl = url.clone();
+  rewriteUrl.pathname = `/${subdomain}${url.pathname}`;
+  return NextResponse.rewrite(rewriteUrl);
 });
 
 export const config = {
