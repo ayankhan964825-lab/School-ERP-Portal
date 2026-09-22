@@ -25,12 +25,12 @@ export default auth((req) => {
 
   // --- VERCEL FREE TIER HACK ---
   // If the user visits the main Vercel project URL, treat it as the root domain (Landing Page)
-  if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app" || hostname === "schoolsaathi.dpdns.org") {
+  if (hostname === "schoolsaathi.dpdns.org") {
     subdomain = "";
   }
   
   // --- TESTING HACK FOR LIVE SERVER ---
-  if (hostname === "school-erp-portal-tau.vercel.app") {
+  if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app" || hostname === "school-erp-portal-tau.vercel.app") {
     subdomain = "rlacademy";
   }
 
