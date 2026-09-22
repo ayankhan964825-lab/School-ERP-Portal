@@ -96,7 +96,13 @@ const roleNavMapping: Record<Role, SidebarItem[]> = {
   ],
 }
 
-export default function AppSidebar({ role }: { role: string }) {
+interface AppSidebarProps {
+  role: string;
+  schoolName?: string;
+  schoolLogo?: string | null;
+}
+
+export default function AppSidebar({ role, schoolName = "SchoolSaathi", schoolLogo }: AppSidebarProps) {
   const normalizedRole = (role || "STUDENT") as Role
   const navItems = roleNavMapping[normalizedRole] || roleNavMapping.STUDENT
 
@@ -104,11 +110,15 @@ export default function AppSidebar({ role }: { role: string }) {
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       {/* Brand Logo Area */}
       <div className="flex h-16 shrink-0 items-center px-6 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2.5 font-bold text-slate-900 dark:text-white">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-school-primary text-white">
-            <GraduationCap className="h-5 w-5" />
+        <div className="flex items-center gap-2.5 font-bold text-slate-900 dark:text-white truncate">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-school-primary text-white overflow-hidden">
+            {schoolLogo ? (
+              <img src={schoolLogo} alt={schoolName} className="h-full w-full object-cover" />
+            ) : (
+              <GraduationCap className="h-5 w-5" />
+            )}
           </div>
-          <span className="text-xl tracking-tight">SchoolSaathi</span>
+          <span className="text-lg tracking-tight truncate" title={schoolName}>{schoolName}</span>
         </div>
       </div>
 

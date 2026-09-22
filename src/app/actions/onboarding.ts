@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { UserType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { signIn } from "@/auth";
+import { addDomainToVercel } from "@/lib/vercel";
 
 // Reserved subdomains that cannot be used by schools
 const RESERVED_SUBDOMAINS = [
@@ -130,6 +131,17 @@ export async function provisionNewSchool(data: {
 
       return { school, owner };
     });
+
+    // 4. Attach subdomain to Vercel Project
+    // This runs after DB success so we don't accidentally create domains for failed transactions
+    try {
+      const vercelResult = await addDomainToVercel(result.school.subdomain);
+      if (!vercelResult.success) {
+        console.warn(`[Vercel API Warning]: Failed to attach domain for ${result.school.subdomain}. You may need to add it manually.`);
+      }
+    } catch (vercelError) {
+      console.error("Vercel Domain Provisioning Error:", vercelError);
+    }
 
     return {
       success: true,
