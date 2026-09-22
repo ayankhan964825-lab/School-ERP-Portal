@@ -30,7 +30,7 @@ export default auth((req) => {
   }
   
   // --- TESTING HACK FOR LIVE SERVER ---
-  if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app" || hostname === "school-erp-portal-tau.vercel.app") {
+  if (hostname.endsWith(".vercel.app")) {
     subdomain = "rlacademy";
   }
 
