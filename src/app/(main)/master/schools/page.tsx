@@ -56,7 +56,7 @@ export default async function MasterSchoolsPage() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <a 
-                      href={`https://${school.subdomain}.schoolsaathi.dpdns.org`} 
+                      href={school.subdomain === "rlacademy" ? "https://schoolerp.vercel.app" : `https://${school.subdomain}.${process.env.NEXT_PUBLIC_ROOT_DOMAIN || "schoolsaathi.dpdns.org"}`} 
                       target="_blank" 
                       rel="noreferrer"
                     >
