@@ -51,7 +51,7 @@ export default function HQLoginPage() {
           <div className="mx-auto w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mb-4 border border-slate-700">
             <Code2 className="w-8 h-8 text-green-400" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mb-1 text-white">ERPVyapar HQ</h1>
+          <h1 className="text-2xl font-bold tracking-tight mb-1 text-white">SchoolSaathi HQ</h1>
           <p className="text-slate-400 text-sm font-mono">Restricted Developer Access</p>
         </div>
 
@@ -66,7 +66,7 @@ export default function HQLoginPage() {
                   <Input 
                     name="email" 
                     type="email" 
-                    placeholder="master@erpvyapar.com" 
+                    placeholder="master@schoolsaathi.com" 
                     className="pl-10 h-12 bg-slate-950 border-slate-800 text-white focus-visible:ring-green-500 placeholder:text-slate-700"
                     required
                   />

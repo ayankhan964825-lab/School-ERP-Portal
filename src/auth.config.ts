@@ -16,7 +16,7 @@ export const authConfig = {
       // NextAuth blocks absolute URLs to different origins (including subdomains!) by default for security.
       // We must explicitly allow redirects to our subdomains.
       if (url.startsWith("/")) return `${baseUrl}${url}`;
-      if (url.includes("localhost:3000") || url.includes("erpvyapar.com")) {
+      if (url.includes("localhost:3000") || url.includes("schoolsaathi.dpdns.org")) {
         return url;
       }
       return baseUrl;

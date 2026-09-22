@@ -8,14 +8,14 @@ const { auth } = NextAuth(authConfig)
 export default auth((req) => {
   const url = req.nextUrl;
   
-  // Get hostname of request (e.g. gmacademy.erpvyapar.com, gmacademy.localhost:3000)
+  // Get hostname of request (e.g. rlacademy.schoolsaathi.dpdns.org, rlacademy.localhost:3000)
   const hostname = req.headers.get("host") || "";
   
   // Determine if it's local development
   const isLocal = hostname.includes("localhost");
   const baseDomain = isLocal 
     ? "localhost:3000" 
-    : process.env.NEXT_PUBLIC_ROOT_DOMAIN || "erpvyapar.com"; // Fallback to erpvyapar.com if env is missing
+    : process.env.NEXT_PUBLIC_ROOT_DOMAIN || "schoolsaathi.dpdns.org";
   
   // Extract subdomain
   let subdomain = "";
@@ -25,7 +25,7 @@ export default auth((req) => {
 
   // --- VERCEL FREE TIER HACK ---
   // If the user visits the main Vercel project URL, treat it as the root domain (Landing Page)
-  if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app") {
+  if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app" || hostname === "schoolsaathi.dpdns.org") {
     subdomain = "";
   }
 
@@ -39,7 +39,7 @@ export default auth((req) => {
   }
 
   // --- 2. Subdomain Routing (Schools) ---
-  // If they are on a subdomain (e.g., gmacademy.erpvyapar.com)
+  // If they are on a subdomain (e.g., rlacademy.schoolsaathi.dpdns.org)
   // Rewrite to /[domain]/path so Next.js matches `app/[domain]/...`
   return NextResponse.rewrite(new URL(`/${subdomain}${url.pathname}`, req.url));
 });

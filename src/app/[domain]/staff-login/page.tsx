@@ -188,7 +188,7 @@ export default function StaffLoginPage({ params }: { params: Promise<{ domain: s
         
         <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
           <p className="text-xs font-semibold text-slate-400">
-            Powered by ERPVyapar Core
+            Powered by SchoolSaathi
           </p>
         </div>
       </div>

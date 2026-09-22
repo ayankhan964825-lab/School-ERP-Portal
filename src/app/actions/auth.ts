@@ -58,7 +58,7 @@ export async function authenticateStaff(
 
     // Construct the absolute redirect URL for the subdomain
     const isLocal = process.env.NODE_ENV !== "production";
-    const domainSuffix = isLocal ? "localhost:3000" : "erpvyapar.com";
+    const domainSuffix = isLocal ? "localhost:3000" : "schoolsaathi.dpdns.org";
     const redirectUrl = `http${isLocal ? "" : "s"}://${currentSchool.subdomain}.${domainSuffix}/`;
 
     // Call NextAuth signIn

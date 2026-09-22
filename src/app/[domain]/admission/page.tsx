@@ -329,7 +329,7 @@ export default function AdmissionPage({ params }: { params: Promise<{ domain: st
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          Powered by ERPVyapar — School Management System
+          Powered by SchoolSaathi — School Management System
         </p>
       </div>
     </div>

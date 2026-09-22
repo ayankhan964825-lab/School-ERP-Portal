@@ -108,7 +108,7 @@ export default function AppSidebar({ role }: { role: string }) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-school-primary text-white">
             <GraduationCap className="h-5 w-5" />
           </div>
-          <span className="text-xl tracking-tight">ERPVyapar</span>
+          <span className="text-xl tracking-tight">SchoolSaathi</span>
         </div>
       </div>
 
