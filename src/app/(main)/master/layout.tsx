@@ -15,7 +15,7 @@ export default async function MasterLayout({
     redirect("/hq");
   }
 
-  if (session.user.userType !== UserType.MASTER_ADMIN) {
+  if ((session.user as any).userType !== UserType.MASTER_ADMIN) {
     // If not a master admin, boot them out
     redirect("/");
   }

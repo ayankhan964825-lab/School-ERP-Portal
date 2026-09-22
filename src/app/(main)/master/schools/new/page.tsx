@@ -40,8 +40,7 @@ export default function NewSchoolPage() {
         email: adminEmail,
         password: adminPassword,
         subdomain,
-        address: "Pending",
-        contact: "Pending"
+        plan: "PREMIUM"
       });
       
       if (!result.success) {
