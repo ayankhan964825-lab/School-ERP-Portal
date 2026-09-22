@@ -28,6 +28,11 @@ export default auth((req) => {
   if (hostname === "schoolerpportal.vercel.app" || hostname === "school-erp-portal.vercel.app" || hostname === "schoolsaathi.dpdns.org") {
     subdomain = "";
   }
+  
+  // --- TESTING HACK FOR LIVE SERVER ---
+  if (hostname === "rlacademy-erp.vercel.app") {
+    subdomain = "rlacademy";
+  }
 
   // We are using wildcard subdomains. 
   // Next.js App Router will map rewrites to the folder structure.
