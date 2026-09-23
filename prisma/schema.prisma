@@ -18,17 +18,27 @@ model School {
   academicYearStart  DateTime
   academicYearEnd    DateTime
   settings           Json?
+  modulesEnabled     Json? // NEW: SaaS Module Toggles
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   subdomain          String                @unique
   customDomain       String?               @unique
   academicSchedules  AcademicSchedule[]
+  academicSessions   AcademicSession[]
   admissionEnquiries AdmissionEnquiry[]
+  auditLogs          AuditLog[]
   books              Book[]
   bookIssues         BookIssue[]
+  callLogs           CallLog[]
   classes            Class[]
+  complaints         Complaint[]
   complianceLogs     ComplianceExportLog[]
-  expenses           Expense[]
+  departments        Department[]
+  designations       Designation[]
+  documentTemplates  DocumentTemplate[]
+  documentPrintLogs  DocumentPrintLog[]
+  accountHeads       AccountHead[]
+  transactions       Transaction[]
   feeStructures      FeeStructure[]
   inventoryItems     InventoryItem[]
   issuedCertificates IssuedCertificate[]
@@ -43,6 +53,7 @@ model School {
   transportStaff     TransportStaff[]
   users              User[]
   vehicles           Vehicle[]
+  visitorLogs        VisitorLog[]
 }
 
 model SystemRole {
@@ -77,7 +88,8 @@ model User {
   parentProfile     ParentProfile?
   staffSalaries     StaffSalary[]
   studentProfile    StudentProfile?
-  teacherProfile    TeacherProfile?
+  staffProfile      StaffProfile? // RENAMED from teacherProfile
+  auditLogs         AuditLog[]
   school            School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   systemRole        SystemRole?        @relation(fields: [systemRoleId], references: [id])
 
@@ -85,14 +97,33 @@ model User {
   @@index([schoolId, userType])
 }
 
+// NEW: Academic Session Master
+model AcademicSession {
+  id             String                @id @default(uuid())
+  schoolId       String
+  name           String
+  startDate      DateTime              @db.Date
+  endDate        DateTime              @db.Date
+  isActive       Boolean               @default(false)
+  school         School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classes        Class[]
+  syllabi        Syllabus[]
+  feeStructures  FeeStructure[]
+  feeArrears     FeeArrear[]
+  complianceLogs ComplianceExportLog[]
+
+  @@unique([schoolId, name])
+}
+
 model Class {
   id            String            @id @default(uuid())
   schoolId      String
   name          String
   section       String
-  academicYear  String
+  sessionId     String // UPDATED
   attendances   Attendance[]
   school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  session       AcademicSession   @relation(fields: [sessionId], references: [id])
   classTeachers ClassTeacher[]
   exams         Exam[]
   homework      Homework[]
@@ -101,7 +132,7 @@ model Class {
   syllabi       Syllabus[]
   timetable     TimetablePeriod[]
 
-  @@unique([schoolId, name, section, academicYear])
+  @@unique([schoolId, name, section, sessionId])
 }
 
 model SubjectMaster {
@@ -129,33 +160,33 @@ model Subject {
 }
 
 model ClassTeacher {
-  id             String         @id @default(uuid())
-  teacherId      String
+  id             String       @id @default(uuid())
+  staffId        String // UPDATED
   classId        String
   subjectId      String
-  isClassTeacher Boolean        @default(false)
+  isClassTeacher Boolean      @default(false)
   assignedBy     String
-  createdAt      DateTime       @default(now())
-  class          Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subject        Subject        @relation(fields: [subjectId], references: [id])
-  teacher        TeacherProfile @relation(fields: [teacherId], references: [id])
+  createdAt      DateTime     @default(now())
+  class          Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+  staff          StaffProfile @relation(fields: [staffId], references: [id]) // UPDATED
 
-  @@unique([teacherId, classId, subjectId])
+  @@unique([staffId, classId, subjectId])
 }
 
 model TimetablePeriod {
-  id            String         @id @default(uuid())
+  id            String       @id @default(uuid())
   classId       String
   subjectId     String
-  teacherId     String
+  staffId       String // UPDATED
   dayOfWeek     String
   startTime     String
   endTime       String
   room          String?
-  isAiGenerated Boolean        @default(false)
-  class         Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subject       Subject        @relation(fields: [subjectId], references: [id])
-  teacher       TeacherProfile @relation(fields: [teacherId], references: [id])
+  isAiGenerated Boolean      @default(false)
+  class         Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject       Subject      @relation(fields: [subjectId], references: [id])
+  staff         StaffProfile @relation(fields: [staffId], references: [id]) // UPDATED
 
   @@unique([classId, dayOfWeek, startTime])
 }
@@ -171,25 +202,48 @@ model AcademicSchedule {
 }
 
 model Syllabus {
-  id           String  @id @default(uuid())
-  classId      String
-  subjectId    String
-  academicYear String
-  topics       Json
-  uploadedBy   String
-  class        Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subject      Subject @relation(fields: [subjectId], references: [id])
+  id         String          @id @default(uuid())
+  classId    String
+  subjectId  String
+  sessionId  String // UPDATED
+  topics     Json
+  uploadedBy String
+  class      Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject    Subject         @relation(fields: [subjectId], references: [id])
+  session    AcademicSession @relation(fields: [sessionId], references: [id])
 
-  @@unique([classId, subjectId, academicYear])
+  @@unique([classId, subjectId, sessionId])
 }
 
-model TeacherProfile {
+// NEW: Advanced HR Hierarchy
+model Department {
+  id       String         @id @default(uuid())
+  schoolId String
+  name     String
+  school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  staff    StaffProfile[]
+}
+
+model Designation {
+  id       String         @id @default(uuid())
+  schoolId String
+  name     String
+  school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  staff    StaffProfile[]
+}
+
+model StaffProfile {
   id            String            @id @default(uuid())
   userId        String            @unique
   empId         String?
   qualification String?
+  departmentId  String? // NEW
+  designationId String? // NEW
+  customFields  Json? // NEW
   classTeachers ClassTeacher[]
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department    Department?       @relation(fields: [departmentId], references: [id])
+  designation   Designation?      @relation(fields: [designationId], references: [id])
   timetable     TimetablePeriod[]
 }
 
@@ -202,9 +256,14 @@ model StudentProfile {
   virtualAccountId   String?             @unique
   documentsChecklist Json?
   documentsPending   Boolean             @default(true)
+  status             StudentStatus       @default(CURRENT) // NEW
+  statusReason       String? // NEW
+  pickupPointId      String? // NEW
+  customFields       Json? // NEW
   attendances        Attendance[]
   bookIssues         BookIssue[]
   feePayments        FeePayment[]
+  feeArrears         FeeArrear[] // NEW
   issuedCertificates IssuedCertificate[]
   reportCards        ReportCard[]
   results            Result[]
@@ -212,6 +271,7 @@ model StudentProfile {
   class              Class               @relation(fields: [classId], references: [id])
   parent             ParentProfile?      @relation(fields: [parentId], references: [id])
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pickupPoint        PickupPoint?        @relation(fields: [pickupPointId], references: [id])
 
   @@unique([classId, rollNumber])
 }
@@ -310,29 +370,42 @@ model Vehicle {
 }
 
 model Route {
-  id          String          @id @default(uuid())
-  schoolId    String
-  name        String
-  vehicleId   String
-  stops       Json
-  conductorId String?
-  conductor   TransportStaff? @relation(fields: [conductorId], references: [id])
-  school      School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  vehicle     Vehicle         @relation(fields: [vehicleId], references: [id])
+  id           String          @id @default(uuid())
+  schoolId     String
+  name         String
+  vehicleId    String
+  stops        Json // Kept for basic path drawing
+  conductorId  String?
+  conductor    TransportStaff? @relation(fields: [conductorId], references: [id])
+  school       School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle         @relation(fields: [vehicleId], references: [id])
+  pickupPoints PickupPoint[] // NEW
+}
+
+// NEW: Transport Pickup Points
+model PickupPoint {
+  id        String           @id @default(uuid())
+  routeId   String
+  name      String
+  time      String
+  feeAmount Float
+  route     Route            @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  students  StudentProfile[]
 }
 
 model FeeStructure {
-  id            String       @id @default(uuid())
+  id            String          @id @default(uuid())
   schoolId      String
   classId       String
-  academicYear  String
+  sessionId     String // UPDATED
   feeType       FeeType
   amount        Float
-  dueDate       DateTime     @db.Date
+  dueDate       DateTime        @db.Date
   frequency     FeeFrequency
-  lateFeePerDay Float        @default(0)
+  lateFeePerDay Float           @default(0)
   payments      FeePayment[]
-  school        School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school        School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  session       AcademicSession @relation(fields: [sessionId], references: [id])
 }
 
 model FeePayment {
@@ -352,16 +425,39 @@ model FeePayment {
   @@unique([studentId, feeStructureId])
 }
 
-model Expense {
-  id                String   @id @default(uuid())
-  schoolId          String
-  category          String
-  amount            Float
-  description       String?
-  date              DateTime @db.Date
-  approvedBy        String?
-  receiptAttachment String?
-  school            School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+// NEW: Fee Carry Forward (Arrears)
+model FeeArrear {
+  id        String          @id @default(uuid())
+  studentId String
+  sessionId String
+  amount    Float
+  reason    String?
+  isPaid    Boolean         @default(false)
+  student   StudentProfile  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  session   AcademicSession @relation(fields: [sessionId], references: [id])
+}
+
+// NEW: Complete Accounting Ledger
+model AccountHead {
+  id           String        @id @default(uuid())
+  schoolId     String
+  name         String
+  type         AccountType
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model Transaction {
+  id            String      @id @default(uuid())
+  schoolId      String
+  accountHeadId String
+  amount        Float
+  type          AccountType
+  paymentMode   PaymentMode
+  reference     String?
+  date          DateTime    @db.Date
+  school        School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  accountHead   AccountHead @relation(fields: [accountHeadId], references: [id])
 }
 
 model Notice {
@@ -395,6 +491,41 @@ model LeaveApplication {
   user                   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// NEW: Front Office CRM
+model VisitorLog {
+  id         String    @id @default(uuid())
+  schoolId   String
+  name       String
+  phone      String
+  purpose    String
+  whomToMeet String?
+  inTime     DateTime  @default(now())
+  outTime    DateTime?
+  school     School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model CallLog {
+  id       String   @id @default(uuid())
+  schoolId String
+  caller   String
+  phone    String
+  purpose  String
+  date     DateTime @db.Date
+  followUp Boolean  @default(false)
+  school   School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+model Complaint {
+  id          String          @id @default(uuid())
+  schoolId    String
+  complainant String
+  phone       String?
+  description String
+  date        DateTime        @db.Date
+  status      ComplaintStatus @default(OPEN)
+  school      School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
 model AdmissionEnquiry {
   id                         String             @id @default(uuid())
   schoolId                   String
@@ -420,6 +551,7 @@ model AdmissionEnquiry {
   siblingStudentId           String?
   createdStudentId           String?
   createdParentId            String?
+  customFields               Json? // NEW
   createdAt                  DateTime           @default(now())
   updatedAt                  DateTime           @updatedAt
   studentPhone               String?
@@ -538,17 +670,40 @@ model Payslip {
   school          School      @relation(fields: [schoolId], references: [id])
 }
 
+// NEW: Dynamic Document Builder
+model DocumentTemplate {
+  id       String       @id @default(uuid())
+  schoolId String
+  name     String
+  type     DocumentType
+  design   Json
+  school   School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
 model IssuedCertificate {
-  id        String         @id @default(cuid())
-  schoolId  String
-  studentId String
-  type      String
-  qrHash    String         @unique
-  pdfUrl    String
-  issuedBy  String
-  createdAt DateTime       @default(now())
-  school    School         @relation(fields: [schoolId], references: [id])
-  student   StudentProfile @relation(fields: [studentId], references: [id])
+  id                String             @id @default(cuid())
+  schoolId          String
+  studentId         String
+  type              String // or DocumentType string
+  qrHash            String             @unique
+  pdfUrl            String
+  issuedBy          String
+  createdAt         DateTime           @default(now())
+  school            School             @relation(fields: [schoolId], references: [id])
+  student           StudentProfile     @relation(fields: [studentId], references: [id])
+  documentPrintLogs DocumentPrintLog[] // NEW
+}
+
+// NEW: Hidden Document Print Logs
+model DocumentPrintLog {
+  id            String            @id @default(uuid())
+  schoolId      String
+  documentId    String
+  printedBy     String
+  printCount    Int               @default(1)
+  lastPrintedAt DateTime          @default(now())
+  school        School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  document      IssuedCertificate @relation(fields: [documentId], references: [id], onDelete: Cascade)
 }
 
 model ReportCard {
@@ -568,16 +723,33 @@ model ReportCard {
 }
 
 model ComplianceExportLog {
-  id           String   @id @default(cuid())
-  schoolId     String
-  requestedBy  String
-  reportType   String
-  academicYear String
-  status       String
-  downloadUrl  String?
-  createdAt    DateTime @default(now())
-  school       School   @relation(fields: [schoolId], references: [id])
+  id          String          @id @default(cuid())
+  schoolId    String
+  requestedBy String
+  reportType  String
+  sessionId   String // UPDATED
+  status      String
+  downloadUrl String?
+  createdAt   DateTime        @default(now())
+  school      School          @relation(fields: [schoolId], references: [id])
+  session     AcademicSession @relation(fields: [sessionId], references: [id])
 }
+
+// NEW: System Audit Logs
+model AuditLog {
+  id        String   @id @default(uuid())
+  schoolId  String
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+  details   Json?
+  createdAt DateTime @default(now())
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// Enums
 
 enum UserType {
   MASTER_ADMIN
@@ -586,6 +758,33 @@ enum UserType {
   TEACHER
   STUDENT
   PARENT
+}
+
+enum StudentStatus {
+  CURRENT
+  ALUMNI
+  DROPOUT
+  EXPELLED
+  SUSPENDED
+}
+
+enum AccountType {
+  INCOME
+  EXPENSE
+}
+
+enum DocumentType {
+  ID_CARD
+  TC
+  ADMIT_CARD
+  MARKSHEET
+  CERTIFICATE
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
 }
 
 enum BookStatus {

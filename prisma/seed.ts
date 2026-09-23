@@ -86,8 +86,12 @@ async function main() {
   })
 
   // 6. Create Teacher, Student, Parent in School 1
+  const session1 = await prisma.academicSession.create({
+    data: { schoolId: school1.id, name: "2025-2026", startDate: new Date("2025-04-01"), endDate: new Date("2026-03-31"), isActive: true }
+  })
+
   const class10A = await prisma.class.create({
-    data: { schoolId: school1.id, name: "10th", section: "A", academicYear: "2025-2026" }
+    data: { schoolId: school1.id, name: "10th", section: "A", sessionId: session1.id }
   })
 
   await prisma.user.create({
@@ -96,7 +100,7 @@ async function main() {
       email: "teacher@rlacademy.in",
       passwordHash,
       userType: UserType.TEACHER,
-      teacherProfile: { create: { empId: "EMP-001", qualification: "M.Sc Math" } }
+      staffProfile: { create: { empId: "EMP-001", qualification: "M.Sc Math" } }
     }
   })
 

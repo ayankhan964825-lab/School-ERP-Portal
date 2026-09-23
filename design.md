@@ -170,6 +170,7 @@ To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mo
 - 💰 Fee Structure (Define)
 - 🚌 Transport (Vehicles + Routes)
 - 📅 Calendar (Academic Schedule: Exams, Holidays, Events)
+- ⚙️ Global Settings (Audit Logs, SaaS Module Toggles)
 - 📊 Reports (All analytics)
 
 **Dashboard Widgets:**
@@ -185,6 +186,10 @@ To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mo
 - Drag & Drop layout builder (Header, Logo, Grading Scale, Remarks).
 - Preview mode (switch between CBSE 8-point / State Board scales).
 - 1-Click "Bulk Generate Class PDF" button.
+
+**Dynamic Document Builder & TC Handling (v4.0 Feature):**
+- Drag & Drop builder for ID Cards and Transfer Certificates.
+- **TC Override Button:** Special privileged action to force-issue a TC even if Fee Arrears are pending. Includes a mandatory "Reason" input field that gets logged to the Audit Trail.
 
 **Transportation Management UI (Admin Focus):**
 - **Transport Staff Directory:** A secure HR table exclusively for Drivers and Conductors. 
@@ -262,9 +267,9 @@ To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mo
 - 🏠 Dashboard (Child overview)
 - 📋 Attendance (Child's calendar)
 - 📊 Results (Child's marks + AI report)
-- 💳 Fees (Pay + Download receipts)
+- 💳 Fees (Pay + Download receipts + View Arrears)
 - 📚 Syllabus (Course progress)
-- 🚌 Transport (Bus tracking)
+- 🚌 Transport (Bus tracking + Pickup Point selection)
 - 👨‍🏫 Teachers (Contact info)
 - 📌 Notices (Announcements)
 - ✅ Leave (Approve child's leave)
@@ -300,9 +305,13 @@ To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mo
 
 **Dashboard Widgets:**
 - Today's Collections (online + offline total)
-- Pending Dues Overview (total outstanding ₹)
+- Pending Dues Overview (Total Outstanding + Carry Forward Arrears)
 - Class-wise Collection Summary (bar chart)
 - Recent Payments list (last 10 transactions)
+
+**Accounting Ledger UI (v4.0 Feature):**
+- Double-entry tracking view (Income/Expense Account Heads).
+- Journal entry screen for precise financial corrections.
 
 **SmartCollect View:**
 - Matched Payments (auto-reconciled by Razorpay webhook)
@@ -325,6 +334,7 @@ To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mo
 - 🔍 Enquiries (Pre-admission tracking)
 - 🔗 Sibling Management (Link/Unlink)
 - 🖨️ Credentials (Generate & Print)
+- 🏢 Front Office CRM (Visitor Log, Calls, Complaints)
 
 **Dashboard Widgets:**
 - Today's Admissions Count (completed today)
@@ -340,6 +350,7 @@ To ensure the ERP portal works flawlessly on Windows, iOS, iPad, Tablets, and Mo
 - **Keyboard-Only Navigation:** Fully optimized for `Tab` index. Dropdowns support auto-complete typing. No mouse required.
 - **Smart Defaults:** Admission Date defaults to today. Academic Year defaults to current. State/City pre-filled.
 - **Instant Sibling Auto-Fill:** Typing a 10-digit number in the Parent Phone field instantly auto-fills Father Name, Mother Name, and Address if the parent already exists (no search button needed).
+- **Dynamic Custom Fields (v4.0 Feature):** Renders dynamic inputs (like "Blood Group" or "Second Language") based on school-configured JSONB schema.
 - **Optional Documents:** Document upload (Birth Cert, Aadhaar) is moved to an optional step at the end. Staff can skip and upload later.
 - **Instant Admission Fee:** End of form has "Fee Amount", "Paid Amount", and "Method" (Cash/Cheque/UPI). If Paid < Total, balance goes to "Pending Dues". Includes "Discount Amount" and "Reason" fields for waivers.
 - **Submit & Auto-Reset:** Pressing `Enter` at the end submits the form, shows a 3-second success toast ("Admitted! ID: STD101"), generates receipt, and instantly clears the form for the next entry without a page reload.

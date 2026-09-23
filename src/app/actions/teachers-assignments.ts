@@ -7,7 +7,7 @@ export async function assignTeacherToClass(teacherId: string, classId: string, s
   try {
     const newAssignment = await db.classTeacher.create({
       data: {
-        teacherId,
+        staffId: teacherId,
         classId,
         subjectId,
         isClassTeacher,
@@ -28,7 +28,7 @@ export async function assignTeacherToClass(teacherId: string, classId: string, s
 export async function getTeacherAssignments(teacherId: string) {
   try {
     const assignments = await db.classTeacher.findMany({
-      where: { teacherId },
+      where: { staffId: teacherId },
       include: {
         class: true,
         subject: true

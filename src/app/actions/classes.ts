@@ -8,6 +8,7 @@ export async function getClasses(schoolId: string) {
     const classes = await db.class.findMany({
       where: { schoolId },
       include: {
+        session: true,
         _count: {
           select: { students: true, subjects: true },
         },
@@ -24,14 +25,14 @@ export async function getClasses(schoolId: string) {
   }
 }
 
-export async function createClass(schoolId: string, data: { name: string; section: string; academicYear: string }) {
+export async function createClass(schoolId: string, data: { name: string; section: string; sessionId: string }) {
   try {
     const newClass = await db.class.create({
       data: {
         schoolId,
         name: data.name,
         section: data.section,
-        academicYear: data.academicYear,
+        sessionId: data.sessionId,
       },
     });
 
@@ -40,20 +41,20 @@ export async function createClass(schoolId: string, data: { name: string; sectio
   } catch (error: any) {
     console.error("Error creating class:", error);
     if (error.code === "P2002") {
-      return { error: `Class ${data.name} - ${data.section} already exists for academic year ${data.academicYear}.` };
+      return { error: `Class ${data.name} - ${data.section} already exists for this academic session.` };
     }
     return { error: "Failed to create class." };
   }
 }
 
-export async function updateClass(schoolId: string, id: string, data: { name: string; section: string; academicYear: string }) {
+export async function updateClass(schoolId: string, id: string, data: { name: string; section: string; sessionId: string }) {
   try {
     const updatedClass = await db.class.update({
       where: { id, schoolId },
       data: {
         name: data.name,
         section: data.section,
-        academicYear: data.academicYear,
+        sessionId: data.sessionId,
       },
     });
 
@@ -62,7 +63,7 @@ export async function updateClass(schoolId: string, id: string, data: { name: st
   } catch (error: any) {
     console.error("Error updating class:", error);
     if (error.code === "P2002") {
-      return { error: `Class ${data.name} - ${data.section} already exists for academic year ${data.academicYear}.` };
+      return { error: `Class ${data.name} - ${data.section} already exists for this academic session.` };
     }
     return { error: "Failed to update class." };
   }
@@ -91,6 +92,7 @@ export async function getClassDetails(schoolId: string, classId: string) {
     const classData = await db.class.findUnique({
       where: { id: classId, schoolId },
       include: {
+        session: true,
         _count: {
           select: { students: true, subjects: true },
         },
@@ -114,7 +116,7 @@ export async function getClassDetails(schoolId: string, classId: string) {
             subjectMaster: true,
             classTeachers: {
               include: {
-                teacher: {
+                staff: {
                   include: {
                     user: {
                       select: { name: true, email: true },

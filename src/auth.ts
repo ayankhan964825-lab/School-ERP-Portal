@@ -28,6 +28,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                  schoolId: credentials.schoolId as string, 
                  email: credentials.email as string 
              } 
+          },
+          include: {
+            school: {
+              select: {
+                modulesEnabled: true
+              }
+            }
           }
         });
 
@@ -54,6 +61,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           userType: user.userType,
           schoolId: user.schoolId,
           role: user.userType,
+          modulesEnabled: user.school?.modulesEnabled || null,
         } as any;
       }
     })

@@ -303,6 +303,8 @@ export async function approveAndAdmit(
             ? Object.values(data.documentsChecklist).some((v) => !v)
             : true,
           documentsChecklist: data.documentsChecklist || null,
+          status: "CURRENT",
+          customFields: enquiry.customFields || null,
         },
       });
 
@@ -464,6 +466,7 @@ export async function bulkAdmitStudents(
               parentId: parentProfile?.id || null,
               documentsPending: true,
               documentsChecklist: { tc: false, marksheet: false, photo: false, aadhar: false, birth_cert: false },
+              status: "CURRENT",
             },
           });
 

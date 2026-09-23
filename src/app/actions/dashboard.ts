@@ -21,7 +21,7 @@ export async function getDashboardStats() {
   });
 
   // 2. Total Teachers
-  const totalTeachers = await db.teacherProfile.count({
+  const totalTeachers = await db.staffProfile.count({
     where: {
       user: {
         schoolId: schoolId,

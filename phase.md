@@ -78,11 +78,12 @@ Source: Implementation Plan Lines 366-394
 - [ ] Quick action buttons: "Broadcast Notice", "Generate Timetable"
 
 **Task 7: Class Management (CRUD)**
-- [ ] Build tRPC router: `class.ts` (create, getAll, dekupdate, delete)
+- [ ] Build tRPC router: `class.ts` (create, getAll, update, delete)
 - [ ] Build UI: `<ClassManagementTable />` with shadcn DataTable
 - [ ] Pagination, sorting, search functionality
-- [ ] Fields: name (e.g., "10th"), section (e.g., "A"), academicYear
-- [ ] Unique constraint: [schoolId, name, section, academicYear]
+- [ ] Fields: name (e.g., "10th"), section (e.g., "A"), sessionId (Linked to Academic Session Master)
+- [ ] Unique constraint: [schoolId, name, section, sessionId]
+- [ ] **v4.0 Feature**: Implement `AcademicSession` master table to strictly control active/past terms.
 
 **Task 8: Teacher Management & Class-Teacher Assignment**
 - [ ] Build tRPC router: `user.ts` (create teacher, getBySchool)
@@ -97,6 +98,8 @@ Source: Implementation Plan Lines 366-394
 - [ ] Auto-increment roll number per class
 - [ ] Unique constraint: [classId, rollNumber]
 - [ ] CSV Bulk Import: Parse CSV with `papaparse`, validate rows, insert batch
+- [ ] **v4.0 Feature**: Implement `StudentStatus` enum (`ALUMNI`, `DROPOUT`, `EXPELLED`) for proper lifecycle tracking instead of just inactive.
+- [ ] **v4.0 Feature**: Integrate `Custom Fields (JSONB)` engine to allow dynamic data collection on the enrollment form.
 
 **Task 10: Parent Account Linking**
 - [ ] Build UI to create parent accounts
@@ -124,6 +127,13 @@ Source: Implementation Plan Lines 366-394
   - Build "Missing Documents" dashboard widget
   - Divorce/separated edge case: Support 2 guardian accounts
   - Sibling Unlink: Create fresh parent account logic
+
+**Task 10.6: Front Office CRM & Operations (v4.0 Feature)**
+- [ ] Build tRPC router: `frontOffice.ts`
+- [ ] Build UI for Receptionist (`/staff` panel)
+- [ ] Implement `VisitorLog` (Tracking purpose, time-in, time-out)
+- [ ] Implement `CallLog` (Phone call follow-ups and inquiries)
+- [ ] Implement `Complaint` management (Parent complaints with Open/Resolved status tracking)
 
 **Task 11: Notice Board**
 - [ ] Build tRPC router: `notice.ts` (create, getForUser)
@@ -292,6 +302,7 @@ Source: Implementation Plan Lines 397-417
 - [ ] Parent view logic: Filter transport staff data to ONLY show `Name`, `Phone`, and `Bus Number`
 - [ ] Emergency protocol: Add a "Call Transport Staff" direct 1-tap action button
 - [ ] Edge case: Route/Bus changed temporarily → Push Notification alert to parent
+- [ ] **v4.0 Feature**: Implement `PickupPoint` model. Move transport billing logic beyond generic routes to distance-based PickupPoint billing.
 
 **Task 35: Transport Staff Management (Admin Only)**
 - [ ] Build tRPC router: `transport.ts` (Manage Vehicles, Routes, TransportStaff)
@@ -306,10 +317,10 @@ Source: Implementation Plan Lines 397-417
 - [ ] Class-wise collection summary
 - [ ] Receipt generation: Online auto + Offline manual
 - [ ] Bulk receipt printing for date range
-- [ ] Expense management: Add expense (category, amount, date, receipt upload)
-- [ ] Approval workflow: Expenses above threshold need Principal approval
 - [ ] SmartCollect reconciliation view: Matched vs Unmatched payments
-- [ ] Financial reports: Income vs Expense, Monthly Statement, Tax-ready Export
+- [ ] **v4.0 Feature**: Implement `AccountHead` ledger (True double-entry style tracking for Income/Expense).
+- [ ] **v4.0 Feature**: Implement `FeeArrear` (Carry Forward) tracking unpaid dues cascading across Academic Sessions.
+- [ ] Financial reports: Income vs Expense, Monthly Statement, Tax-ready Export, Balance Sheet
 - [ ] Audit trail log: Immutable record of all financial transactions
 - [ ] Edge cases: Manual entry mismatch, duplicate receipt number
 
@@ -385,6 +396,8 @@ Source: Implementation Plan Lines 434-443
 - [ ] Global dashboard for the Agency Owner: Total clients (schools), Active Subscriptions, Monthly Recurring Revenue (MRR)
 - [ ] Client (School) listing with search and filter capabilities (Active, Suspended, Trial)
 - [ ] Feature toggle interface: Master Admin can enable/disable specific modules for specific schools remotely
+- [ ] **v4.0 Feature**: `modulesEnabled` JSON on `School` to remotely turn off features like Hostel or Transport for base-tier subscribers.
+- [ ] **v4.0 Feature**: Global System `AuditLog` UI capturing sensitive writes (e.g., modifying marks, deleting receipts) across all tenant schools.
 
 **Task 47: Client Onboarding & Provisioning Flow**
 - [ ] Automated provisioning script: Spins up a dedicated Vercel project and Neon/Railway database automatically
@@ -439,18 +452,21 @@ Source: Implementation Plan Lines 434-443
 - [ ] Build 80mm ESC/POS Thermal Receipt print layout.
 
 ### Week 10: HR & Payroll
-**Task 55: Payroll Execution Engine**
+**Task 55: Payroll Execution & Advanced HR Engine**
 - [ ] Build `payroll.ts` router.
 - [ ] Sync `TeacherAttendance` & `LeaveApplications` into payable days calculation.
 - [ ] Build `<AccountantPayrollView />` for bulk 1-Click calculation.
 - [ ] Generate individual PDF Payslips and NACH bank export CSV.
+- [ ] **v4.0 Feature**: Implement Unified `StaffProfile` (combining Teacher, Librarian, Accountant under one umbrella).
+- [ ] **v4.0 Feature**: Implement `Department` and `Designation` tracking for unified HR structure.
 
 ### Week 11: Documents & Report Cards
-**Task 56: 1-Click Certificate Generator**
+**Task 56: 1-Click Certificate Generator & Builder**
 - [ ] Build `certificate.ts` (TC, Bonafide generation).
-- [ ] Create PDF templates mapping DB fields (Name, Admission No, DOB).
-- [ ] Add Dues Check (block TC if fees/library pending).
 - [ ] Add secure QR Hash verification logic.
+- [ ] **v4.0 Feature**: Build `DocumentTemplate` JSON engine to drag-and-drop design TCs, ID Cards, and Marksheets dynamically.
+- [ ] **v4.0 Feature**: Implement `DocumentPrintLog` to track duplicate printing of sensitive documents silently.
+- [ ] **v4.0 Feature**: Implement `TC Override Bypass` allowing Super Admin to bypass Fee Arrear lockouts and force-generate Transfer Certificates.
 
 **Task 57: Report Card Designer**
 - [ ] Build `reportCard.ts` for grading logic.
@@ -503,3 +519,4 @@ This document has been updated with the following architectural decisions for Te
 5. **Smart Typing Grid**: A keyboard-first dynamic UI for manual timetable entry where typing a teacher's name auto-suggests available teachers and highlights conflicts instantly.
 6. **Drag-and-Drop Swapping**: To tweak a fully generated timetable, dragging one assigned period onto another will cleanly *Swap* them without destroying the class subject balance.
 7. **Teacher Replacement & Proxies**: Built-in edge-case handling for mid-session teacher resignations (one-click transfer of all periods) and leave proxies (suggesting available teachers for a specific day/period).
+

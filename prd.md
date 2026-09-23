@@ -600,6 +600,12 @@ System mein **9 distinct user roles** hain. Har role ka apna isolated dashboard 
 - **Transport Safety Compliance:** Summarizes active school buses, pollution/insurance validity, and staff police verification status.
 - **1-Click Export Format:** Outputs directly into an audit-ready, government-standard Excel/CSV format (CBSE OASIS & UDISE+ compatible).
 
+### 3.16 Front Office CRM & Operations (v4.0 Feature)
+*Digitizing the reception desk and parent interactions.*
+- **Visitor Logs:** Track incoming guests, their purpose, time-in, and time-out for school security.
+- **Call Logs:** Record telephonic inquiries, admission follow-ups, and callbacks.
+- **Complaint Management:** Log parent or student complaints, assign them an OPEN/RESOLVED status, and track resolution time.
+
 ---
 
 ## 4. AI Features — The 10 Market Differentiators

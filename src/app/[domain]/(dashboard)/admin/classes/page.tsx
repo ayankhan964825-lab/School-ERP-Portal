@@ -23,10 +23,10 @@ export default async function ClassesPage({ params }: { params: Promise<{ domain
 
   const schoolId = (session.user as any).schoolId;
 
-  // Fetch initial classes data
   const classesData = await db.class.findMany({
     where: { schoolId },
     include: {
+      session: true,
       _count: {
         select: { students: true, subjects: true },
       },
@@ -37,12 +37,18 @@ export default async function ClassesPage({ params }: { params: Promise<{ domain
     ],
   });
 
+  const sessions = await db.academicSession.findMany({
+    where: { schoolId },
+    orderBy: { startDate: "desc" },
+  });
+
   // Transform data slightly to match expected UI props
   const formattedClasses = classesData.map((c) => ({
     id: c.id,
     name: c.name,
     section: c.section,
-    academicYear: c.academicYear,
+    sessionId: c.sessionId,
+    sessionName: c.session.name,
     studentCount: c._count.students,
     subjectCount: c._count.subjects,
   }));
@@ -58,7 +64,7 @@ export default async function ClassesPage({ params }: { params: Promise<{ domain
         </p>
       </div>
 
-      <ClassManager schoolId={schoolId} initialClasses={formattedClasses} />
+      <ClassManager schoolId={schoolId} initialClasses={formattedClasses} sessions={sessions} />
     </div>
   );
 }

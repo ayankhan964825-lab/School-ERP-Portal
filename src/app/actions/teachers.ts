@@ -12,7 +12,7 @@ export async function getTeachers(schoolId: string) {
         userType: "TEACHER",
       },
       include: {
-        teacherProfile: true,
+        staffProfile: true,
       },
       orderBy: {
         createdAt: "desc",
@@ -48,8 +48,8 @@ export async function createTeacher(schoolId: string, data: any) {
         },
       });
 
-      // Create TeacherProfile
-      const profile = await tx.teacherProfile.create({
+      // Create StaffProfile
+      const profile = await tx.staffProfile.create({
         data: {
           userId: user.id,
           empId: data.empId || null,
@@ -57,7 +57,7 @@ export async function createTeacher(schoolId: string, data: any) {
         },
       });
 
-      return { ...user, teacherProfile: profile };
+      return { ...user, staffProfile: profile };
     });
 
     revalidatePath("/[domain]/(dashboard)/admin/teachers", "page");
@@ -84,8 +84,8 @@ export async function updateTeacher(schoolId: string, userId: string, data: any)
         },
       });
 
-      // Update TeacherProfile
-      const profile = await tx.teacherProfile.update({
+      // Update StaffProfile
+      const profile = await tx.staffProfile.update({
         where: { userId: user.id },
         data: {
           empId: data.empId || null,
@@ -93,7 +93,7 @@ export async function updateTeacher(schoolId: string, userId: string, data: any)
         },
       });
 
-      return { ...user, teacherProfile: profile };
+      return { ...user, staffProfile: profile };
     });
 
     revalidatePath("/[domain]/(dashboard)/admin/teachers", "page");

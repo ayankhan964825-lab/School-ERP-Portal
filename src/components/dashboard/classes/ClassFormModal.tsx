@@ -13,11 +13,12 @@ interface ClassFormModalProps {
   onClose: () => void;
   initialData: any | null;
   schoolId: string;
+  sessions: any[];
   onSuccess: (data: any) => void;
 }
 
-export default function ClassFormModal({ isOpen, onClose, initialData, schoolId, onSuccess }: ClassFormModalProps) {
-  const [formData, setFormData] = useState({ name: "", section: "", academicYear: "2026-2027" });
+export default function ClassFormModal({ isOpen, onClose, initialData, schoolId, sessions, onSuccess }: ClassFormModalProps) {
+  const [formData, setFormData] = useState({ name: "", section: "", sessionId: sessions?.[0]?.id || "" });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,10 +30,10 @@ export default function ClassFormModal({ isOpen, onClose, initialData, schoolId,
         setFormData({
           name: initialData.name,
           section: initialData.section,
-          academicYear: initialData.academicYear,
+          sessionId: initialData.sessionId,
         });
       } else {
-        setFormData({ name: "", section: "", academicYear: "2026-2027" });
+        setFormData({ name: "", section: "", sessionId: sessions?.[0]?.id || "" });
       }
       setError(null);
     }
@@ -138,13 +139,19 @@ export default function ClassFormModal({ isOpen, onClose, initialData, schoolId,
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="academicYear">Academic Year</Label>
-            <Input
-              id="academicYear"
-              value={formData.academicYear}
-              disabled
-              className="bg-slate-100 text-slate-500 cursor-not-allowed"
-            />
+            <Label htmlFor="sessionId">Academic Session</Label>
+            <Select value={formData.sessionId} onValueChange={(val) => setFormData({ ...formData, sessionId: val || "" })} required>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Session" />
+              </SelectTrigger>
+              <SelectContent>
+                {sessions?.map((session) => (
+                  <SelectItem key={session.id} value={session.id}>
+                    {session.name} {session.isActive ? "(Active)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <DialogFooter className="pt-4">

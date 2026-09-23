@@ -27,7 +27,8 @@ type ClassType = {
   id: string;
   name: string;
   section: string;
-  academicYear: string;
+  sessionId: string;
+  sessionName: string;
   studentCount: number;
   subjectCount: number;
 };
@@ -35,6 +36,7 @@ type ClassType = {
 interface ClassManagerProps {
   schoolId: string;
   initialClasses: ClassType[];
+  sessions: any[];
 }
 
 function getClassSortValue(name: string): number {
@@ -51,13 +53,13 @@ function getClassSortValue(name: string): number {
   return 999;
 }
 
-export default function ClassManager({ schoolId, initialClasses }: ClassManagerProps) {
+export default function ClassManager({ schoolId, initialClasses, sessions }: ClassManagerProps) {
   const [classes, setClasses] = useState<ClassType[]>(initialClasses);
   const [searchQuery, setSearchQuery] = useState("");
   
-  // Extract unique academic years and default to the latest one
-  const academicYears = Array.from(new Set(classes.map(c => c.academicYear))).sort((a, b) => b.localeCompare(a));
-  const [selectedYear, setSelectedYear] = useState<string>(academicYears[0] || "");
+  // Use session IDs for filtering
+  const defaultSessionId = sessions.length > 0 ? sessions[0].id : "";
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(defaultSessionId);
   
   // Modal states
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -69,14 +71,14 @@ export default function ClassManager({ schoolId, initialClasses }: ClassManagerP
   const filteredClasses = classes
     .filter(
       (c) =>
-        c.academicYear === selectedYear &&
+        c.sessionId === selectedSessionId &&
         (c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.section.toLowerCase().includes(searchQuery.toLowerCase()))
     )
     .sort((a, b) => {
-      // 1. Sort by Academic Year (descending)
-      if (a.academicYear !== b.academicYear) {
-        return b.academicYear.localeCompare(a.academicYear);
+      // 1. Sort by Academic Session (descending conceptually)
+      if (a.sessionId !== b.sessionId) {
+        return b.sessionName.localeCompare(a.sessionName);
       }
 
       // 2. Sort by Class Level
@@ -139,14 +141,14 @@ export default function ClassManager({ schoolId, initialClasses }: ClassManagerP
               className="pl-9 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700"
             />
           </div>
-          <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="w-full sm:w-40 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700">
-              <SelectValue placeholder="Academic Year" />
+          <Select value={selectedSessionId} onValueChange={(val) => setSelectedSessionId(val || "")}>
+            <SelectTrigger className="w-full sm:w-48 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+              <SelectValue placeholder="Academic Session" />
             </SelectTrigger>
             <SelectContent>
-              {academicYears.map((year) => (
-                <SelectItem key={year} value={year}>
-                  {year}
+              {sessions.map((session) => (
+                <SelectItem key={session.id} value={session.id}>
+                  {session.name} {session.isActive ? "(Active)" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -164,7 +166,7 @@ export default function ClassManager({ schoolId, initialClasses }: ClassManagerP
             <TableRow>
               <TableHead className="font-semibold text-slate-600 dark:text-slate-300">Name</TableHead>
               <TableHead className="font-semibold text-slate-600 dark:text-slate-300">Section</TableHead>
-              <TableHead className="font-semibold text-slate-600 dark:text-slate-300 hidden md:table-cell">Academic Year</TableHead>
+              <TableHead className="font-semibold text-slate-600 dark:text-slate-300 hidden md:table-cell">Academic Session</TableHead>
               <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-center">Students</TableHead>
               <TableHead className="font-semibold text-slate-600 dark:text-slate-300 text-center">Subjects</TableHead>
               <TableHead className="text-right font-semibold text-slate-600 dark:text-slate-300">Actions</TableHead>
@@ -186,7 +188,7 @@ export default function ClassManager({ schoolId, initialClasses }: ClassManagerP
                       {c.section}
                     </span>
                   </TableCell>
-                  <TableCell className="text-slate-500 hidden md:table-cell">{c.academicYear}</TableCell>
+                  <TableCell className="text-slate-500 hidden md:table-cell">{c.sessionName}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400">
                       <Users className="h-4 w-4" />
@@ -242,6 +244,7 @@ export default function ClassManager({ schoolId, initialClasses }: ClassManagerP
         onClose={() => setIsFormOpen(false)}
         initialData={selectedClass}
         schoolId={schoolId}
+        sessions={sessions}
         onSuccess={handleSaveSuccess}
       />
       

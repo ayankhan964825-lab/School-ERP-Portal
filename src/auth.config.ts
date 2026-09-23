@@ -25,6 +25,7 @@ export const authConfig = {
       if (user) {
         token.userType = (user as any).userType;
         token.schoolId = (user as any).schoolId;
+        token.modulesEnabled = (user as any).modulesEnabled;
       }
       return token;
     },
@@ -33,6 +34,7 @@ export const authConfig = {
         session.user.id = token.sub as string;
         (session.user as any).userType = token.userType as string;
         (session.user as any).schoolId = token.schoolId as string;
+        (session.user as any).modulesEnabled = token.modulesEnabled;
       }
       return session;
     }

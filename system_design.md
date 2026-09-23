@@ -23,9 +23,9 @@ The system is divided into 3 strict layers. No layer can bypass another.
 - **Payment Gateway** — Razorpay SDK + SmartCollect webhook handler
 
 ### Layer 3: Data Layer
-- **PostgreSQL (Prisma)** — 20 relational tables. Multi-tenant via `schoolId` FK.
+- **PostgreSQL (Prisma)** — 33 relational tables. Multi-tenant via `schoolId` FK. Includes strictly bound `AcademicSession` logic and JSONB `customFields` for dynamic extensibility.
 - **Redis (Upstash)** — Caching (timetable, school config), Rate limiting (AI features), Session state
-- **S3/R2 (Cloudflare)** — File storage: profile images, homework attachments, fee receipts, document vault
+- **S3/R2 (Cloudflare)** — File storage: profile images, homework attachments, fee receipts, document vault (with `DocumentTemplate` JSON generator structure)
 
 ---
 
@@ -456,6 +456,33 @@ sequenceDiagram
     Web-->>SA: Downloads "UDISE_Report_2026.xlsx"
 ```
 
+### 2.14 Parent App Workflow (Arrears & Transport Pickup)
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Parent
+    participant Web as Parent App
+    participant API as tRPC API
+    participant DB as Database
+    participant Maps as Google Maps API
+
+    Note over Parent,DB: Transport Pickup Tracking
+    Parent->>Web: Opens Transport Tracking Tab
+    Web->>API: GET /trpc/transport.getPickupPoint(studentId)
+    API->>DB: Fetch Assigned Route + PickupPoint
+    API-->>Web: Returns Lat/Lng + Expected Time (e.g., 07:15 AM)
+    Web->>Maps: Render Map with Bus Live Location vs PickupPoint
+    Maps-->>Parent: Shows "Bus is 2 mins away"
+
+    Note over Parent,DB: Fee Dues & Arrear Carry-Forward
+    Parent->>Web: Opens Fee Payment Tab
+    Web->>API: GET /trpc/fee.getDues(studentId)
+    API->>DB: Sum(Pending Dues Current Session) + Sum(FeeArrear Past Sessions)
+    API-->>Web: Returns Consolidated Dues Payload
+    Web-->>Parent: Displays "Current Dues: ₹3000 | Past Arrears: ₹1500"
+    Parent->>Web: Clicks Pay (Initiates SmartCollect with total ₹4500)
+```
+
 ---
 
 ## 3. White-Label Agency Deployment & Feature Gating
@@ -491,6 +518,7 @@ While every deployment runs the identical Master Codebase (ensuring the agency o
 3. **PREMIUM:** Unlocks AI Timetable Generator, AI Leave Suggester, Library POS, and Payroll.
 
 **Gating Implementation (Middleware & tRPC):**
+- **JSONB Module Toggles (v4.0):** The `modulesEnabled` JSON object on the `School` model acts as a master switch, allowing the agency to remotely toggle massive sub-systems (like Transport or Hostel) dynamically without redeploying code.
 - **UI Gating:** If a school is on the `BASE` plan, the UI removes navigation links for premium modules (like AI Timetable).
 - **API Gating (tRPC Middleware):**
   ```typescript
@@ -671,6 +699,12 @@ The business model of this ERP is a pure **Software-as-a-Product (Handover) Mode
 - **No Monthly API Billing:** The Agency will NOT bill schools monthly for SMS (MSG91) or AI (Gemini) usage.
 - **Handover Protocol:** During deployment, the Agency provides a strictly rate-limited "Test API Key" for demonstration. The school administration is explicitly instructed to purchase and integrate their own API keys in the Super Admin dashboard.
 - **Agency Scope:** The Agency's responsibility is limited to platform maintenance, bug fixes, and handling edge cases, ensuring zero operational overhead regarding third-party service billing.
+
+### 10.6 Advanced Security Auditing & Overrides (v4.0)
+To prevent internal fraud or data leakage at the school level:
+- **System Audit Logs:** Every sensitive mutation (Marks deletion, Fee Receipt cancellation) writes a permanent row to `AuditLog`. This acts as an immutable ledger for the Super Admin.
+- **Hidden Print Tracking:** The `DocumentPrintLog` model silently increments a counter every time a sensitive document (like a TC or Marksheet) is re-printed, preventing unauthorized duplicates from circulating.
+- **Super Admin TC Bypass:** To balance strict fee rules with VIP relationships, standard users are hard-locked from generating a TC if the student has pending `FeeArrear` carry-forwards. However, the Super Admin has a privileged "Bypass & Force Issue" button that bypasses the arrear check and logs a warning in the Audit trail.
 
 ## [v2.0 SaaS Architecture Upgrades]
 This document has been upgraded with the following SaaS features:
