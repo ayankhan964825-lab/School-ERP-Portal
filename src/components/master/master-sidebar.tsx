@@ -15,16 +15,21 @@ export function MasterSidebar() {
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full w-64 flex-col bg-slate-950 border-r border-slate-900">
-      <div className="flex h-16 shrink-0 items-center gap-3 px-6 border-b border-slate-900 bg-black">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500/10 border border-green-500/20">
-          <Code2 className="h-5 w-5 text-green-500" />
+    <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex h-16 shrink-0 items-center px-6 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-2.5 font-bold text-slate-900 dark:text-white truncate">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-school-primary text-white overflow-hidden">
+             <Code2 className="h-5 w-5" />
+          </div>
+          <span className="text-lg tracking-tight truncate">HQ Panel</span>
         </div>
-        <span className="font-bold text-white tracking-tight">HQ Panel</span>
       </div>
       
-      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-6">
-        <nav className="flex-1 space-y-1">
+      <div className="flex-1 overflow-y-auto py-4 px-3">
+        <div className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Main Menu
+        </div>
+        <nav className="space-y-1">
           {navigation.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/master" && pathname.startsWith(item.href));
             return (
@@ -32,16 +37,16 @@ export function MasterSidebar() {
                 key={item.name}
                 href={item.href}
                 className={cn(
-                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all",
                   isActive
-                    ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                    : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    ? "bg-school-primary-50 text-school-primary-700 dark:bg-school-primary-950 dark:text-school-primary-300"
+                    : "text-slate-700 hover:bg-school-primary-50 hover:text-school-primary-700 dark:text-slate-300 dark:hover:bg-school-primary-950 dark:hover:text-school-primary-300"
                 )}
               >
                 <item.icon
                   className={cn(
-                    "h-5 w-5 shrink-0 transition-colors duration-200",
-                    isActive ? "text-green-400" : "text-slate-500 group-hover:text-slate-300"
+                    "h-5 w-5 shrink-0 transition-colors",
+                    isActive ? "text-school-primary-600 dark:text-school-primary-400" : "text-slate-400 group-hover:text-school-primary-500 dark:text-slate-500"
                   )}
                   aria-hidden="true"
                 />
@@ -52,17 +57,17 @@ export function MasterSidebar() {
         </nav>
       </div>
 
-      <div className="p-4 border-t border-slate-900 bg-black/50">
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-            <span className="text-xs font-bold text-slate-300">HQ</span>
+      <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+        <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+          <div className="h-8 w-8 rounded-full bg-school-primary/10 flex items-center justify-center border border-school-primary/20">
+            <span className="text-xs font-bold text-school-primary-700 dark:text-school-primary-300">HQ</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-white">Master Admin</span>
-            <span className="text-xs text-slate-500">System Owner</span>
+            <span className="text-sm font-semibold text-slate-900 dark:text-white">Master Admin</span>
+            <span className="text-[11px] text-slate-500">System Owner</span>
           </div>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

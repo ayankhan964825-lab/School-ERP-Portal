@@ -21,9 +21,9 @@ export default async function MasterLayout({
   }
 
   return (
-    <div className="flex h-screen bg-black">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
       <MasterSidebar />
-      <main className="flex-1 overflow-y-auto bg-black p-8">
+      <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-8">
         {children}
       </main>
     </div>
