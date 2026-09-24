@@ -18,14 +18,45 @@ export async function getSessions(schoolId: string) {
 
 export async function createSession(schoolId: string, data: { name: string; startDate: Date; endDate: Date }) {
   try {
-    const newSession = await db.academicSession.create({
-      data: {
+    if (new Date(data.startDate) >= new Date(data.endDate)) {
+      return { error: "Start date must be before end date." };
+    }
+
+    // Check for overlapping sessions
+    const overlapping = await db.academicSession.findFirst({
+      where: {
         schoolId,
-        name: data.name,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        isActive: true, // Optionally auto-set true
-      },
+        OR: [
+          {
+            startDate: { lte: data.endDate },
+            endDate: { gte: data.startDate },
+          }
+        ]
+      }
+    });
+
+    if (overlapping) {
+      return { error: `Dates overlap with existing session: ${overlapping.name}` };
+    }
+
+    // Use transaction to ensure only one session is active
+    const newSession = await db.$transaction(async (tx) => {
+      // Mark all others inactive
+      await tx.academicSession.updateMany({
+        where: { schoolId },
+        data: { isActive: false }
+      });
+
+      // Create new active session
+      return await tx.academicSession.create({
+        data: {
+          schoolId,
+          name: data.name,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          isActive: true,
+        },
+      });
     });
 
     revalidatePath("/[domain]/(dashboard)/admin/sessions", "page");
@@ -38,12 +69,23 @@ export async function createSession(schoolId: string, data: { name: string; star
 
 export async function toggleSessionStatus(schoolId: string, sessionId: string, isActive: boolean) {
   try {
-    const updated = await db.academicSession.update({
-      where: { id: sessionId, schoolId },
-      data: { isActive },
+    await db.$transaction(async (tx) => {
+      if (isActive) {
+        // If turning ON, turn OFF all others
+        await tx.academicSession.updateMany({
+          where: { schoolId },
+          data: { isActive: false },
+        });
+      }
+
+      await tx.academicSession.update({
+        where: { id: sessionId, schoolId },
+        data: { isActive },
+      });
     });
+    
     revalidatePath("/[domain]/(dashboard)/admin/sessions", "page");
-    return { success: true, data: updated };
+    return { success: true };
   } catch (error) {
     return { error: "Failed to update session status." };
   }

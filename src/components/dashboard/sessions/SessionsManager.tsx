@@ -59,8 +59,8 @@ export default function SessionsManager({ schoolId, initialSessions }: SessionsM
               sessions.map((session) => (
                 <TableRow key={session.id}>
                   <TableCell className="font-medium">{session.name}</TableCell>
-                  <TableCell>{new Date(session.startDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(session.endDate).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(session.startDate).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</TableCell>
+                  <TableCell>{new Date(session.endDate).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}</TableCell>
                   <TableCell>
                     {session.isActive ? (
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">

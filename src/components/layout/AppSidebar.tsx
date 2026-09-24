@@ -43,8 +43,10 @@ const roleNavMapping: Record<Role, SidebarItem[]> = {
   ],
   SUPER_ADMIN: [
     { title: "Dashboard", href: "/admin", icon: LayoutDashboard },
+    { title: "Sessions", href: "/admin/sessions", icon: CalendarDays },
     { title: "Classes", href: "/admin/classes", icon: BookOpen },
     { title: "Teachers", href: "/admin/teachers", icon: Users },
+    { title: "Front Office", href: "/admin/front-office", icon: FileText },
     { title: "Admissions", href: "/admin/admissions", icon: ClipboardList },
     { title: "Students", href: "/admin/students", icon: GraduationCap },
     { title: "Notice Board", href: "/admin/notices", icon: Bell },
