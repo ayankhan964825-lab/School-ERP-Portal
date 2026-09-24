@@ -13,18 +13,9 @@ export const authConfig = {
       return true;
     },
     async redirect({ url, baseUrl }) {
-      // NextAuth blocks absolute URLs to different origins (including subdomains!) by default for security.
-      // We must explicitly allow redirects to our subdomains and Vercel domains.
-      const isDev = process.env.NODE_ENV === "development";
-      
+      // Always return relative URLs as-is so the browser stays on the current subdomain
       if (url.startsWith("/")) {
-        // FIX: In Vercel Server Actions, baseUrl can incorrectly be localhost. 
-        // If we append it, the user gets sent to localhost in production.
-        // Returning a relative URL allows the browser to maintain the current host seamlessly.
-        if (!isDev && baseUrl.includes("localhost")) {
-          return url;
-        }
-        return `${baseUrl}${url}`;
+        return url;
       }
       
       if (url.includes("localhost:3000") || url.includes("schoolsaathi.dpdns.org") || url.includes("vercel.app")) {

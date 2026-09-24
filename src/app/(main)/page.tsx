@@ -16,6 +16,7 @@ export default async function MainGatewayPage() {
       select: { subdomain: true }
     });
     if (userSchool) {
+      const isDev = process.env.NODE_ENV === "development";
       if (isDev) {
         redirect(`http://${userSchool.subdomain}.localhost:3000/admin`);
       } else {

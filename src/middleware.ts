@@ -39,7 +39,9 @@ export default auth((req) => {
 
   // --- 1. Root Domain (Main Landing & HQ) ---
   if (!subdomain || hostname === baseDomain) {
-    // Next.js App Router automatically handles route groups like (main)
+    // If the path is a dashboard path, redirect to a valid school subdomain if possible,
+    // or just let it 404/redirect instead of looping.
+    // For now, let Next.js handle it, but we know [domain] catches it.
     return NextResponse.next();
   }
 

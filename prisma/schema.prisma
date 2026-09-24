@@ -465,6 +465,7 @@ model Notice {
   schoolId      String
   title         String
   content       String
+  priority      String    @default("NORMAL")
   targetRoles   Json?
   targetClasses Json?
   publishedBy   String
