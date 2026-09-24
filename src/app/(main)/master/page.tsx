@@ -34,7 +34,7 @@ export default async function MasterDashboard() {
           // Force a client-side hard navigation to /hq to avoid NextAuth URL rewriting bugs on Vercel
           // or use the Next.js redirect properly
           const { redirect } = await import("next/navigation");
-          redirect("/hq");
+          redirect("/");
         }}>
           <Button type="submit" variant="outline" className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white">
             Secure Logout

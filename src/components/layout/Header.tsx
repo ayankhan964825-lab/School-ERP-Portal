@@ -33,7 +33,9 @@ export default async function Header() {
         <form
           action={async () => {
             "use server"
-            await signOut({ redirectTo: "/login" })
+            await signOut({ redirect: false })
+            const { redirect } = await import("next/navigation")
+            redirect("/staff-login")
           }}
         >
           <button
