@@ -52,7 +52,9 @@ export default auth((req) => {
   }
 
   // Rewrite to app/[domain]/path internally
-  return NextResponse.rewrite(new URL(`/${subdomain}${path}`, req.url));
+  const rewriteUrl = req.nextUrl.clone();
+  rewriteUrl.pathname = `/${subdomain}${url.pathname}`;
+  return NextResponse.rewrite(rewriteUrl);
 });
 
 export const config = {
