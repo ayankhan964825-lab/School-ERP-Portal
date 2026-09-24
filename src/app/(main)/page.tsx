@@ -16,7 +16,12 @@ export default async function MainGatewayPage() {
       select: { subdomain: true }
     });
     if (userSchool) {
-      redirect(`http://${userSchool.subdomain}.localhost:3000/admin`);
+      if (isDev) {
+        redirect(`http://${userSchool.subdomain}.localhost:3000/admin`);
+      } else {
+        // Vercel Live Testing Fallback (As requested by user: admin panel runs on Vercel domain)
+        redirect(`https://schoolerpportal.vercel.app/admin`);
+      }
     }
   }
 

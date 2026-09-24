@@ -53,7 +53,17 @@ export default auth((req) => {
 
   // Rewrite to app/[domain]/path internally
   const rewriteUrl = req.nextUrl.clone();
-  rewriteUrl.pathname = `/${subdomain}${url.pathname}`;
+  
+  // FIX: Vercel Edge sometimes sets req.nextUrl.hostname to an internal IP/localhost.
+  // We must explicitly override it with the public host header.
+  const publicHost = req.headers.get("host") || "";
+  if (publicHost && !isLocal) {
+    rewriteUrl.hostname = publicHost;
+    rewriteUrl.protocol = "https:";
+    rewriteUrl.port = "";
+  }
+  
+  rewriteUrl.pathname = `/${subdomain}${path}`;
   return NextResponse.rewrite(rewriteUrl);
 });
 

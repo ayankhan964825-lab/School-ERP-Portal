@@ -31,7 +31,10 @@ export default async function SubdomainGatewayPage({ params }: { params: Promise
       // In a real app we'd construct the absolute URL based on process.env.NEXT_PUBLIC_APP_URL
       // but for local testing we can redirect to the login page of HQ if they get stuck.
       // Or just return a simple message. Let's just redirect to /hq.
-      redirect("http://localhost:3000/master");
+      const isDev = process.env.NODE_ENV === "development";
+      const domainSuffix = isDev ? "localhost:3000" : (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "schoolsaathi.dpdns.org");
+      const protocol = isDev ? "http" : "https";
+      redirect(`${protocol}://${domainSuffix}/master`);
     default:
       // Fallback
       redirect("/staff-login");
