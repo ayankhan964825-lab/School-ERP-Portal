@@ -16,42 +16,45 @@ export default async function SubdomainGatewayPage({ params }: { params: Promise
   const role = (session.user as any).userType;
   
   // Prevent infinite loops on localhost:3000/admin 
-  // by ensuring we redirect to the absolute URL of the school's subdomain
-  const isDev = process.env.NODE_ENV === "development";
-  const rootDomain = isDev ? "localhost:3000" : (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "schoolsaathi.dpdns.org");
-  const protocol = isDev ? "http" : "https";
-  
-  let schoolSubdomain = domain;
-  
-  // If the captured 'domain' is actually a reserved path (meaning they hit localhost:3000/admin),
+  // If the captured 'domain' is actually a reserved path (meaning they hit localhost:3000/admin directly),
   // we must fetch their actual school subdomain to redirect properly.
   if (["admin", "teacher", "student", "parent", "staff-login", "staff", "master", "hq"].includes(domain)) {
     const userSchool = await db.school.findUnique({
       where: { id: (session.user as any).schoolId },
       select: { subdomain: true }
     });
+    
     if (userSchool) {
-      schoolSubdomain = userSchool.subdomain;
+      const isDev = process.env.NODE_ENV === "development";
+      if (isDev) {
+         // Escape the localhost loop by sending them to their proper subdomain
+         redirect(`http://${userSchool.subdomain}.localhost:3000/${domain}`);
+      } else {
+         // On Vercel, just fallback to relative path (Vercel hack handles subdomain in middleware)
+         redirect(`/${domain}`);
+      }
     }
   }
 
-  const baseUrl = `${protocol}://${schoolSubdomain}.${rootDomain}`;
-  
+  // Normal relative redirects. This preserves the Vercel Live Server hack.
   switch (role) {
     case UserType.SUPER_ADMIN:
     case UserType.STAFF:
-      redirect(`${baseUrl}/admin`);
+      redirect(`/admin`);
     case UserType.TEACHER:
-      redirect(`${baseUrl}/teacher`);
+      redirect(`/teacher`);
     case UserType.STUDENT:
-      redirect(`${baseUrl}/student`);
+      redirect(`/student`);
     case UserType.PARENT:
-      redirect(`${baseUrl}/parent`);
+      redirect(`/parent`);
     case UserType.MASTER_ADMIN:
+      const isDev = process.env.NODE_ENV === "development";
+      const rootDomain = isDev ? "localhost:3000" : (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "schoolsaathi.dpdns.org");
+      const protocol = isDev ? "http" : "https";
       redirect(`${protocol}://${rootDomain}/master`);
     default:
       // Fallback
-      redirect(`${protocol}://${rootDomain}/staff-login`);
+      redirect(`/staff-login`);
   }
 }
 
