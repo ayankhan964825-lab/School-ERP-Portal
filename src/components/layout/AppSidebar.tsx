@@ -50,6 +50,7 @@ const roleNavMapping: Record<Role, SidebarItem[]> = {
     { title: "Admissions", href: "/admin/admissions", icon: ClipboardList },
     { title: "Students", href: "/admin/students", icon: GraduationCap },
     { title: "Notice Board", href: "/admin/notices", icon: Bell },
+    { title: "Calendar", href: "/admin/calendar", icon: CalendarDays },
     { title: "Timetable", href: "/admin/timetable", icon: CalendarDays },
     { title: "Settings", href: "/admin/settings", icon: Settings },
   ],

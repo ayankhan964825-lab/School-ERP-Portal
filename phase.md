@@ -14,15 +14,15 @@ Source: Implementation Plan Lines 366-394
 ### Week 1-2: Project Setup & Authentication
 
 **Task 1: Next.js Project Initialization**
-- [ ] Initialize Next.js 14+ with App Router and TypeScript
-- [ ] Install and configure Tailwind CSS
-- [ ] Install and configure shadcn/ui component library
-- [ ] Setup ESLint + Prettier for code quality
-- [ ] Create `globals.css` with CSS variable theme system
+- [x] Initialize Next.js 14+ with App Router and TypeScript
+- [x] Install and configure Tailwind CSS
+- [x] Install and configure shadcn/ui component library
+- [x] Setup ESLint + Prettier for code quality
+- [x] Create `globals.css` with CSS variable theme system
 
 **Task 2: Database Setup**
-- [ ] Provision PostgreSQL database (Supabase or Neon.tech)
-- [ ] Write complete `schema.prisma` with ALL 20 tables:
+- [x] Provision PostgreSQL database (Supabase or Neon.tech)
+- [x] Write complete `schema.prisma` with ALL 20 tables:
   - School, User (Foundation)
   - Class, SubjectMaster, Subject, ClassTeacher, TimetablePeriod, AcademicSchedule, Syllabus (Academic)
   - TeacherProfile, StudentProfile, ParentProfile, TransportStaff (Profiles)
@@ -31,25 +31,25 @@ Source: Implementation Plan Lines 366-394
   - Vehicle, Route (Transport)
   - FeeStructure, FeePayment, Expense (Finance)
   - Notice, LeaveApplication (Communication)
-- [ ] Run `npx prisma migrate dev` to apply schema
-- [ ] Seed database with 1 test school + 1 Master Admin user
+- [x] Run `npx prisma migrate dev` to apply schema
+- [x] Seed database with 1 test school + 1 Master Admin user
 
 **Task 3: Authentication (NextAuth.js v5)**
-- [ ] Install and configure NextAuth.js v5 (Auth.js)
-- [ ] Implement custom Credentials Provider
-- [ ] Hash passwords with `bcryptjs` (cost factor 12)
-- [ ] Write JWT callbacks to inject `role` and `schoolId` into token
-- [ ] Define JWT payload: `{ sub, email, role, schoolId, isActive }`
+- [x] Install and configure NextAuth.js v5 (Auth.js)
+- [x] Implement custom Credentials Provider
+- [x] Hash passwords with `bcryptjs` (cost factor 12)
+- [x] Write JWT callbacks to inject `role` and `schoolId` into token
+- [x] Define JWT payload: `{ sub, email, role, schoolId, isActive }`
 
 **Task 4: Login/Register UI**
-- [ ] Build `<LoginForm />` with premium UI (shadcn/ui Input, Button)
-- [ ] Integrate `react-hook-form` + `zod` for client-side validation
-- [ ] Email validation, password minimum 8 chars
-- [ ] Error handling: Invalid credentials, account suspended
+- [x] Build `<LoginForm />` with premium UI (shadcn/ui Input, Button)
+- [x] Integrate `react-hook-form` + `zod` for client-side validation
+- [x] Email validation, password minimum 8 chars
+- [x] Error handling: Invalid credentials, account suspended
 
 **Task 5: Role-Based Middleware & Route Protection**
-- [ ] Create `middleware.ts` for Edge route protection
-- [ ] Define route-role mapping:
+- [x] Create `middleware.ts` for Edge route protection
+- [x] Define route-role mapping:
   - `/master/*` → MASTER_ADMIN only
   - `/admin/*` → SUPER_ADMIN only
   - `/staff/*` → ADMIN_STAFF only
@@ -59,95 +59,97 @@ Source: Implementation Plan Lines 366-394
   - `/librarian/*` → LIBRARIAN only
   - `/store/*` → STORE_MANAGER only
   - `/accountant/*` → ACCOUNTANT only
-- [ ] Unauthorized access → Redirect to `/login` or show 403
+- [x] Unauthorized access → Redirect to `/login` or show 403
 - [ ] Scaffold all 9 dashboard route groups under `(dashboard)/`
 
 **Task 5.1: Next.js Performance & Stability Setup**
-- [ ] Implement Cache Busting patterns: `revalidatePath` and `revalidateTag` in tRPC mutations
-- [ ] Enforce Component Boundaries: Layouts/Pages as Server Components, interactive UI as Client Components (`"use client"`)
-- [ ] Set `export const dynamic = 'force-dynamic'` for real-time dashboards to prevent stale data bugs
-- [ ] Ensure Cloud-Agnostic architecture (Standard Next.js APIs, no proprietary Vercel hooks)
+- [x] Implement Cache Busting patterns: `revalidatePath` and `revalidateTag` in tRPC mutations
+- [x] Enforce Component Boundaries: Layouts/Pages as Server Components, interactive UI as Client Components (`"use client"`)
+- [x] Set `export const dynamic = 'force-dynamic'` for real-time dashboards to prevent stale data bugs
+- [x] Ensure Cloud-Agnostic architecture (Standard Next.js APIs, no proprietary Vercel hooks)
 
 ---
 
 ### Week 3-4: Super Admin (Principal) Panel
 
 **Task 6: Super Admin Dashboard**
-- [ ] Build dashboard page with school overview stats
-- [ ] Widgets: Total Students, Total Teachers, Today's Attendance %, Today's Collection ₹
-- [ ] Quick action buttons: "Broadcast Notice", "Generate Timetable"
+- [x] Build dashboard page with school overview stats
+- [x] Widgets: Total Students, Total Teachers, Today's Attendance %, Today's Collection ₹
+- [x] Quick action buttons: "Broadcast Notice", "Generate Timetable"
 
 **Task 7: Class Management (CRUD)**
-- [ ] Build tRPC router: `class.ts` (create, getAll, update, delete)
-- [ ] Build UI: `<ClassManagementTable />` with shadcn DataTable
-- [ ] Pagination, sorting, search functionality
-- [ ] Fields: name (e.g., "10th"), section (e.g., "A"), sessionId (Linked to Academic Session Master)
-- [ ] Unique constraint: [schoolId, name, section, sessionId]
-- [ ] **v4.0 Feature**: Implement `AcademicSession` master table to strictly control active/past terms.
+- [x] Build tRPC router: `class.ts` (create, getAll, update, delete)
+- [x] Build UI: `<ClassManagementTable />` with shadcn DataTable
+- [x] Pagination, sorting, search functionality
+- [x] Fields: name (e.g., "10th"), section (e.g., "A"), sessionId (Linked to Academic Session Master)
+- [x] Unique constraint: [schoolId, name, section, sessionId]
+- [x] **v4.0 Feature**: Implement `AcademicSession` master table to strictly control active/past terms.
 
 **Task 8: Teacher Management & Class-Teacher Assignment**
-- [ ] Build tRPC router: `user.ts` (create teacher, getBySchool)
-- [ ] Build UI: `<AddTeacherForm />` (email, phone, empId, qualification)
-- [ ] Auto-generate temporary password on creation
-- [ ] Build `<ClassTeacherAssignment />` modal:
+- [x] Build tRPC router: `user.ts` (create teacher, getBySchool)
+- [x] Build UI: `<AddTeacherForm />` (email, phone, empId, qualification)
+- [x] Auto-generate temporary password on creation
+- [x] Build `<ClassTeacherAssignment />` modal:
   - Select teacher → Select class → Select subject → is_class_teacher toggle
   - `assigned_by` auto-set to current Super Admin ID
 
 **Task 9: Student Enrollment & Management**
-- [ ] Build UI: `<StudentEnrollmentForm />` (name, class, roll number, parent linking)
-- [ ] Auto-increment roll number per class
-- [ ] Unique constraint: [classId, rollNumber]
-- [ ] CSV Bulk Import: Parse CSV with `papaparse`, validate rows, insert batch
-- [ ] **v4.0 Feature**: Implement `StudentStatus` enum (`ALUMNI`, `DROPOUT`, `EXPELLED`) for proper lifecycle tracking instead of just inactive.
-- [ ] **v4.0 Feature**: Integrate `Custom Fields (JSONB)` engine to allow dynamic data collection on the enrollment form.
+- [x] Build UI: `<StudentEnrollmentForm />` (name, class, roll number, parent linking)
+- [x] Auto-increment roll number per class
+- [x] Unique constraint: [classId, rollNumber]
+- [x] CSV Bulk Import: Parse CSV with `papaparse`, validate rows, insert batch
+- [x] **v4.0 Feature**: Implement `StudentStatus` enum (`ALUMNI`, `DROPOUT`, `EXPELLED`) for proper lifecycle tracking instead of just inactive.
+- [x] **v4.0 Feature**: Integrate `Custom Fields (JSONB)` engine to allow dynamic data collection on the enrollment form.
 
 **Task 10: Parent Account Linking**
-- [ ] Build UI to create parent accounts
-- [ ] Link parent to student via `parentId` FK in StudentProfile
-- [ ] Support multiple children per parent (1-to-many relationship)
+- [x] Build UI to create parent accounts
+- [x] Link parent to student via `parentId` FK in StudentProfile
+- [x] Support multiple children per parent (1-to-many relationship)
 
 **Task 10.5: Omni-Channel Admission Panel (ADMIN_STAFF)**
-- [ ] Build tRPC router: `admission.ts` (createEnquiry, createQrEnquiry, bulkImport, getAll, updateStatus, uploadDocuments, confirmAdmission, searchSibling, unlinkSibling, collectFee)
-- [ ] Create `AdmissionEnquiry` Prisma model with `AdmissionSource` and `AdmissionFeeStatus` enums
-- [ ] **Pillar 1: High-Speed Data Entry Mode**
+- [x] Build tRPC router: `admission.ts` (createEnquiry, createQrEnquiry, bulkImport, getAll, updateStatus, uploadDocuments, confirmAdmission, searchSibling, unlinkSibling, collectFee)
+- [x] Create `AdmissionEnquiry` Prisma model with `AdmissionSource` and `AdmissionFeeStatus` enums
+- [x] **Pillar 1: High-Speed Data Entry Mode**
   - Build single-page, scrollable `<HighSpeedAdmissionForm />`
   - Keyboard-only `Tab` navigation & smart defaults (date/session)
   - Instant sibling auto-fill based on parent phone (no search button)
   - Optional document upload (`documentsPending = true`)
   - Instant fee collection component (Full/Partial/Waiver)
   - Auto-submit and form reset on `Enter`
-- [ ] **Pillar 2: QR Code Self-Serve**
+- [x] **Pillar 2: QR Code Self-Serve**
   - Build public route `/apply?schoolId=xxx` for mobile QR scanning
   - Build "Pending Enquiries" real-time dashboard widget for Staff using Pusher
-- [ ] **Pillar 3: Bulk CSV Import**
+- [x] **Pillar 3: Bulk CSV Import**
   - Build `downloadTemplate` endpoint for `.xlsx`
   - Build `<BulkImportDropzone />` with Papaparse CSV validation
   - Auto-create all Users/Profiles + sibling phone matching logic
-- [ ] **Missing Documents & Edge Cases**
+- [x] **Missing Documents & Edge Cases**
   - Build "Missing Documents" dashboard widget
   - Divorce/separated edge case: Support 2 guardian accounts
   - Sibling Unlink: Create fresh parent account logic
 
 **Task 10.6: Front Office CRM & Operations (v4.0 Feature)**
-- [ ] Build tRPC router: `frontOffice.ts`
-- [ ] Build UI for Receptionist (`/staff` panel)
-- [ ] Implement `VisitorLog` (Tracking purpose, time-in, time-out)
-- [ ] Implement `CallLog` (Phone call follow-ups and inquiries)
-- [ ] Implement `Complaint` management (Parent complaints with Open/Resolved status tracking)
+- [x] Build tRPC router: `frontOffice.ts`
+- [x] Build UI for Receptionist (`/staff` panel)
+- [x] Implement `VisitorLog` (Tracking purpose, time-in, time-out)
+- [x] Implement `CallLog` (Phone call follow-ups and inquiries)
+- [x] Implement `Complaint` management (Parent complaints with Open/Resolved status tracking)
 
 **Task 11: Notice Board**
-- [ ] Build tRPC router: `notice.ts` (create, getForUser)
-- [ ] Build UI: Rich text editor (TipTap) for notice body
-- [ ] Target by role: JSON array of roles (["TEACHER", "PARENT"])
-- [ ] Target by class: JSON array of class IDs
-- [ ] Schedule for future date: `publishDate` field
-- [ ] Draft vs Published toggle: `isPublished` boolean
-- [ ] File attachments upload to R2
+- [x] Build tRPC router: `notice.ts` (create, getForUser)
+- [x] Build UI: Rich text editor (TipTap) for notice body
+- [x] Target by role: JSON array of roles (["TEACHER", "PARENT"])
+- [x] Target by class: JSON array of class IDs
+- [x] Schedule for future date: `publishDate` field
+- [x] Draft vs Published toggle: `isPublished` boolean
+- [x] File attachments upload to R2
 
 **Task 12: Academic Schedule / Calendar**
-- [ ] Build AcademicSchedule CRUD
-- [ ] Types: EXAM | HOLIDAY | EVENT
-- [ ] Calendar view for upcoming events
+- [x] Build AcademicSchedule CRUD
+- [x] Types: EXAM | HOLIDAY | EVENT
+- [x] Calendar view for upcoming events
+- [x] Google Calendar style mobile-first interactive UI
+- [x] Multi-day event support
 
 **Task 13: AI Timetable Generator (Basic Version)**
 - [ ] Build `src/lib/ai/timetable-generator.ts`
