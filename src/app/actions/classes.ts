@@ -10,7 +10,7 @@ export async function getClasses(schoolId: string) {
       include: {
         session: true,
         _count: {
-          select: { students: true, subjects: true },
+          select: { studentEnrollments: true, subjects: true },
         },
       },
       orderBy: [
@@ -94,17 +94,21 @@ export async function getClassDetails(schoolId: string, classId: string) {
       include: {
         session: true,
         _count: {
-          select: { students: true, subjects: true },
+          select: { studentEnrollments: true, subjects: true },
         },
-        students: {
+        studentEnrollments: {
           include: {
-            user: {
-              select: { name: true, email: true, phone: true, isActive: true },
-            },
-            parent: {
+            student: {
               include: {
                 user: {
-                  select: { name: true, phone: true },
+                  select: { name: true, email: true, phone: true, isActive: true },
+                },
+                parent: {
+                  include: {
+                    user: {
+                      select: { name: true, phone: true },
+                    },
+                  },
                 },
               },
             },

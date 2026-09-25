@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, CheckCircle, XCircle } from "lucide-react";
+import { Plus, CheckCircle, XCircle, Edit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import SessionFormModal from "./SessionFormModal";
@@ -15,16 +15,44 @@ interface SessionsManagerProps {
 export default function SessionsManager({ schoolId, initialSessions }: SessionsManagerProps) {
   const [sessions, setSessions] = useState(initialSessions);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [sessionToEdit, setSessionToEdit] = useState<any>(null);
 
-  const handleSaveSuccess = (newSession: any) => {
-    setSessions((prev) => [newSession, ...prev].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()));
+  const handleSaveSuccess = (savedSession: any) => {
+    setSessions((prev) => {
+      // If it's a new session, it becomes the ONLY active session by default in backend.
+      // So we must mark all existing as inactive if the new one is active.
+      let updatedList = prev;
+      
+      const exists = prev.find((s) => s.id === savedSession.id);
+      if (exists) {
+        // It's an update (like name edit)
+        updatedList = prev.map((s) => (s.id === savedSession.id ? { ...s, ...savedSession } : s));
+      } else {
+        // It's a new session. Since createSession sets isActive: true for new and false for others:
+        if (savedSession.isActive) {
+          updatedList = prev.map(s => ({ ...s, isActive: false }));
+        }
+        updatedList = [savedSession, ...updatedList].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+      }
+      return updatedList;
+    });
   };
 
   const handleToggle = async (session: any) => {
-    const res = await toggleSessionStatus(schoolId, session.id, !session.isActive);
+    const newStatus = !session.isActive;
+    const res = await toggleSessionStatus(schoolId, session.id, newStatus);
     if (res.success) {
       setSessions((prev) =>
-        prev.map((s) => (s.id === session.id ? { ...s, isActive: !s.isActive } : s))
+        prev.map((s) => {
+          if (s.id === session.id) {
+            return { ...s, isActive: newStatus };
+          }
+          // If we are turning this session ON, all others must be turned OFF
+          if (newStatus === true) {
+            return { ...s, isActive: false };
+          }
+          return s;
+        })
       );
     }
   };
@@ -32,7 +60,7 @@ export default function SessionsManager({ schoolId, initialSessions }: SessionsM
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
       <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-end">
-        <Button onClick={() => setIsFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white">
+        <Button onClick={() => { setSessionToEdit(null); setIsFormOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white">
           <Plus className="mr-2 h-4 w-4" /> Add Session
         </Button>
       </div>
@@ -73,13 +101,23 @@ export default function SessionsManager({ schoolId, initialSessions }: SessionsM
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleToggle(session)}
-                    >
-                      {session.isActive ? "Deactivate" : "Activate"}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setSessionToEdit(session); setIsFormOpen(true); }}
+                        title="Edit Session Name"
+                      >
+                        <Edit className="h-4 w-4 text-blue-500" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleToggle(session)}
+                      >
+                        {session.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -93,6 +131,7 @@ export default function SessionsManager({ schoolId, initialSessions }: SessionsM
         onClose={() => setIsFormOpen(false)}
         schoolId={schoolId}
         onSuccess={handleSaveSuccess}
+        sessionToEdit={sessionToEdit}
       />
     </div>
   );

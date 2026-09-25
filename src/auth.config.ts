@@ -17,11 +17,11 @@ export const authConfig = {
       if (url.startsWith("/")) {
         return url;
       }
-      
+
       if (url.includes("localhost:3000") || url.includes("schoolsaathi.dpdns.org") || url.includes("vercel.app")) {
         return url;
       }
-      
+
       return baseUrl;
     },
     async jwt({ token, user }) {

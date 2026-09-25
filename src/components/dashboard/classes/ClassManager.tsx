@@ -57,8 +57,9 @@ export default function ClassManager({ schoolId, initialClasses, sessions }: Cla
   const [classes, setClasses] = useState<ClassType[]>(initialClasses);
   const [searchQuery, setSearchQuery] = useState("");
   
-  // Use session IDs for filtering
-  const defaultSessionId = sessions.length > 0 ? sessions[0].id : "";
+  // Initialize to ACTIVE session by default, fallback to first
+  const activeSession = sessions.find(s => s.isActive);
+  const defaultSessionId = activeSession ? activeSession.id : (sessions.length > 0 ? sessions[0].id : "");
   const [selectedSessionId, setSelectedSessionId] = useState<string>(defaultSessionId);
   
   // Modal states
@@ -66,6 +67,9 @@ export default function ClassManager({ schoolId, initialClasses, sessions }: Cla
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
+
+  // Check if we are viewing the currently active session
+  const isViewingActiveSession = selectedSessionId === activeSession?.id;
 
   // Filter and sort classes
   const filteredClasses = classes
@@ -143,7 +147,10 @@ export default function ClassManager({ schoolId, initialClasses, sessions }: Cla
           </div>
           <Select value={selectedSessionId} onValueChange={(val) => setSelectedSessionId(val || "")}>
             <SelectTrigger className="w-full sm:w-48 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700">
-              <SelectValue placeholder="Academic Session" />
+              <SelectValue placeholder="Academic Session">
+                {sessions.find(s => s.id === selectedSessionId)?.name || "Select Session"}
+                {sessions.find(s => s.id === selectedSessionId)?.isActive ? " (Active)" : ""}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {sessions.map((session) => (
@@ -154,10 +161,18 @@ export default function ClassManager({ schoolId, initialClasses, sessions }: Cla
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={handleCreate} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
-          <Plus className="mr-2 h-4 w-4" /> Add Class
-        </Button>
+        {isViewingActiveSession && (
+          <Button onClick={handleCreate} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
+            <Plus className="mr-2 h-4 w-4" /> Add Class
+          </Button>
+        )}
       </div>
+
+      {!isViewingActiveSession && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-500 p-3 text-sm flex items-center justify-center border-b border-yellow-100 dark:border-yellow-900/30">
+          You are viewing an archived session. Data is in Read-Only mode.
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -213,22 +228,26 @@ export default function ClassManager({ schoolId, initialClasses, sessions }: Cla
                           <Eye className="h-4 w-4" />
                         </Button>
                       </Link>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(c)}
-                        className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(c)}
-                        className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {isViewingActiveSession && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEdit(c)}
+                            className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(c)}
+                            className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

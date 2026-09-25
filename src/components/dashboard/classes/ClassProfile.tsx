@@ -48,7 +48,7 @@ export default function ClassProfile({ classData }: ClassProfileProps) {
               </div>
               <div>
                 <p className="text-sm text-blue-100 font-medium">Total Students</p>
-                <p className="text-2xl font-bold">{classData._count.students}</p>
+                <p className="text-2xl font-bold">{classData._count.studentEnrollments}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 bg-white/10 px-4 py-3 rounded-xl backdrop-blur-sm border border-white/20">
@@ -91,39 +91,39 @@ export default function ClassProfile({ classData }: ClassProfileProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {classData.students.length === 0 ? (
+                  {!classData.studentEnrollments || classData.studentEnrollments.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="h-32 text-center text-slate-500">
                         No students enrolled in this class yet.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    classData.students.map((student: any) => (
-                      <TableRow key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                    classData.studentEnrollments.map((enrollment: any) => (
+                      <TableRow key={enrollment.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                         <TableCell className="font-medium text-slate-900 dark:text-slate-100">
-                          {student.rollNumber}
+                          {enrollment.rollNumber}
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium text-slate-900 dark:text-slate-100">{student.user.name}</div>
-                          <div className="text-sm text-slate-500">{student.user.email}</div>
+                          <div className="font-medium text-slate-900 dark:text-slate-100">{enrollment.student.user.name}</div>
+                          <div className="text-sm text-slate-500">{enrollment.student.user.email}</div>
                         </TableCell>
                         <TableCell>
                           <div className="font-medium text-slate-700 dark:text-slate-300">
-                            {student.parent?.user?.name || "N/A"}
+                            {enrollment.student.parent?.user?.name || "N/A"}
                           </div>
                           <div className="text-sm text-slate-500">
-                            {student.parent?.user?.phone || "-"}
+                            {enrollment.student.parent?.user?.phone || "-"}
                           </div>
                         </TableCell>
                         <TableCell>
-                          {student.user.isActive ? (
+                          {enrollment.student.user.isActive ? (
                             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Active</Badge>
                           ) : (
                             <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Inactive</Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {student.documentsPending ? (
+                          {enrollment.student.documentsPending ? (
                             <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100">
                               <Clock className="w-3 h-3 mr-1" />
                               Pending

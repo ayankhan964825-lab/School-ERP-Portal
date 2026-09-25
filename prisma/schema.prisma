@@ -108,9 +108,10 @@ model AcademicSession {
   school         School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   classes        Class[]
   syllabi        Syllabus[]
-  feeStructures  FeeStructure[]
-  feeArrears     FeeArrear[]
-  complianceLogs ComplianceExportLog[]
+  feeStructures      FeeStructure[]
+  feeArrears         FeeArrear[]
+  complianceLogs     ComplianceExportLog[]
+  studentEnrollments StudentEnrollment[]
 
   @@unique([schoolId, name])
 }
@@ -127,7 +128,7 @@ model Class {
   classTeachers ClassTeacher[]
   exams         Exam[]
   homework      Homework[]
-  students      StudentProfile[]
+  studentEnrollments StudentEnrollment[]
   subjects      Subject[]
   syllabi       Syllabus[]
   timetable     TimetablePeriod[]
@@ -250,14 +251,10 @@ model StaffProfile {
 model StudentProfile {
   id                 String              @id @default(uuid())
   userId             String              @unique
-  classId            String
-  rollNumber         Int
   parentId           String?
   virtualAccountId   String?             @unique
   documentsChecklist Json?
   documentsPending   Boolean             @default(true)
-  status             StudentStatus       @default(CURRENT) // NEW
-  statusReason       String? // NEW
   pickupPointId      String? // NEW
   customFields       Json? // NEW
   attendances        Attendance[]
@@ -268,12 +265,29 @@ model StudentProfile {
   reportCards        ReportCard[]
   results            Result[]
   storeSales         StoreSale[]
-  class              Class               @relation(fields: [classId], references: [id])
   parent             ParentProfile?      @relation(fields: [parentId], references: [id])
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   pickupPoint        PickupPoint?        @relation(fields: [pickupPointId], references: [id])
+  enrollments        StudentEnrollment[]
+}
 
-  @@unique([classId, rollNumber])
+model StudentEnrollment {
+  id           String          @id @default(uuid())
+  studentId    String
+  classId      String
+  sessionId    String
+  rollNumber   Int
+  status       StudentStatus   @default(CURRENT)
+  statusReason String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  student      StudentProfile  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class        Class           @relation(fields: [classId], references: [id])
+  session      AcademicSession @relation(fields: [sessionId], references: [id])
+
+  @@unique([studentId, sessionId]) 
+  @@unique([classId, rollNumber]) 
 }
 
 model ParentProfile {

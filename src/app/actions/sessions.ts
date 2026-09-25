@@ -90,3 +90,18 @@ export async function toggleSessionStatus(schoolId: string, sessionId: string, i
     return { error: "Failed to update session status." };
   }
 }
+
+export async function editSessionName(schoolId: string, sessionId: string, newName: string) {
+  try {
+    const updatedSession = await db.academicSession.update({
+      where: { id: sessionId, schoolId },
+      data: { name: newName },
+    });
+    
+    revalidatePath("/[domain]/(dashboard)/admin/sessions", "page");
+    return { success: true, data: updatedSession };
+  } catch (error) {
+    console.error("Error updating session name:", error);
+    return { error: "Failed to update session name." };
+  }
+}

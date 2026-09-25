@@ -118,10 +118,12 @@ export function NoticeManager({ schoolId, notices, systemRoles, classes }: Notic
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {/* 
-                          We would typically add an Edit button here that opens a similar dialog with pre-filled data.
-                          For now, keeping it simple with just delete.
-                        */}
+                        <CreateNoticeDialog 
+                          schoolId={schoolId} 
+                          systemRoles={systemRoles} 
+                          classes={classes} 
+                          noticeToEdit={notice}
+                        />
                         <Button 
                           variant="ghost" 
                           size="icon" 

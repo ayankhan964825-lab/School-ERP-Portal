@@ -25,10 +25,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RichTextEditor } from "./RichTextEditor";
-import { createNotice } from "@/app/actions/notices";
+import { createNotice, editNotice } from "@/app/actions/notices";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Edit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Dynamic schema
@@ -51,11 +51,13 @@ interface CreateNoticeDialogProps {
   schoolId: string;
   systemRoles: { id: string; name: string }[];
   classes: { id: string; name: string; section: string }[];
+  noticeToEdit?: any;
 }
 
-export function CreateNoticeDialog({ schoolId, systemRoles, classes }: CreateNoticeDialogProps) {
+export function CreateNoticeDialog({ schoolId, systemRoles, classes, noticeToEdit }: CreateNoticeDialogProps) {
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isEditing = !!noticeToEdit;
 
   // Standard roles that always exist
   const standardRoles = [
@@ -65,16 +67,20 @@ export function CreateNoticeDialog({ schoolId, systemRoles, classes }: CreateNot
     { id: "STAFF", name: "All Staff" }
   ];
 
+  const defaultPublishDate = noticeToEdit?.publishDate 
+    ? new Date(noticeToEdit.publishDate).toISOString().slice(0, 16) 
+    : "";
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      title: "",
-      content: "",
-      priority: "NORMAL",
-      targetRoles: [],
-      targetClasses: [],
-      isPublished: true,
-      publishDate: "",
+      title: noticeToEdit?.title || "",
+      content: noticeToEdit?.content || "",
+      priority: noticeToEdit?.priority || "NORMAL",
+      targetRoles: noticeToEdit?.targetRoles || [],
+      targetClasses: noticeToEdit?.targetClasses || [],
+      isPublished: noticeToEdit ? noticeToEdit.isPublished : true,
+      publishDate: defaultPublishDate,
     },
   });
 
@@ -83,7 +89,7 @@ export function CreateNoticeDialog({ schoolId, systemRoles, classes }: CreateNot
     try {
       const parsedDate = data.publishDate ? new Date(data.publishDate) : null;
       
-      const response = await createNotice(schoolId, {
+      const payload = {
         title: data.title,
         content: data.content,
         priority: data.priority,
@@ -91,15 +97,22 @@ export function CreateNoticeDialog({ schoolId, systemRoles, classes }: CreateNot
         targetClasses: data.targetClasses,
         isPublished: data.isPublished,
         publishDate: parsedDate,
-        attachments: [], // TBD file uploads
-      });
+        attachments: noticeToEdit?.attachments || [], 
+      };
+
+      let response;
+      if (isEditing) {
+        response = await editNotice(schoolId, noticeToEdit.id, payload);
+      } else {
+        response = await createNotice(schoolId, payload);
+      }
 
       if (response.error) {
         toast.error(response.error);
       } else {
-        toast.success("Notice published successfully!");
+        toast.success(isEditing ? "Notice updated successfully!" : "Notice published successfully!");
         setOpen(false);
-        form.reset();
+        if (!isEditing) form.reset();
       }
     } catch (error) {
       toast.error("An unexpected error occurred.");
@@ -110,17 +123,21 @@ export function CreateNoticeDialog({ schoolId, systemRoles, classes }: CreateNot
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
+      {isEditing ? (
+        <DialogTrigger render={<Button variant="ghost" size="icon" />}>
+          <Edit className="h-4 w-4 text-blue-500" />
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button />}>
           <Plus className="mr-2 h-4 w-4" />
           Create Notice
-        </Button>
-      </DialogTrigger>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Notice</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Notice" : "Create New Notice"}</DialogTitle>
           <DialogDescription>
-            Publish announcements to specific roles or classes.
+            {isEditing ? "Make changes to your announcement." : "Publish announcements to specific roles or classes."}
           </DialogDescription>
         </DialogHeader>
 

@@ -143,7 +143,7 @@ export async function suggestSectionAndRoll(schoolId: string, className: string)
     const allClasses = await db.class.findMany({
       where: { schoolId },
       include: {
-        _count: { select: { students: true } },
+        _count: { select: { studentEnrollments: true } },
       },
       orderBy: { section: "asc" },
     });
@@ -178,15 +178,15 @@ export async function suggestSectionAndRoll(schoolId: string, className: string)
     let suggestedRollNo = 1;
 
     for (const cls of classes) {
-      if (cls._count.students < MAX_CAPACITY) {
+      if (cls._count.studentEnrollments < MAX_CAPACITY) {
         suggestedClass = cls;
-        suggestedRollNo = cls._count.students + 1;
+        suggestedRollNo = cls._count.studentEnrollments + 1;
         break;
       }
     }
 
     // If all sections are full, suggest next section letter
-    const allFull = classes.every((cls) => cls._count.students >= MAX_CAPACITY);
+    const allFull = classes.every((cls) => cls._count.studentEnrollments >= MAX_CAPACITY);
     let suggestedSection = suggestedClass.section;
     if (allFull) {
       const lastSection = classes[classes.length - 1].section;
@@ -197,7 +197,7 @@ export async function suggestSectionAndRoll(schoolId: string, className: string)
     const availableSections = classes.map((cls) => ({
       classId: cls.id,
       section: cls.section,
-      studentCount: cls._count.students,
+      studentCount: cls._count.studentEnrollments,
     }));
 
     return {
@@ -209,7 +209,7 @@ export async function suggestSectionAndRoll(schoolId: string, className: string)
         availableSections,
         message: allFull
           ? `All sections full. Suggest creating new section "${suggestedSection}".`
-          : `Section ${suggestedSection} has space (${suggestedClass._count.students}/${MAX_CAPACITY}).`,
+          : `Section ${suggestedSection} has space (${suggestedClass._count.studentEnrollments}/${MAX_CAPACITY}).`,
       },
     };
   } catch (error: any) {
@@ -293,18 +293,26 @@ export async function approveAndAdmit(
         },
       });
 
+      const targetClass = await tx.class.findUnique({ where: { id: data.classId } });
+      if (!targetClass) throw new Error("Target class not found.");
+
       const studentProfile = await tx.studentProfile.create({
         data: {
           userId: studentUser.id,
-          classId: data.classId,
-          rollNumber: data.rollNumber,
           parentId: parentProfile?.id || null,
           documentsPending: data.documentsChecklist
             ? Object.values(data.documentsChecklist).some((v) => !v)
             : true,
           documentsChecklist: data.documentsChecklist || null,
-          status: "CURRENT",
           customFields: enquiry.customFields || null,
+          enrollments: {
+            create: {
+              classId: data.classId,
+              sessionId: targetClass.sessionId,
+              rollNumber: data.rollNumber,
+              status: "CURRENT",
+            }
+          }
         },
       });
 
@@ -458,15 +466,23 @@ export async function bulkAdmitStudents(
             },
           });
 
+          const targetClass = await tx.class.findUnique({ where: { id: student.classId } });
+          if (!targetClass) throw new Error(`Class not found for ${student.studentName}`);
+
           await tx.studentProfile.create({
             data: {
               userId: studentUser.id,
-              classId: student.classId,
-              rollNumber: student.rollNumber,
               parentId: parentProfile?.id || null,
               documentsPending: true,
               documentsChecklist: { tc: false, marksheet: false, photo: false, aadhar: false, birth_cert: false },
-              status: "CURRENT",
+              enrollments: {
+                create: {
+                  classId: student.classId,
+                  sessionId: targetClass.sessionId,
+                  rollNumber: student.rollNumber,
+                  status: "CURRENT",
+                }
+              }
             },
           });
 

@@ -28,7 +28,7 @@ export default async function ClassesPage({ params }: { params: Promise<{ domain
     include: {
       session: true,
       _count: {
-        select: { students: true, subjects: true },
+        select: { studentEnrollments: true, subjects: true },
       },
     },
     orderBy: [
@@ -49,7 +49,7 @@ export default async function ClassesPage({ params }: { params: Promise<{ domain
     section: c.section,
     sessionId: c.sessionId,
     sessionName: c.session.name,
-    studentCount: c._count.students,
+    studentCount: c._count.studentEnrollments,
     subjectCount: c._count.subjects,
   }));
 

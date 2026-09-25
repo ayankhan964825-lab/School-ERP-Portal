@@ -24,6 +24,9 @@ export default function ClassFormModal({ isOpen, onClose, initialData, schoolId,
 
   const isEditing = !!initialData;
 
+  const activeSession = sessions?.find(s => s.isActive);
+  const defaultSessionId = activeSession ? activeSession.id : (sessions?.[0]?.id || "");
+
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
@@ -33,11 +36,11 @@ export default function ClassFormModal({ isOpen, onClose, initialData, schoolId,
           sessionId: initialData.sessionId,
         });
       } else {
-        setFormData({ name: "", section: "", sessionId: sessions?.[0]?.id || "" });
+        setFormData({ name: "", section: "", sessionId: defaultSessionId });
       }
       setError(null);
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, defaultSessionId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,19 +142,19 @@ export default function ClassFormModal({ isOpen, onClose, initialData, schoolId,
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="sessionId">Academic Session</Label>
-            <Select value={formData.sessionId} onValueChange={(val) => setFormData({ ...formData, sessionId: val || "" })} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Select Session" />
-              </SelectTrigger>
-              <SelectContent>
-                {sessions?.map((session) => (
-                  <SelectItem key={session.id} value={session.id}>
-                    {session.name} {session.isActive ? "(Active)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Academic Session</Label>
+            <Input 
+              value={
+                sessions?.find(s => s.id === formData.sessionId)
+                  ? `${sessions.find(s => s.id === formData.sessionId)?.name} ${sessions.find(s => s.id === formData.sessionId)?.isActive ? "(Active)" : ""}`
+                  : "Loading..."
+              }
+              disabled
+              className="bg-slate-50 opacity-100 text-slate-600 cursor-not-allowed font-medium"
+            />
+            <p className="text-xs text-muted-foreground mt-1 text-blue-600">
+              * {isEditing ? "Session cannot be changed after a class is created." : "Classes are automatically assigned to the currently active session."}
+            </p>
           </div>
 
           <DialogFooter className="pt-4">

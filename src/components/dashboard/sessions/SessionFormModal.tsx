@@ -1,23 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createSession } from "@/app/actions/sessions";
+import { createSession, editSessionName } from "@/app/actions/sessions";
 
 interface SessionFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   schoolId: string;
   onSuccess: (data: any) => void;
+  sessionToEdit?: any;
 }
 
-export default function SessionFormModal({ isOpen, onClose, schoolId, onSuccess }: SessionFormModalProps) {
+export default function SessionFormModal({ isOpen, onClose, schoolId, onSuccess, sessionToEdit }: SessionFormModalProps) {
   const [formData, setFormData] = useState({ name: "", startDate: "", endDate: "" });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sessionToEdit) {
+      setFormData({
+        name: sessionToEdit.name,
+        startDate: new Date(sessionToEdit.startDate).toISOString().split('T')[0],
+        endDate: new Date(sessionToEdit.endDate).toISOString().split('T')[0],
+      });
+    } else {
+      setFormData({ name: "", startDate: "", endDate: "" });
+    }
+    setError(null);
+  }, [sessionToEdit, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,18 +45,27 @@ export default function SessionFormModal({ isOpen, onClose, schoolId, onSuccess 
     }
 
     try {
-      const res = await createSession(schoolId, {
-        name: formData.name,
-        startDate: new Date(formData.startDate),
-        endDate: new Date(formData.endDate),
-      });
+      if (sessionToEdit) {
+        const res = await editSessionName(schoolId, sessionToEdit.id, formData.name);
+        if (res.error) {
+          setError(res.error);
+        } else if (res.success) {
+          onSuccess(res.data);
+          onClose();
+        }
+      } else {
+        const res = await createSession(schoolId, {
+          name: formData.name,
+          startDate: new Date(formData.startDate),
+          endDate: new Date(formData.endDate),
+        });
 
-      if (res.error) {
-        setError(res.error);
-      } else if (res.success) {
-        onSuccess(res.data);
-        onClose();
-        setFormData({ name: "", startDate: "", endDate: "" });
+        if (res.error) {
+          setError(res.error);
+        } else if (res.success) {
+          onSuccess(res.data);
+          onClose();
+        }
       }
     } catch (err) {
       setError("An unexpected error occurred.");
@@ -55,9 +78,9 @@ export default function SessionFormModal({ isOpen, onClose, schoolId, onSuccess 
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create Academic Session</DialogTitle>
+          <DialogTitle>{sessionToEdit ? "Edit Session Name" : "Create Academic Session"}</DialogTitle>
           <DialogDescription>
-            Add a new academic year or term.
+            {sessionToEdit ? "Update the name of the academic session." : "Add a new academic year or term."}
           </DialogDescription>
         </DialogHeader>
 
@@ -87,6 +110,7 @@ export default function SessionFormModal({ isOpen, onClose, schoolId, onSuccess 
               value={formData.startDate}
               onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
               required
+              disabled={!!sessionToEdit} // Do not allow editing dates
             />
           </div>
 
@@ -98,15 +122,22 @@ export default function SessionFormModal({ isOpen, onClose, schoolId, onSuccess 
               value={formData.endDate}
               onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
               required
+              disabled={!!sessionToEdit} // Do not allow editing dates
             />
           </div>
+          
+          {sessionToEdit && (
+            <p className="text-xs text-muted-foreground">
+              * Dates cannot be modified for existing sessions to preserve data integrity.
+            </p>
+          )}
 
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {isLoading ? "Saving..." : "Create Session"}
+              {isLoading ? "Saving..." : (sessionToEdit ? "Save Changes" : "Create Session")}
             </Button>
           </DialogFooter>
         </form>

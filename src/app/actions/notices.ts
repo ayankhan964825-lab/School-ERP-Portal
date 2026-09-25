@@ -210,3 +210,54 @@ export async function deleteNotice(schoolId: string, noticeId: string) {
     return { error: error.message || "Failed to delete notice." };
   }
 }
+
+/**
+ * Edit/Update a notice
+ */
+export async function editNotice(schoolId: string, noticeId: string, data: {
+  title: string;
+  content: string;
+  priority: string;
+  targetRoles: string[];
+  targetClasses: string[];
+  isPublished: boolean;
+  publishDate: Date | null;
+  attachments?: any[];
+}) {
+  try {
+    const session = await auth();
+    if (!session?.user) throw new Error("Unauthorized");
+    
+    const userId = session.user.id;
+    const userType = (session.user as any).userType;
+    
+    const hasAccess = await canManageNotices(schoolId, userId, userType);
+    if (!hasAccess) throw new Error("Forbidden: Missing Notice Management Permission");
+
+    if (data.targetRoles.length === 0 && data.targetClasses.length === 0) {
+      return { error: "You must select at least one target role or class." };
+    }
+
+    const updatedNotice = await db.notice.update({
+      where: { id: noticeId, schoolId },
+      data: {
+        title: data.title,
+        content: data.content,
+        priority: data.priority,
+        targetRoles: data.targetRoles,
+        targetClasses: data.targetClasses,
+        isPublished: data.isPublished,
+        publishDate: data.publishDate,
+        attachments: data.attachments || [],
+      }
+    });
+
+    revalidatePath(`/[domain]/(dashboard)/admin/notices`, "page");
+    revalidatePath(`/[domain]/(dashboard)/student`, "page");
+    
+    return { success: true, data: updatedNotice };
+  } catch (error: any) {
+    console.error("Error editing notice:", error);
+    return { error: error.message || "Failed to edit notice." };
+  }
+}
